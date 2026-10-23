@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MC Scanner</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #667085;
+    --border: #e3e6ea; --accent: #2563eb; --accent-text: #ffffff;
+    --ok: #15803d; --bad: #b42318; --warn: #b54708; --row-hover: #f1f5fd; --detail: #f9fafb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111418; --panel: #1a1e24; --text: #e6e8eb; --muted: #98a2b3;
+      --border: #2b313a; --accent: #4f8cff; --accent-text: #0b0d10;
+      --ok: #4ade80; --bad: #f87171; --warn: #fbbf24; --row-hover: #222a36; --detail: #151920;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 16px; font-size: 13px; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+  label.f { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+  input[type=number], input[type=text] { font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; width: 130px; }
+  input.wide { width: 220px; }
+  label.c { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+  .rules { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  button { font: inherit; border: 1px solid var(--border); background: var(--panel); color: var(--text);
+    border-radius: 7px; padding: 7px 14px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  button.small { padding: 3px 9px; font-size: 12px; }
+  button:disabled { opacity: .5; cursor: default; }
+  .stats { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; }
+  .stats b { font-size: 16px; font-variant-numeric: tabular-nums; }
+  .status { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  .status.err { color: var(--bad); }
+  .tablewrap { overflow-x: auto; }
+  table.main { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.main > thead > tr > th, table.main > tbody > tr > td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.main > thead > tr > th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 600; }
+  table.main > tbody > tr.r:hover { background: var(--row-hover); }
+  td.num { font-variant-numeric: tabular-nums; }
+  td.copy { cursor: copy; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 11px; font-weight: 600; border: 1px solid currentColor; }
+  .pill.a { color: var(--ok); } .pill.i { color: var(--bad); } .pill.w { color: var(--warn); }
+  .muted { color: var(--muted); }
+  tr.detail > td { background: var(--detail); white-space: normal !important; padding: 12px 14px !important; }
+  .dgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; }
+  .dbox h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 13px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; }
+  table.ins { border-collapse: collapse; font-size: 12px; width: 100%; margin-top: 4px; }
+  table.ins th, table.ins td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+  table.ins th { color: var(--muted); font-weight: 600; }
+  .toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg);
+    padding: 6px 12px; border-radius: 7px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>MC Scanner — FMCSA</h1>
+  <p class="sub">Непрерывный поиск перевозчиков по MC номеру (MC, MC+1, MC+2 …). Данные: официальные файлы FMCSA (Company Census + Licensing &amp; Insurance) на data.transportation.gov, обновляются ежедневно.</p>
+
+  <div class="panel">
+    <div class="controls">
+      <label class="f">Начальный MC
+        <input type="number" id="startMc" min="1" value="1">
+      </label>
+      <label class="f">Конечный MC (пусто = без конца)
+        <input type="number" id="endMc" min="1" placeholder="—">
+      </label>
+      <label class="f">Пачка (MC за запрос)
+        <input type="number" id="batch" min="1" max="200" value="100">
+      </label>
+      <label class="f">Пауза между запросами, мс
+        <input type="number" id="delay" min="0" value="300">
+      </label>
+      <label class="f">App Token (необязательно)
+        <input type="text" id="token" class="wide" placeholder="Socrata app token">
+      </label>
+      <label class="f">Потоков SAFER
+        <input type="number" id="saferConc" min="1" max="10" value="5">
+      </label>
+    </div>
+    <div class="controls" style="margin-top:12px">
+      <label class="c"><input type="checkbox" id="useSafer" checked> Проверять каждый MC на SAFER (live, нужен US VPN)</label>
+      <span class="muted" id="saferState" style="font-size:12px"></span>
+    </div>
+    <div class="controls" style="margin-top:12px">
+      <label class="c"><input type="checkbox" id="skipCarrierBroker" checked> Пропускать и тех, кто carrier + broker</label>
+      <label class="c"><input type="checkbox" id="onlyActive" checked> Только USDOT status = ACTIVE</label>
+      <label class="c"><input type="checkbox" id="onlyPhone" checked> Только с телефоном</label>
+    </div>
+    <div class="rules">Всегда: только перевозчики (брокеры пропускаются), только с email, только AUTHORIZED. С проверкой SAFER статус authority берётся прямо с SAFER для каждого MC; без неё — из файлов FMCSA (L&amp;I + Motus).</div>
+    <div class="controls" style="margin-top:12px">
+      <button class="primary" id="btnStart">▶ Старт</button>
+      <button id="btnStop" disabled>⏸ Пауза</button>
+      <button id="btnCsv">⬇ CSV</button>
+      <button id="btnEmails">Копировать email</button>
+      <button id="btnPhones">Копировать телефоны</button>
+      <button id="btnClear">Очистить</button>
+    </div>
+    <div class="status" id="status">Готово. Введите MC и нажмите «Старт».</div>
+  </div>
+
+  <div class="panel stats">
+    <div>Текущий MC: <b id="sCur">—</b></div>
+    <div>Проверено MC: <b id="sChecked">0</b></div>
+    <div>Найдено: <b id="sFound">0</b></div>
+    <div>С телефоном: <b id="sPhone">0</b></div>
+    <div>Отсеяно SAFER: <b id="sRejected">0</b></div>
+    <div>Скорость: <b id="sRate">0</b> MC/с</div>
+  </div>
+
+  <div class="panel tablewrap">
+    <table class="main">
+      <thead>
+        <tr><th>MC</th><th>USDOT</th><th>Название</th><th>Телефон</th><th>Моб.</th><th>Email</th><th>Authority</th><th>Штат</th><th>Траков</th><th>Добавлен</th><th></th></tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+    <p class="muted" id="empty" style="margin:10px 4px 2px">Пока пусто. Клик по телефону / email копирует его.</p>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const BASE = 'https://data.transportation.gov/resource/';
+const DS = {
+  census: 'az4n-8mr2',     // Company Census File
+  lic: '6eyk-hxee',        // L&I Carrier - All With History (authority + insurance on file)
+  motus: 'inys-ebih',      // Motus Carrier - All With History (new registration system)
+  ins: 'qh9u-swkp',        // L&I ActPendInsur - legacy policies (no new filings since 05/2026)
+  motusIns: 'c5y8-a4uz',   // Motus Insur - current active/pending policies
+  motusInsHist: '3uet-3z4i', // Motus InsHist - cancelled/replaced policies
+};
+const CARGO = {
+  genfreight: 'General Freight', household: 'Household Goods', metalsheet: 'Metal: sheets, coils, rolls',
+  motoveh: 'Motor Vehicles', drivetow: 'Drive/Tow away', logpole: 'Logs, Poles, Beams, Lumber',
+  bldgmat: 'Building Materials', mobilehome: 'Mobile Homes', machlrg: 'Machinery, Large Objects',
+  produce: 'Fresh Produce', liqgas: 'Liquids/Gases', intermodal: 'Intermodal Cont.', passengers: 'Passengers',
+  oilfield: 'Oilfield Equipment', livestock: 'Livestock', grainfeed: 'Grain, Feed, Hay', coalcoke: 'Coal/Coke',
+  meat: 'Meat', garbage: 'Garbage/Refuse', usmail: 'US Mail', chem: 'Chemicals', drybulk: 'Commodities Dry Bulk',
+  coldfood: 'Refrigerated Food', beverages: 'Beverages', paperprod: 'Paper Products', utility: 'Utilities',
+  farmsupp: 'Agricultural/Farm Supplies', construct: 'Construction', waterwell: 'Water Well', cargoothr: 'Other',
+};
+const CENSUS_FIELDS = ['dot_number','legal_name','dba_name','phone','cell_phone','fax','email_address','status_code','carship',
+  'carrier_operation','company_officer_1','company_officer_2','phy_street','phy_city','phy_state','phy_zip',
+  'carrier_mailing_street','carrier_mailing_city','carrier_mailing_state','carrier_mailing_zip',
+  'power_units','truck_units','total_drivers','total_cdl','mcs150_date','mcs150_mileage','mcs150_mileage_year',
+  'add_date','safety_rating','safety_rating_date','hm_ind','crgo_cargoothr_desc',
+  ...Object.keys(CARGO).map(k => 'crgo_' + k),
+  'docket1prefix','docket1','docket2prefix','docket2','docket3prefix','docket3'];
+const LIC_FIELDS = ['docket_number','common_stat','contract_stat','broker_stat','common_app_pend','contract_app_pend',
+  'broker_app_pend','common_rev_pend','contract_rev_pend','broker_rev_pend','property_chk','passenger_chk','hhg_chk',
+  'private_auth_chk','enterprise_chk','min_cov_amount','cargo_req','bond_req','bipd_file','cargo_file','bond_file'];
+const STORE_KEY = 'mcScanner.v3';
+const MAX_EMPTY_BATCHES = 50; // stop after this many consecutive empty batches (end of MC range)
+
+const VALUE_FIELDS = ['startMc','endMc','batch','delay','token','saferConc'];
+const CHECK_FIELDS = ['useSafer','skipCarrierBroker','onlyActive','onlyPhone'];
+const FILTER_FIELDS = ['skipCarrierBroker','onlyActive','onlyPhone'];
+const FORM_VERSION = 2; // bump to reset saved checkbox choices to the HTML defaults
+
+const $ = id => document.getElementById(id);
+let saferAvailable = false; // true when the page is served by server.py
+let saferRejected = 0;
+let rows = [];          // all found carriers
+let seen = new Set();   // "mc|dot" dedupe keys
+let running = false;
+let nextMc = null;
+let checked = 0;
+const insCache = new Map(); // mc -> insurance policies (loaded on demand)
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (!s) return;
+    rows = s.rows || [];
+    checked = s.checked || 0;
+    nextMc = s.nextMc || null;
+    rows.forEach(r => seen.add(r.mc + '|' + r.dot));
+    for (const k of VALUE_FIELDS) if (s.form?.[k] != null) $(k).value = s.form[k];
+    if (s.formVersion === FORM_VERSION) for (const k of CHECK_FIELDS) if (s.form?.[k] != null) $(k).checked = s.form[k];
+    if (nextMc) { $('startMc').value = nextMc; setStatus(`Восстановлено: ${rows.length} записей. Продолжить можно с MC ${nextMc}.`); }
+  } catch (e) {}
+}
+function save() {
+  try {
+    const form = {};
+    for (const k of VALUE_FIELDS) form[k] = $(k).value;
+    for (const k of CHECK_FIELDS) form[k] = $(k).checked;
+    localStorage.setItem(STORE_KEY, JSON.stringify({ rows, checked, nextMc, form, formVersion: FORM_VERSION }));
+  } catch (e) {}
+}
+
+function setStatus(msg, err = false) { const s = $('status'); s.textContent = msg; s.classList.toggle('err', err); }
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 1400); }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function fmtPhone(p) {
+  const d = (p || '').replace(/\D/g, '');
+  if (d.length === 10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+  if (d.length === 11 && d[0] === '1') return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+  return p || '';
+}
+function fmtDate(d) {
+  if (!d) return '';
+  if (/^\d{8}$/.test(d)) return `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6)}`;
+  if (/^\d{4}-\d\d-\d\dT/.test(d)) return d.slice(0, 10);
+  const m = d.match(/^(\d\d)\/(\d\d)\/(\d{4})$/);
+  return m ? `${m[3]}-${m[1]}-${m[2]}` : d;
+}
+const money = n => (isFinite(n) && n > 0) ? '$' + Math.round(n).toLocaleString('en-US') : '—';
+const thousands = s => money(parseFloat(s) * 1000); // L&I files store amounts in $1000s
+const licDocket = n => 'MC' + String(n).padStart(6, '0');
+
+async function api(ds, params) {
+  const p = new URLSearchParams(params);
+  const tok = $('token').value.trim();
+  if (tok) p.set('$$app_token', tok);
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try { res = await fetch(`${BASE}${ds}.json?${p}`); }
+    catch (e) { res = null; }
+    if (res && res.ok) return res.json();
+    if (attempt >= 6) throw new Error(res ? `HTTP ${res.status}` : 'нет сети');
+    const wait = Math.min(30000, 1000 * 2 ** attempt);
+    setStatus(`${res ? 'HTTP ' + res.status : 'Ошибка сети'} — повтор через ${wait / 1000} с…`, true);
+    await sleep(wait);
+  }
+}
+const inList = arr => arr.map(s => `'${s}'`).join(',');
+
+// Census record -> one row per requested MC it carries (docket1..3).
+function toRows(rec, wanted) {
+  const out = [];
+  const email = (rec.email_address || '').trim().toLowerCase();
+  if (!email) return out;
+  for (const i of [1,2,3]) {
+    if (rec[`docket${i}prefix`] !== 'MC') continue;
+    const mc = parseInt(rec[`docket${i}`], 10);
+    if (!wanted.has(mc)) continue;
+    out.push({
+      mc, dot: rec.dot_number || '',
+      name: rec.legal_name || '', dba: rec.dba_name || '',
+      phone: rec.phone || '', cell: rec.cell_phone || '', fax: rec.fax || '', email,
+      status: rec.status_code || '', carship: rec.carship || '', operation: rec.carrier_operation || '',
+      state: rec.phy_state || '', units: rec.power_units || '', trucks: rec.truck_units || '',
+      drivers: rec.total_drivers || '', cdl: rec.total_cdl || '', added: rec.add_date || '',
+      officers: [rec.company_officer_1, rec.company_officer_2].filter(Boolean),
+      phy: [rec.phy_street, rec.phy_city, [rec.phy_state, rec.phy_zip].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+      mail: [rec.carrier_mailing_street, rec.carrier_mailing_city, [rec.carrier_mailing_state, rec.carrier_mailing_zip].filter(Boolean).join(' ')].filter(Boolean).join(', '),
+      mcs150: rec.mcs150_date || '', mileage: rec.mcs150_mileage || '', mileageYear: rec.mcs150_mileage_year || '',
+      safety: rec.safety_rating || '', safetyDate: rec.safety_rating_date || '', hazmat: rec.hm_ind === 'Y',
+      cargo: Object.keys(CARGO).filter(k => rec['crgo_' + k] === 'X')
+        .map(k => k === 'cargoothr' && rec.crgo_cargoothr_desc ? `Other: ${rec.crgo_cargoothr_desc}` : CARGO[k]),
+    });
+  }
+  return out;
+}
+
+const mcDockets = mcs => [...new Set(mcs.flatMap(mc => [licDocket(mc), 'MC' + mc]))];
+const motusCode = s => s === 'Active' ? 'A' : (s === 'Pending' ? 'P' : 'I');
+const rank = c => ({ A: 3, P: 2, I: 1 }[c] || 0);
+
+// Attach operating authority from both FMCSA systems (legacy L&I and Motus) and keep only AUTHORIZED carriers.
+// Strict (no SAFER): if either system has a carrier record that is not active, the carrier is skipped.
+// Lenient (SAFER verifies afterwards): keep if either system says active.
+async function attachAuthority(cands, lenient) {
+  if (!cands.length) return [];
+  const mcs = [...new Set(cands.map(r => r.mc))];
+  const [lic, mo] = await Promise.all([
+    api(DS.lic, { '$select': LIC_FIELDS.join(','), '$where': `docket_number in (${inList(mcs.map(licDocket))})`, '$limit': '5000' }),
+    api(DS.motus, { '$select': 'docket_number,op_auth_type,op_auth_status,min_cov_amount,bipd_file,cargo_req,cargo_file,bond_req,bond_file',
+      '$where': `docket_number in (${inList(mcDockets(mcs))})`, '$limit': '5000' }),
+  ]);
+  const L = new Map(lic.map(l => [parseInt(l.docket_number.slice(2), 10), l]));
+  const M = new Map();
+  for (const m of mo) {
+    const mc = parseInt(m.docket_number.slice(2), 10);
+    const a = M.get(mc) || { carrier: null, broker: null, types: [], ins: null };
+    const st = motusCode(m.op_auth_status), t = m.op_auth_type || '';
+    a.types.push(`${t} — ${m.op_auth_status}`);
+    if (/Broker|Freight Forwarder/i.test(t)) { if (/Broker/i.test(t) && rank(st) > rank(a.broker)) a.broker = st; }
+    else if (/Motor Carrier/i.test(t) && rank(st) > rank(a.carrier)) { a.carrier = st; a.ins = m; }
+    M.set(mc, a);
+  }
+
+  const out = [];
+  for (const r of cands) {
+    const l = L.get(r.mc), m = M.get(r.mc);
+    const licOk = l ? (l.common_stat === 'A' || l.contract_stat === 'A') : null;
+    const motusOk = m?.carrier ? m.carrier === 'A' : null;
+    if (lenient ? !(licOk || motusOk) : (licOk === false || motusOk === false || (licOk == null && motusOk == null))) continue;
+    const mi = m?.ins; // Motus is the current system: prefer its insurance-on-file values
+    out.push({ ...r, auth: {
+      src: [l && 'L&I', m && 'Motus'].filter(Boolean).join(' + '), inMotus: !!m,
+      common: l ? l.common_stat : 'A', contract: l ? l.contract_stat : 'N',
+      broker: (l?.broker_stat === 'A' || m?.broker === 'A') ? 'A' : (l?.broker_stat || m?.broker || 'N'),
+      motusCarrier: m?.carrier || null, motusBroker: m?.broker || null, motusTypes: m?.types || [],
+      pend: l ? { common: l.common_app_pend, contract: l.contract_app_pend, broker: l.broker_app_pend } : {},
+      rev: l ? { common: l.common_rev_pend, contract: l.contract_rev_pend, broker: l.broker_rev_pend } : {},
+      property: l?.property_chk === 'Y', passenger: l?.passenger_chk === 'Y', hhg: l?.hhg_chk === 'Y',
+      privateAuth: l?.private_auth_chk === 'Y', enterprise: l?.enterprise_chk === 'Y',
+      bipdReq: mi ? String(parseFloat(mi.min_cov_amount) / 1000) : l?.min_cov_amount,
+      bipdFile: mi ? String(parseFloat(mi.bipd_file) / 1000) : l?.bipd_file,
+      cargoReq: (mi || l).cargo_req, cargoFile: (mi || l).cargo_file, bondReq: (mi || l).bond_req, bondFile: (mi || l).bond_file,
+    } });
+  }
+  return out;
+}
+
+// Live SAFER check through server.py; keeps only rows SAFER shows as AUTHORIZED FOR Motor Carrier.
+async function fetchSafer(mc) {
+  for (let attempt = 0; ; attempt++) {
+    let res, body = null;
+    try { res = await fetch(`/api/safer?mc=${mc}`); body = await res.json(); }
+    catch (e) { res = null; }
+    if (res && res.ok) return body;
+    const msg = body?.error || (res ? `HTTP ${res.status}` : 'server.py не отвечает');
+    if (attempt >= 4 || /VPN/.test(msg)) throw new Error(msg);
+    await sleep(1000 * 2 ** attempt);
+  }
+}
+async function verifySafer(cands) {
+  const mcs = [...new Set(cands.map(r => r.mc))];
+  const results = new Map();
+  const conc = Math.max(1, Math.min(10, parseInt($('saferConc').value, 10) || 5));
+  let i = 0, done = 0;
+  await Promise.all(Array.from({ length: Math.min(conc, mcs.length) }, async () => {
+    while (i < mcs.length) {
+      const mc = mcs[i++];
+      results.set(mc, await fetchSafer(mc));
+      setStatus(`SAFER: проверено ${++done} из ${mcs.length}…`);
+    }
+  }));
+  const checkedAt = new Date().toISOString();
+  const out = [];
+  for (const r of cands) {
+    const s = results.get(r.mc);
+    const sameDot = !s?.dot || String(parseInt(s.dot, 10)) === String(parseInt(r.dot, 10));
+    if (s?.found && s.authorized && sameDot) out.push({ ...r, safer: { ...s, checkedAt } });
+    else saferRejected++;
+  }
+  return out;
+}
+
+function isBroker(r) { return r.safer ? r.safer.broker : (r.auth?.broker === 'A' || /B/.test(r.carship)); }
+function passesFilters(r) {
+  if ($('skipCarrierBroker').checked && isBroker(r)) return false;
+  if ($('onlyActive').checked && (r.safer ? r.safer.usdotStatus !== 'ACTIVE' : r.status !== 'A')) return false;
+  if ($('onlyPhone').checked && !r.phone && !r.cell) return false;
+  return true;
+}
+function authLabel(a, r) {
+  if (r?.safer) return r.safer.authFor.map(t => t.replace(/ \(Except Household Goods\)/, '').replace(/^Motor Carrier of /, '')).join(' + ');
+  const parts = [];
+  if (a.common === 'A') parts.push('Common');
+  if (a.contract === 'A') parts.push('Contract');
+  if (a.broker === 'A') parts.push('Broker');
+  return parts.join(' + ');
+}
+
+function td(text, cls) { const c = document.createElement('td'); c.textContent = text; if (cls) c.className = cls; return c; }
+function copyCell(text, display) {
+  const c = td(display ?? text, 'copy');
+  if (text) c.title = 'Клик — копировать';
+  c.dataset.copy = text;
+  return c;
+}
+function el(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  Object.assign(e, props);
+  e.append(...kids.filter(k => k != null));
+  return e;
+}
+function pill(text, kind) { return el('span', { className: 'pill ' + kind, textContent: text }); }
+
+function renderRow(r) {
+  const tr = el('tr', { className: 'r' });
+  tr.append(td(`MC-${r.mc}`, 'num'), td(r.dot, 'num'));
+  const name = td(r.name); if (r.dba) name.title = 'DBA: ' + r.dba; tr.append(name);
+  tr.append(copyCell(r.phone, fmtPhone(r.phone)), copyCell(r.cell, fmtPhone(r.cell)), copyCell(r.email));
+  tr.append(el('td', { title: r.safer ? `Проверено на SAFER ${fmtDate(r.safer.checkedAt)}` : 'По файлам FMCSA (без SAFER)' },
+    pill(r.safer ? 'AUTHORIZED ✓ SAFER' : 'AUTHORIZED', r.safer ? 'a' : 'w'),
+    el('span', { className: 'muted', textContent: ' ' + authLabel(r.auth, r) })));
+  tr.append(td(r.state), td(r.units, 'num'), td(fmtDate(r.added), 'num'));
+  const btn = el('button', { className: 'small', textContent: 'Доп. информация ▾' });
+  btn.onclick = () => toggleDetail(tr, r, btn);
+  tr.append(el('td', {}, btn));
+  return tr;
+}
+
+function kv(pairs) {
+  const dl = el('dl', { className: 'kv' });
+  for (const [k, v] of pairs) {
+    if (v == null || v === '') continue;
+    dl.append(el('dt', { textContent: k }), el('dd', {}, v));
+  }
+  return dl;
+}
+function box(title, ...content) { return el('div', { className: 'dbox' }, el('h4', { textContent: title }), ...content); }
+const STAT = { A: ['ACTIVE', 'a'], I: ['INACTIVE', 'i'], P: ['PENDING', 'w'], N: ['NONE', 'i'] };
+function statPill(code) { const [t, k] = STAT[code] || [code || '—', 'i']; return pill(t, k); }
+const yn = v => v === 'Y' ? 'Требуется' : (v === 'N' ? 'Не требуется' : (v || '—'));
+const onFile = v => v === 'Y' ? 'Есть' : (v === 'N' ? 'Нет' : (v || '—'));
+
+async function toggleDetail(tr, r, btn) {
+  const next = tr.nextElementSibling;
+  if (next && next.classList.contains('detail')) { next.remove(); btn.textContent = 'Доп. информация ▾'; return; }
+  btn.textContent = 'Скрыть ▴';
+  const cell = el('td', { colSpan: 11 });
+  const dtr = el('tr', { className: 'detail' }, cell);
+  tr.after(dtr);
+
+  const a = r.auth;
+  const insBox = box('Страховые полисы (активные / ожидающие)', el('div', { className: 'muted', textContent: 'Загрузка…' }));
+  const safer = el('a', { href: saferAvailable ? `/safer?dot=${encodeURIComponent(r.dot)}`
+    : `https://safer.fmcsa.dot.gov/query.asp?searchtype=ANY&query_type=queryCarrierSnapshot&query_param=USDOT&query_string=${encodeURIComponent(r.dot)}`,
+    target: '_blank', rel: 'noopener', textContent: 'Открыть на SAFER' });
+  const s = r.safer;
+  cell.append(el('div', { className: 'dgrid' },
+    s ? box('SAFER (live)',
+      kv([
+        ['Operating Authority', el('span', {}, pill(s.authStatus.replace(/:$/, ''), s.authorized ? 'a' : 'i'), ' ' + s.authFor.join(', '))],
+        ['USDOT status', pill(s.usdotStatus || '—', s.usdotStatus === 'ACTIVE' ? 'a' : 'i')],
+        ['Out of Service', s.oosDate],
+        ['Entity type', s.entityType],
+        ['MC/MX/FF', s.mcNumbers.join(', ')],
+        ['Телефон (SAFER)', s.phone],
+        ['Адрес (SAFER)', s.address],
+        ['MCS-150', s.mcs150Date],
+        ['Данные SAFER на', s.asOf],
+        ['Проверено', fmtDate(s.checkedAt)],
+      ])) : null,
+    box('Operating Authority (файлы FMCSA)',
+      kv([
+        ['Common (L&I)', a.src.includes('L&I') ? statPill(a.common) : null],
+        ['Contract (L&I)', a.src.includes('L&I') ? statPill(a.contract) : null],
+        ['Carrier (Motus)', a.motusCarrier ? statPill(a.motusCarrier) : null],
+        ['Broker', statPill(a.broker)],
+        ['Motus authority', (a.motusTypes || []).join('; ')],
+        ['Заявка в ожидании', ['common','contract','broker'].filter(k => a.pend?.[k] === 'Y').join(', ') || 'нет'],
+        ['Отзыв в ожидании', ['common','contract','broker'].filter(k => a.rev?.[k] === 'Y').join(', ') || 'нет'],
+        ['Тип', [a.property && 'Property', a.passenger && 'Passenger', a.hhg && 'Household Goods',
+          a.privateAuth && 'Private', a.enterprise && 'Enterprise'].filter(Boolean).join(', ')],
+        ['Источник', a.src],
+        ['Проверка', el('span', {}, safer, saferAvailable ? null : el('span', { className: 'muted', textContent: ' (нужен US VPN)' }))],
+      ])),
+    box('Страховка на файле (FMCSA)',
+      kv([
+        ['BIPD требуется', thousands(a.bipdReq)],
+        ['BIPD на файле', thousands(a.bipdFile)],
+        ['Cargo', `${yn(a.cargoReq)} / на файле: ${onFile(a.cargoFile)}`],
+        ['Bond', `${yn(a.bondReq)} / на файле: ${onFile(a.bondFile)}`],
+      ])),
+    box('Компания',
+      kv([
+        ['Legal name', r.name], ['DBA', r.dba],
+        ['Руководители', r.officers.join('; ')],
+        ['Адрес', r.phy], ['Почтовый адрес', r.mail !== r.phy ? r.mail : ''],
+        ['Факс', fmtPhone(r.fax)],
+        ['USDOT status', r.status ? statPill(r.status) : null],
+        ['Операции', { A: 'Interstate', B: 'Intrastate Hazmat', C: 'Intrastate Non-Hazmat' }[r.operation] || r.operation],
+      ])),
+    box('Парк и безопасность',
+      kv([
+        ['Power units', r.units], ['Trucks', r.trucks], ['Водители', r.drivers], ['CDL', r.cdl],
+        ['Пробег', r.mileage && r.mileage !== '0' ? `${Number(r.mileage).toLocaleString('en-US')} mi (${r.mileageYear})` : ''],
+        ['MCS-150 обновлён', fmtDate(r.mcs150)],
+        ['Safety rating', ({ S: 'Satisfactory', C: 'Conditional', U: 'Unsatisfactory' }[r.safety] || 'Not rated') + (r.safetyDate ? ` (${fmtDate(r.safetyDate)})` : '')],
+        ['Hazmat', r.hazmat ? 'Да' : 'Нет'],
+      ])),
+    box('Грузы', el('div', { textContent: r.cargo.join(', ') || '—' })),
+    insBox,
+  ));
+
+  try {
+    insBox.lastChild.replaceWith(renderInsurance(await loadInsurance(r.mc)));
+  } catch (e) {
+    insBox.lastChild.textContent = 'Не удалось загрузить: ' + e.message;
+  }
+}
+
+const INS_TYPE = { '1': 'BIPD', '2': 'Cargo', '3': 'Bond', '4': 'Trust Fund' };
+const motusAmt = v => parseFloat(v) > 0 ? money(parseFloat(v)) : '';
+
+// Motus (current system) first; legacy L&I only if Motus has nothing for this MC.
+async function loadInsurance(mc) {
+  if (insCache.has(mc)) return insCache.get(mc);
+  const where = `docket_number in (${inList(mcDockets([mc]))})`;
+  const [cur, hist] = await Promise.all([
+    api(DS.motusIns, { '$where': where, '$order': 'effective_date DESC', '$limit': '100' }),
+    api(DS.motusInsHist, { '$where': `${where} AND cancl_effective_date IS NOT NULL AND (ins_type_desc IS NULL OR ins_type_desc not like '%CANCELLATION%')`,
+      '$order': 'cancl_effective_date DESC', '$limit': '15' }),
+  ]);
+  let res = {
+    src: 'Motus',
+    current: cur.map(p => ({
+      type: (INS_TYPE[p.ins_type_code] || '') + (p.ins_form_code ? ` (${p.ins_form_code})` : ''),
+      company: p.insurance_company_name, policy: p.policy_no, amount: motusAmt(p.max_cov_amount) || '—',
+      underlying: motusAmt(p.underl_lim_amount), effective: fmtDate(p.effective_date), cancel: '', posted: fmtDate(p.trans_date),
+    })),
+    past: hist.map(p => ({
+      type: p.ins_type_desc || INS_TYPE[p.ins_type_code] || '', company: p.insurance_company_name, policy: p.policy_no,
+      amount: motusAmt(p.max_cov_amount) || '—', underlying: motusAmt(p.underl_lim_amount),
+      effective: fmtDate(p.effective_date), cancel: fmtDate(p.cancl_effective_date), posted: p.filing_status_reason || '',
+    })),
+  };
+  if (!res.current.length && !res.past.length) {
+    const old = await api(DS.ins, { '$where': where, '$limit': '100' });
+    res = { src: 'L&I', past: [], current: old.map(p => ({
+      type: p.mod_col_1 || p.ins_form_code, company: p.name_company, policy: p.policy_no,
+      amount: thousands(p.max_cov_amount), underlying: parseFloat(p.underl_lim_amount) > 0 ? thousands(p.underl_lim_amount) : '',
+      effective: fmtDate(p.effective_date), cancel: fmtDate(p.cancl_effective_date), posted: fmtDate(p.trans_date),
+    })) };
+  }
+  insCache.set(mc, res);
+  return res;
+}
+function insTable(pols, lastCol) {
+  const head = el('tr', {}, ...['Тип', 'Страховая компания', 'Полис', 'Покрытие', 'Действует с', 'Отмена с', lastCol].map(h => el('th', { textContent: h })));
+  const body = pols.map(p => el('tr', {},
+    el('td', { textContent: p.type || '—' }), el('td', { textContent: p.company || '—' }), el('td', { textContent: p.policy || '—' }),
+    el('td', { textContent: p.amount + (p.underlying ? ` (underlying ${p.underlying})` : '') }),
+    el('td', { textContent: p.effective }), el('td', { textContent: p.cancel }), el('td', { textContent: p.posted })));
+  return el('table', { className: 'ins' }, el('thead', {}, head), el('tbody', {}, ...body));
+}
+function renderInsurance(res) {
+  const note = text => el('div', { className: 'muted', style: 'margin-top:4px;font-size:12px', textContent: text });
+  const wrap = el('div', {});
+  wrap.append(res.current.length ? insTable(res.current, 'Подан') : el('div', { className: 'muted', textContent: 'Активных полисов нет.' }));
+  wrap.append(note(res.src === 'Motus' ? 'Источник: Motus (текущая система FMCSA).'
+    : 'Источник: старая база L&I — новые полисы туда не поступают с мая 2026, данные могут быть устаревшими.'));
+  if (res.past.length) {
+    wrap.append(el('details', { style: 'margin-top:8px' },
+      el('summary', { textContent: `Прошлые полисы (${res.past.length})`, style: 'cursor:pointer;font-size:12px' }),
+      insTable(res.past, 'Причина')));
+  }
+  return wrap;
+}
+
+function renderAll() {
+  const tb = $('tbody'); tb.textContent = '';
+  const frag = document.createDocumentFragment();
+  rows.filter(passesFilters).forEach(r => frag.append(renderRow(r)));
+  tb.append(frag);
+  updateStats();
+}
+function updateStats() {
+  const vis = rows.filter(passesFilters);
+  $('sChecked').textContent = checked.toLocaleString('ru');
+  $('sFound').textContent = vis.length.toLocaleString('ru');
+  $('sPhone').textContent = vis.filter(r => r.phone || r.cell).length.toLocaleString('ru');
+  $('sRejected').textContent = saferRejected.toLocaleString('ru');
+  $('empty').style.display = vis.length ? 'none' : '';
+}
+
+async function run() {
+  const start = parseInt($('startMc').value, 10);
+  if (!(start >= 1)) { setStatus('Введите корректный начальный MC.', true); return; }
+  const endVal = parseInt($('endMc').value, 10);
+  const end = endVal >= 1 ? endVal : Infinity;
+  const batchSize = Math.max(1, Math.min(200, parseInt($('batch').value, 10) || 100));
+  const useSafer = $('useSafer').checked && saferAvailable;
+  if ($('useSafer').checked && !saferAvailable &&
+      !confirm('Проверка SAFER недоступна: страница открыта не через server.py. Продолжить без SAFER (только файлы FMCSA)?')) return;
+
+  running = true;
+  $('btnStart').disabled = true; $('btnStop').disabled = false;
+  nextMc = start;
+  let emptyStreak = 0, endMsg = null;
+  const t0 = performance.now(); let checkedThisRun = 0;
+
+  while (running && nextMc <= end) {
+    const to = Math.min(end, nextMc + batchSize - 1);
+    const mcs = []; for (let n = nextMc; n <= to; n++) mcs.push(n);
+    $('sCur').textContent = `MC-${nextMc} … MC-${to}`;
+    setStatus(`Поиск MC ${nextMc}–${to}…`);
+
+    let data, found;
+    try {
+      const list = inList(mcs);
+      const dockets = [1,2,3].map(i => `(docket${i}prefix='MC' AND docket${i} in (${list}))`).join(' OR ');
+      data = await api(DS.census, { '$select': CENSUS_FIELDS.join(','), '$limit': '5000',
+        '$where': `(${dockets}) AND email_address IS NOT NULL AND carship like '%C%'` });
+      const wanted = new Set(mcs);
+      const cands = data.flatMap(rec => toRows(rec, wanted)).filter(r => !seen.has(r.mc + '|' + r.dot));
+      found = await attachAuthority(cands, useSafer);
+      if (useSafer && found.length) found = await verifySafer(found);
+      found.sort((a, b) => a.mc - b.mc);
+    } catch (e) {
+      endMsg = [`Остановлено на MC ${nextMc}: ${e.message}. Нажмите «Старт», чтобы продолжить.`, true];
+      break;
+    }
+    found.forEach(r => seen.add(r.mc + '|' + r.dot));
+    rows.push(...found);
+
+    const frag = document.createDocumentFragment();
+    found.filter(passesFilters).forEach(r => frag.append(renderRow(r)));
+    $('tbody').append(frag);
+
+    checked += mcs.length; checkedThisRun += mcs.length;
+    nextMc = to + 1;
+    $('startMc').value = nextMc;
+    $('sRate').textContent = Math.round(checkedThisRun / ((performance.now() - t0) / 1000));
+    updateStats(); save();
+
+    emptyStreak = data.length ? 0 : emptyStreak + 1;
+    if (emptyStreak >= MAX_EMPTY_BATCHES) {
+      endMsg = [`${MAX_EMPTY_BATCHES * batchSize} MC подряд без записей — похоже, это конец диапазона. Остановлено на MC ${nextMc}.`];
+      break;
+    }
+    const delay = parseInt($('delay').value, 10) || 0;
+    if (delay) await sleep(delay);
+  }
+  if (!endMsg) endMsg = [nextMc > end ? `Готово: дошли до MC ${end}.` : `Пауза. Следующий MC: ${nextMc}.`];
+  setStatus(...endMsg);
+  running = false;
+  $('btnStart').disabled = false; $('btnStop').disabled = true;
+  save();
+}
+
+function csvEscape(v) { v = String(v ?? ''); return /[",\n;]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
+function exportCsv() {
+  const vis = rows.filter(passesFilters);
+  if (!vis.length) { toast('Нет данных'); return; }
+  const head = ['MC','USDOT','Legal Name','DBA','Phone','Cell Phone','Fax','Email','Authority','SAFER Verified','USDOT Status','Officers',
+    'Address','State','Power Units','Drivers','BIPD Required','BIPD On File','Cargo On File','Bond On File','Cargo Types','Safety Rating','MCS-150 Date','Added'];
+  const lines = [head.join(',')].concat(vis.map(r => [
+    `MC-${r.mc}`, r.dot, r.name, r.dba, fmtPhone(r.phone), fmtPhone(r.cell), fmtPhone(r.fax), r.email,
+    authLabel(r.auth, r), r.safer ? fmtDate(r.safer.checkedAt) : 'no', r.safer?.usdotStatus || r.status, r.officers.join('; '), r.phy, r.state, r.units, r.drivers,
+    thousands(r.auth.bipdReq), thousands(r.auth.bipdFile), onFile(r.auth.cargoFile), onFile(r.auth.bondFile),
+    r.cargo.join('; '), r.safety, fmtDate(r.mcs150), fmtDate(r.added),
+  ].map(csvEscape).join(',')));
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  const mcs = vis.map(r => r.mc);
+  a.href = URL.createObjectURL(blob);
+  a.download = `fmcsa_MC${Math.min(...mcs)}-${Math.max(...mcs)}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+async function copyText(text, what) {
+  if (!text) { toast('Нечего копировать'); return; }
+  try { await navigator.clipboard.writeText(text); toast(`Скопировано: ${what}`); }
+  catch (e) { toast('Не удалось скопировать'); }
+}
+
+$('btnStart').onclick = run;
+$('btnStop').onclick = () => { running = false; $('btnStop').disabled = true; };
+$('btnCsv').onclick = exportCsv;
+$('btnEmails').onclick = () => {
+  const list = [...new Set(rows.filter(passesFilters).map(r => r.email).filter(Boolean))];
+  copyText(list.join('\n'), `${list.length} email`);
+};
+$('btnPhones').onclick = () => {
+  const list = [...new Set(rows.filter(passesFilters).flatMap(r => [r.phone, r.cell]).filter(Boolean).map(fmtPhone))];
+  copyText(list.join('\n'), `${list.length} телефонов`);
+};
+$('btnClear').onclick = () => {
+  if (running || !confirm('Удалить все найденные записи?')) return;
+  rows = []; seen = new Set(); checked = 0; nextMc = null; saferRejected = 0;
+  $('sCur').textContent = '—'; $('sRate').textContent = '0';
+  renderAll(); save(); setStatus('Очищено.');
+};
+for (const id of FILTER_FIELDS) $(id).onchange = () => { renderAll(); save(); };
+$('useSafer').onchange = save;
+$('tbody').addEventListener('click', e => {
+  const c = e.target.closest('td.copy');
+  if (c && c.dataset.copy) copyText(c.dataset.copy, c.dataset.copy);
+});
+
+load();
+renderAll();
+(async () => {
+  try { saferAvailable = location.protocol.startsWith('http') && (await fetch('/api/ping')).ok; } catch (e) {}
+  $('saferState').textContent = saferAvailable ? '✓ server.py подключён'
+    : '✗ недоступно — запустите server.py и откройте http://127.0.0.1:8765';
+})();
+</script>
+</body>
+</html>

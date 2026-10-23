@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: mc-scanner
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: echo "no dependencies"
+    startCommand: python3 server.py
+    healthCheckPath: /api/ping
