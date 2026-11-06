@@ -1,9 +1,16 @@
 services:
   - type: web
     name: mc-scanner
-    runtime: python
+    runtime: node
     plan: free
     region: oregon
-    buildCommand: echo "no dependencies"
-    startCommand: python3 server.py
-    healthCheckPath: /api/ping
+    buildCommand: npm run setup && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SAFER_RPS
+        value: "1.5"
+      - key: SOCRATA_APP_TOKEN
+        sync: false

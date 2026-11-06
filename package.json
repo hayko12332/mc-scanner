@@ -1,0 +1,16 @@
+{
+  "name": "mc-scanner",
+  "private": true,
+  "description": "Continuous FMCSA carrier lookup by MC number with live SAFER verification",
+  "scripts": {
+    "setup": "npm ci --prefix backend && npm ci --prefix frontend",
+    "build": "npm run build --prefix frontend && npm run build --prefix backend",
+    "start": "npm run start:prod --prefix backend",
+    "dev:backend": "npm run start:dev --prefix backend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "test": "npm test --prefix backend"
+  },
+  "engines": {
+    "node": ">=22.12"
+  }
+}
