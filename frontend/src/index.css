@@ -146,6 +146,24 @@ button.icon { padding: 0 5px; line-height: 18px; color: var(--muted); }
 .footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
 .in-telegram .wrap { padding-top: 10px; }
 
+.coming-soon {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 4px 0 12px; padding: 9px 14px;
+  background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px;
+  font-size: 13px;
+}
+.coming-soon .badge {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent);
+}
+.coming-soon a { font-weight: 600; white-space: nowrap; }
+
+.feedback { display: flex; flex-direction: column; gap: 12px; max-width: 720px; }
+.feedback .field { font-size: 13px; flex: none; }
+.feedback textarea, .feedback .field input {
+  font: inherit; font-size: 14px; color: var(--text); background: var(--bg); width: 100%;
+  border: 1px solid var(--border); border-radius: 7px; padding: 8px 10px; resize: vertical;
+}
+.ok-text { color: var(--ok); margin: 0; }
+
 @media (max-width: 600px) {
   .field input { width: 100%; }
   .field { flex: 1 1 140px; }

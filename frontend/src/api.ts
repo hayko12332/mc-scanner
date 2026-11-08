@@ -14,10 +14,10 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string, signal?: AbortSignal): Promise<T> {
+async function get<T>(path: string, signal?: AbortSignal, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`/api${path}`, { signal })
+    res = await fetch(`/api${path}`, { ...init, signal })
   } catch (e) {
     if (signal?.aborted) throw e
     throw new ApiError('Backend is not reachable', 0, null)
@@ -39,4 +39,10 @@ export const api = {
     get<LookupResult>(`/lookup?${new URLSearchParams({ q, type })}`, signal),
   registry: (state: string, name: string, signal?: AbortSignal) =>
     get<RegistryResult>(`/registry?${new URLSearchParams({ state, name })}`, signal),
+  feedback: (body: { message: string; contact: string; page: string; visitorId: string; tgInitData: string }) =>
+    get<null>('/feedback', undefined, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
 }

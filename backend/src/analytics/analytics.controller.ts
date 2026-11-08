@@ -1,6 +1,6 @@
-import { Body, Controller, HttpCode, Post, Req } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpException, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import type { EventBatch } from './analytics.types.js';
+import type { EventBatch, FeedbackInput } from './analytics.types.js';
 import { AnalyticsService, type RequestContext } from './analytics.service.js';
 import { RateLimiter } from './rate-limiter.js';
 
@@ -33,5 +33,24 @@ export class AnalyticsController {
     const count = Array.isArray(batch?.events) ? Math.min(batch.events.length, 50) : 0;
     if (!count || !this.limiter.take(ctx.ip, count)) return;
     await this.analytics.recordBatch(batch, ctx);
+  }
+}
+
+@Controller('feedback')
+export class FeedbackController {
+  // A person writes a suggestion or two; this stops a script from filling the table.
+  private readonly limiter = new RateLimiter(5, 10 * 60_000);
+
+  constructor(private readonly analytics: AnalyticsService) {}
+
+  /** POST /api/feedback — "what would you like to see?" */
+  @Post()
+  @HttpCode(204)
+  async create(@Body() input: FeedbackInput, @Req() req: Request): Promise<void> {
+    const ctx = requestContext(req);
+    if (!this.limiter.take(ctx.ip)) {
+      throw new HttpException('Thanks! You have sent several suggestions already — please try again later.', 429);
+    }
+    await this.analytics.recordFeedback(input, ctx);
   }
 }

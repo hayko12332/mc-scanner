@@ -28,6 +28,8 @@ function storedId(storage: () => Storage, key: string): string {
 
 const visitorId = storedId(() => localStorage, 'mcScanner.visitor')
 const sessionId = storedId(() => sessionStorage, 'mcScanner.session')
+/** Anonymous id of this browser, also attached to suggestions. */
+export const currentVisitorId = () => visitorId
 let queue: QueuedEvent[] = []
 let timer: ReturnType<typeof setTimeout> | undefined
 

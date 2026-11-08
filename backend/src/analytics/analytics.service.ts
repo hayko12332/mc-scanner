@@ -1,7 +1,7 @@
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException, type OnModuleDestroy } from '@nestjs/common';
 import { config } from '../config.js';
 import { createStore, type AnalyticsStore } from './analytics.store.js';
-import type { EventBatch, StoredEvent, TelegramUser } from './analytics.types.js';
+import type { EventBatch, FeedbackInput, StoredEvent, TelegramUser } from './analytics.types.js';
 import { verifyInitData } from './telegram-auth.js';
 
 /** Request facts the server adds to every event. */
@@ -15,6 +15,7 @@ const EVENT_NAME = /^[a-z][a-z0-9_]{0,39}$/;
 const ID = /^[A-Za-z0-9:_-]{6,64}$/;
 const MAX_BATCH = 50;
 const MAX_PROPS_JSON = 2000;
+const MAX_FEEDBACK = 3000;
 
 const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.slice(0, n) : '');
 
@@ -57,6 +58,37 @@ export class AnalyticsService implements OnModuleDestroy {
       at: new Date(), visitorId: id, sessionId: id, path: '', referrer: '',
       ctx: { ip: '', country: '', userAgent: '' }, tg,
     })]);
+  }
+
+  /** Store a suggestion. Unlike analytics, a failure is reported so the user knows it was not saved. */
+  async recordFeedback(input: FeedbackInput, ctx: RequestContext): Promise<void> {
+    const message = clip(input?.message, MAX_FEEDBACK).trim();
+    if (message.length < 3) throw new BadRequestException('Please write a few words.');
+    const tg = verifyInitData(clip(input.tgInitData, 4096), config.telegramBotToken);
+    const visitorId = ID.test(input.visitorId ?? '') ? input.visitorId! : '';
+    try {
+      await this.store.insertFeedback({
+        at: new Date().toISOString(),
+        message,
+        contact: clip(input.contact, 200).trim(),
+        page: clip(input.page, 300),
+        visitorId,
+        ip: ctx.ip,
+        country: ctx.country,
+        userAgent: clip(ctx.userAgent, 400),
+        tgUserId: tg?.id ?? null,
+        tgUsername: tg?.username ?? '',
+        tgName: tg?.name ?? '',
+      });
+    } catch (e) {
+      this.logger.error(`Could not store feedback: ${(e as Error).message}`);
+      throw new ServiceUnavailableException('Could not save your suggestion right now, please try again later.');
+    }
+    if (visitorId) {
+      await this.save([this.event('feedback_sent', { length: message.length }, {
+        at: new Date(), visitorId, sessionId: visitorId, path: clip(input.page, 300), referrer: '', ctx, tg,
+      })]);
+    }
   }
 
   onModuleDestroy() {

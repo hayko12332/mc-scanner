@@ -21,6 +21,30 @@ export interface StoredEvent {
   tgName: string;
 }
 
+/** A suggestion left on the site ("what would you like to see?"). */
+export interface StoredFeedback {
+  at: string;
+  message: string;
+  /** Optional email / Telegram handle so we can reply. */
+  contact: string;
+  page: string;
+  visitorId: string;
+  ip: string;
+  country: string;
+  userAgent: string;
+  tgUserId: number | null;
+  tgUsername: string;
+  tgName: string;
+}
+
+export interface FeedbackInput {
+  message: string;
+  contact?: string;
+  page?: string;
+  visitorId?: string;
+  tgInitData?: string;
+}
+
 /** What the browser sends: a batch of events for one visitor and session. */
 export interface EventBatch {
   visitorId: string;

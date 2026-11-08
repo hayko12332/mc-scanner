@@ -1,10 +1,10 @@
 import { Module } from '@nestjs/common';
-import { AnalyticsController } from './analytics.controller.js';
+import { AnalyticsController, FeedbackController } from './analytics.controller.js';
 import { AnalyticsService } from './analytics.service.js';
 
-/** Records what users do on the site (and in the Telegram bot) into the analytics_events table. */
+/** Records what users do on the site (and in the Telegram bot), and their suggestions. */
 @Module({
-  controllers: [AnalyticsController],
+  controllers: [AnalyticsController, FeedbackController],
   providers: [AnalyticsService],
   exports: [AnalyticsService],
 })

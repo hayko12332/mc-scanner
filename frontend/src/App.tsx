@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import { useToast } from './hooks/useToast'
+import { ComingSoon } from './components/ComingSoon'
 import { track } from './lib/analytics'
+import { FeedbackPage } from './pages/FeedbackPage'
 import { LookupPage } from './pages/LookupPage'
 import { ScannerPage } from './pages/ScannerPage'
 
@@ -24,7 +26,7 @@ function useHash() {
 
 export default function App() {
   const { hash, lastLookup } = useHash()
-  const page = isLookup(hash) ? 'lookup' : 'scanner'
+  const page = isLookup(hash) ? 'lookup' : hash.startsWith('#/feedback') ? 'feedback' : 'scanner'
   const toast = useToast()
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
 
@@ -53,8 +55,10 @@ export default function App() {
         <nav className="tabs">
           <a href="#/" className={page === 'scanner' ? 'active' : ''}>Scanner</a>
           <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}>Lookup</a>
+          <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}>Suggestions</a>
         </nav>
       </header>
+      <ComingSoon />
 
       {/* Scanner and Lookup stay mounted so a running scan keeps going while you look something up. */}
       <div hidden={page !== 'scanner'}>
@@ -63,6 +67,7 @@ export default function App() {
       <div hidden={page !== 'lookup'}>
         <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
       </div>
+      {page === 'feedback' && <FeedbackPage />}
 
       <footer className="footer">
         Free to use. Data: FMCSA open data and SAFER. We record anonymous usage (pages opened, searches) to improve
