@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { AnalyticsModule } from './analytics/analytics.module.js';
 import { FmcsaModule } from './fmcsa/fmcsa.module.js';
 import { HealthController } from './health.controller.js';
+import { KeepAliveService } from './keep-alive.service.js';
 import { RegistryModule } from './registry/registry.module.js';
 import { SaferModule } from './safer/safer.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
@@ -22,5 +23,6 @@ import { TelegramModule } from './telegram/telegram.module.js';
     TelegramModule,
   ],
   controllers: [HealthController],
+  providers: [KeepAliveService],
 })
 export class AppModule {}

@@ -18,4 +18,8 @@ export const config = {
   telegramBotToken: env('TELEGRAM_BOT_TOKEN'),
   // Public https address of the site; Render sets RENDER_EXTERNAL_URL automatically.
   publicUrl: (env('PUBLIC_URL') || env('RENDER_EXTERNAL_URL')).replace(/\/+$/, ''),
+  // Render's free plan puts the service to sleep after 15 idle minutes and the next visitor (or Telegram
+  // Mini App) waits ~1 minute for it to wake up. Pinging our own public URL keeps it awake; one service
+  // running all month fits in the free 750 instance-hours. On by default on Render, KEEP_ALIVE=0 turns it off.
+  keepAlive: env('KEEP_ALIVE') ? env('KEEP_ALIVE') !== '0' : env('RENDER') === 'true',
 };

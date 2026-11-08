@@ -49,4 +49,5 @@ Telegram Mini App. Needs a public https address: `RENDER_EXTERNAL_URL` on Render
 ## Environment
 
 `PORT`, `SAFER_RPS` (default 1.5), `SOCRATA_APP_TOKEN` (optional), `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`,
-`PUBLIC_URL` (optional).
+`PUBLIC_URL` (optional), `KEEP_ALIVE` (on by default on Render: pings the site every 10 minutes so the free
+instance doesn't fall asleep; `0` turns it off).

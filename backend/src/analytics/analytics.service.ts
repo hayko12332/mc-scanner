@@ -61,10 +61,11 @@ export class AnalyticsService implements OnModuleDestroy {
   }
 
   /** Store a suggestion. Unlike analytics, a failure is reported so the user knows it was not saved. */
-  async recordFeedback(input: FeedbackInput, ctx: RequestContext): Promise<void> {
+  async recordFeedback(input: FeedbackInput, ctx: RequestContext, botUser?: TelegramUser): Promise<void> {
     const message = clip(input?.message, MAX_FEEDBACK).trim();
     if (message.length < 3) throw new BadRequestException('Please write a few words.');
-    const tg = verifyInitData(clip(input.tgInitData, 4096), config.telegramBotToken);
+    // From the bot the Telegram user is known for sure; from the site it comes from signed Mini App data.
+    const tg = botUser ?? verifyInitData(clip(input.tgInitData, 4096), config.telegramBotToken);
     const visitorId = ID.test(input.visitorId ?? '') ? input.visitorId! : '';
     try {
       await this.store.insertFeedback({

@@ -14,7 +14,7 @@ interface SavedState extends ScanProgress {
 }
 
 const DEFAULT_SETTINGS: ScanSettings = {
-  startMc: '1',
+  startMc: '1000000',
   endMc: '',
   batchSize: '100',
   delayMs: '300',
