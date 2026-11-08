@@ -102,7 +102,57 @@ export interface SaferRecord {
 }
 export type SaferSnapshot = SaferRecord | { found: false }
 
+export type SaferChecked = SaferRecord & { checkedAt: string }
+
 /** A carrier kept by the scanner, with the live SAFER result when it was verified. */
 export interface ScannedCarrier extends Carrier {
-  safer?: SaferRecord & { checkedAt: string }
+  safer?: SaferChecked
+}
+
+/** A company found by individual lookup: may have no MC, no authority record, or be a broker. */
+export interface CarrierProfile extends Omit<Carrier, 'mc' | 'authority'> {
+  mc: number | null
+  mcNumbers: number[]
+  authority: Authority | null
+}
+
+/** Anything the details panel can show: a scanned carrier or a looked-up profile. */
+export type DetailsCarrier = Omit<Carrier, 'mc' | 'authority'> & {
+  mc: number | null
+  mcNumbers?: number[]
+  authority: Authority | null
+  safer?: SaferChecked
+}
+
+export type LookupKind = 'mc' | 'dot' | 'email' | 'phone'
+export type LookupType = 'auto' | LookupKind
+
+export interface LookupResult {
+  query: string
+  kinds: LookupKind[]
+  truncated: boolean
+  profiles: CarrierProfile[]
+}
+
+export interface StateEntity {
+  name: string
+  id: string
+  status: string
+  active: boolean | null
+  type: string
+  formed: string | null
+  address: string
+  people: string[]
+  email: string
+  detailsUrl: string
+  exact: boolean
+}
+
+export interface RegistryResult {
+  state: string
+  name: string
+  supported: boolean
+  source: string
+  truncated: boolean
+  entities: StateEntity[]
 }

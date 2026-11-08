@@ -14,3 +14,10 @@ services:
         value: "1.5"
       - key: SOCRATA_APP_TOKEN
         sync: false
+      # Postgres connection string for usage analytics (e.g. a free Neon database).
+      # Without it, analytics go to a local file that Render wipes on every deploy.
+      - key: DATABASE_URL
+        sync: false
+      # Telegram bot token from @BotFather; the bot opens this site as a Mini App.
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false

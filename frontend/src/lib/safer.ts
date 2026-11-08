@@ -13,7 +13,7 @@ async function countdown(seconds: number, message: string, signal: AbortSignal, 
 }
 
 /** One SAFER lookup; waits out rate-limit pauses for as long as it takes, retries other errors a few times. */
-async function checkSafer(mc: number, signal: AbortSignal, onStatus: (text: string) => void): Promise<SaferSnapshot> {
+export async function checkSafer(mc: number, signal: AbortSignal, onStatus: (text: string) => void): Promise<SaferSnapshot> {
   for (let attempt = 0; ; attempt++) {
     try {
       return await api.safer(mc, signal)

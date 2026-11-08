@@ -16,8 +16,9 @@ export const MOTUS_FIELDS = [
 /**
  * strict: skip a carrier if either system has a non-active carrier record (no SAFER check follows).
  * lenient: keep it if either system says active; SAFER makes the final call afterwards.
+ * any: keep every MC that has an authority record (individual lookup shows inactive ones too).
  */
-export type AuthorityMode = 'strict' | 'lenient';
+export type AuthorityMode = 'strict' | 'lenient' | 'any';
 
 interface MotusSummary {
   carrier: AuthorityCode | null;
@@ -56,9 +57,11 @@ export function buildAuthority(legacy: Row | undefined, motus: MotusSummary | un
   const legacyOk = legacy ? legacy.common_stat === 'A' || legacy.contract_stat === 'A' : null;
   const motusOk = motus?.carrier ? motus.carrier === 'A' : null;
   const keep =
-    mode === 'lenient'
-      ? legacyOk === true || motusOk === true
-      : legacyOk !== false && motusOk !== false && (legacyOk != null || motusOk != null);
+    mode === 'any'
+      ? !!(legacy || motus)
+      : mode === 'lenient'
+        ? legacyOk === true || motusOk === true
+        : legacyOk !== false && motusOk !== false && (legacyOk != null || motusOk != null);
   if (!keep) return null;
 
   const pending = (suffix: 'app_pend' | 'rev_pend') =>

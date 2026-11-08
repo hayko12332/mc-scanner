@@ -1,5 +1,5 @@
 import type { Carrier } from './fmcsa.types.js';
-import { toIsoDate, toNumber } from './normalize.js';
+import { joinAddress, toIsoDate, toNumber } from './normalize.js';
 import type { Row } from './socrata.client.js';
 
 const CARGO: Record<string, string> = {
@@ -47,51 +47,55 @@ export const CENSUS_FIELDS = [
   'docket1prefix', 'docket1', 'docket2prefix', 'docket2', 'docket3prefix', 'docket3',
 ];
 
-const joinAddress = (street?: string, city?: string, state?: string, zip?: string) =>
-  [street, city, [state, zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+/** MC numbers on a census record (it has up to 3 dockets: MC, MX, FF). */
+export function mcDockets(rec: Row): number[] {
+  return [1, 2, 3]
+    .filter((i) => rec[`docket${i}prefix`] === 'MC')
+    .map((i) => parseInt(rec[`docket${i}`] ?? '', 10))
+    .filter((mc) => Number.isFinite(mc));
+}
 
-/** One census record -> one carrier per requested MC it carries (a record has up to 3 dockets). */
+/** Company fields of a census record (everything except the MC number and authority). */
+export function censusCompany(rec: Row): Omit<Carrier, 'mc' | 'authority'> {
+  return {
+    dot: rec.dot_number ?? '',
+    legalName: rec.legal_name ?? '',
+    dbaName: rec.dba_name ?? '',
+    phone: rec.phone ?? '',
+    cellPhone: rec.cell_phone ?? '',
+    fax: rec.fax ?? '',
+    email: (rec.email_address ?? '').trim().toLowerCase(),
+    usdotStatus: rec.status_code ?? '',
+    entityTypes: rec.carship ?? '',
+    operation: OPERATION[rec.carrier_operation ?? ''] ?? rec.carrier_operation ?? '',
+    state: rec.phy_state ?? '',
+    powerUnits: toNumber(rec.power_units),
+    trucks: toNumber(rec.truck_units),
+    drivers: toNumber(rec.total_drivers),
+    cdlDrivers: toNumber(rec.total_cdl),
+    addedOn: toIsoDate(rec.add_date),
+    officers: [rec.company_officer_1, rec.company_officer_2].filter((o): o is string => !!o),
+    physicalAddress: joinAddress(rec.phy_street, rec.phy_city, rec.phy_state, rec.phy_zip),
+    mailingAddress: joinAddress(
+      rec.carrier_mailing_street, rec.carrier_mailing_city, rec.carrier_mailing_state, rec.carrier_mailing_zip,
+    ),
+    mcs150Date: toIsoDate(rec.mcs150_date),
+    mileage: toNumber(rec.mcs150_mileage) || null,
+    mileageYear: rec.mcs150_mileage_year ?? '',
+    safetyRating: SAFETY_RATING[rec.safety_rating ?? ''] ?? 'Not rated',
+    safetyRatingDate: toIsoDate(rec.safety_rating_date),
+    hazmat: rec.hm_ind === 'Y',
+    cargo: Object.keys(CARGO)
+      .filter((k) => rec['crgo_' + k] === 'X')
+      .map((k) => (k === 'cargoothr' && rec.crgo_cargoothr_desc ? `Other: ${rec.crgo_cargoothr_desc}` : CARGO[k])),
+  };
+}
+
+/** One census record -> one carrier per requested MC it carries; records without an email are skipped. */
 export function censusToCarriers(rec: Row, wanted: Set<number>): Omit<Carrier, 'authority'>[] {
-  const email = (rec.email_address ?? '').trim().toLowerCase();
-  if (!email) return [];
-  const out: Omit<Carrier, 'authority'>[] = [];
-  for (const i of [1, 2, 3]) {
-    if (rec[`docket${i}prefix`] !== 'MC') continue;
-    const mc = parseInt(rec[`docket${i}`] ?? '', 10);
-    if (!wanted.has(mc)) continue;
-    out.push({
-      mc,
-      dot: rec.dot_number ?? '',
-      legalName: rec.legal_name ?? '',
-      dbaName: rec.dba_name ?? '',
-      phone: rec.phone ?? '',
-      cellPhone: rec.cell_phone ?? '',
-      fax: rec.fax ?? '',
-      email,
-      usdotStatus: rec.status_code ?? '',
-      entityTypes: rec.carship ?? '',
-      operation: OPERATION[rec.carrier_operation ?? ''] ?? rec.carrier_operation ?? '',
-      state: rec.phy_state ?? '',
-      powerUnits: toNumber(rec.power_units),
-      trucks: toNumber(rec.truck_units),
-      drivers: toNumber(rec.total_drivers),
-      cdlDrivers: toNumber(rec.total_cdl),
-      addedOn: toIsoDate(rec.add_date),
-      officers: [rec.company_officer_1, rec.company_officer_2].filter((o): o is string => !!o),
-      physicalAddress: joinAddress(rec.phy_street, rec.phy_city, rec.phy_state, rec.phy_zip),
-      mailingAddress: joinAddress(
-        rec.carrier_mailing_street, rec.carrier_mailing_city, rec.carrier_mailing_state, rec.carrier_mailing_zip,
-      ),
-      mcs150Date: toIsoDate(rec.mcs150_date),
-      mileage: toNumber(rec.mcs150_mileage) || null,
-      mileageYear: rec.mcs150_mileage_year ?? '',
-      safetyRating: SAFETY_RATING[rec.safety_rating ?? ''] ?? 'Not rated',
-      safetyRatingDate: toIsoDate(rec.safety_rating_date),
-      hazmat: rec.hm_ind === 'Y',
-      cargo: Object.keys(CARGO)
-        .filter((k) => rec['crgo_' + k] === 'X')
-        .map((k) => (k === 'cargoothr' && rec.crgo_cargoothr_desc ? `Other: ${rec.crgo_cargoothr_desc}` : CARGO[k])),
-    });
-  }
-  return out;
+  const company = censusCompany(rec);
+  if (!company.email) return [];
+  return mcDockets(rec)
+    .filter((mc) => wanted.has(mc))
+    .map((mc) => ({ mc, ...company }));
 }

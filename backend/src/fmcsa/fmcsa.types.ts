@@ -56,6 +56,25 @@ export interface Carrier {
   authority: Authority;
 }
 
+/** A company found by individual lookup: may have no MC, no authority record, or be a broker. */
+export interface CarrierProfile extends Omit<Carrier, 'mc' | 'authority'> {
+  /** The MC this profile is about (the searched one, else the first on the record). */
+  mc: number | null;
+  mcNumbers: number[];
+  authority: Authority | null;
+}
+
+export type LookupKind = 'mc' | 'dot' | 'email' | 'phone';
+
+export interface LookupResult {
+  query: string;
+  /** What the query was searched as; a bare number is tried as both MC and USDOT. */
+  kinds: LookupKind[];
+  /** True when there were more matches than returned. */
+  truncated: boolean;
+  profiles: CarrierProfile[];
+}
+
 export interface ScanResult {
   from: number;
   to: number;

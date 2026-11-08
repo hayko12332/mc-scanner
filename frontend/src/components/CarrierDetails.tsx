@@ -1,16 +1,16 @@
 import { api } from '../api'
+import { entityLabel } from '../lib/carrier'
 import { formatDate, formatMoney, formatNumber, formatPhone } from '../lib/format'
-import type { ScannedCarrier } from '../types'
+import type { DetailsCarrier } from '../types'
 import { InsurancePanel } from './InsurancePanel'
 import { DetailBox, KeyValues, Pill, StatusPill } from './ui'
 
 const required = (v: string) => (v === 'Y' ? 'Required' : v === 'N' ? 'Not required' : '—')
 const onFile = (v: string) => (v === 'Y' ? 'Yes' : v === 'N' ? 'No' : '—')
 
-export function CarrierDetails({ carrier: c }: { carrier: ScannedCarrier }) {
+export function CarrierDetails({ carrier: c }: { carrier: DetailsCarrier }) {
   const a = c.authority
   const s = c.safer
-  const fromLegacy = a.sources.includes('L&I')
 
   return (
     <div className="detail-grid">
@@ -30,37 +30,51 @@ export function CarrierDetails({ carrier: c }: { carrier: ScannedCarrier }) {
           ]} />
         </DetailBox>
       )}
-      <DetailBox title="Operating authority (FMCSA files)">
-        <KeyValues items={[
-          ['Common (L&I)', fromLegacy && <StatusPill code={a.common} />],
-          ['Contract (L&I)', fromLegacy && <StatusPill code={a.contract} />],
-          ['Carrier (Motus)', a.motusCarrier && <StatusPill code={a.motusCarrier} />],
-          ['Broker', <StatusPill code={a.broker} />],
-          ['Motus authorities', a.motusAuthorities.join('; ')],
-          ['Pending application', a.pendingApplications.join(', ') || 'none'],
-          ['Pending revocation', a.pendingRevocations.join(', ') || 'none'],
-          ['Type', a.authorityTypes.join(', ')],
-          ['Source', a.sources.join(' + ')],
-          ['Verify', <a href={api.saferPageUrl(c.dot)} target="_blank" rel="noopener">Open on SAFER</a>],
-        ]} />
-      </DetailBox>
-      <DetailBox title="Insurance on file (FMCSA)">
-        <KeyValues items={[
-          ['BIPD required', formatMoney(a.bipdRequired)],
-          ['BIPD on file', formatMoney(a.bipdOnFile)],
-          ['Cargo', `${required(a.cargoRequired)} / on file: ${onFile(a.cargoOnFile)}`],
-          ['Bond', `${required(a.bondRequired)} / on file: ${onFile(a.bondOnFile)}`],
-        ]} />
-      </DetailBox>
+      {a ? (
+        <>
+          <DetailBox title="Operating authority (FMCSA files)">
+            <KeyValues items={[
+              ['Common (L&I)', a.sources.includes('L&I') && <StatusPill code={a.common} />],
+              ['Contract (L&I)', a.sources.includes('L&I') && <StatusPill code={a.contract} />],
+              ['Carrier (Motus)', a.motusCarrier && <StatusPill code={a.motusCarrier} />],
+              ['Broker', <StatusPill code={a.broker} />],
+              ['Motus authorities', a.motusAuthorities.join('; ')],
+              ['Pending application', a.pendingApplications.join(', ') || 'none'],
+              ['Pending revocation', a.pendingRevocations.join(', ') || 'none'],
+              ['Type', a.authorityTypes.join(', ')],
+              ['Source', a.sources.join(' + ')],
+              ['Verify', <a href={api.saferPageUrl(c.dot)} target="_blank" rel="noopener">Open on SAFER</a>],
+            ]} />
+          </DetailBox>
+          <DetailBox title="Insurance on file (FMCSA)">
+            <KeyValues items={[
+              ['BIPD required', formatMoney(a.bipdRequired)],
+              ['BIPD on file', formatMoney(a.bipdOnFile)],
+              ['Cargo', `${required(a.cargoRequired)} / on file: ${onFile(a.cargoOnFile)}`],
+              ['Bond', `${required(a.bondRequired)} / on file: ${onFile(a.bondOnFile)}`],
+            ]} />
+          </DetailBox>
+        </>
+      ) : (
+        <DetailBox title="Operating authority (FMCSA files)">
+          <p className="muted">
+            {c.mc ? `No authority record for MC-${c.mc} in L&I or Motus.` : 'No MC number: no for-hire operating authority.'}
+          </p>
+          <a href={api.saferPageUrl(c.dot)} target="_blank" rel="noopener">Open on SAFER</a>
+        </DetailBox>
+      )}
       <DetailBox title="Company">
         <KeyValues items={[
           ['Legal name', c.legalName],
           ['DBA', c.dbaName],
+          ['Entity', entityLabel(c.entityTypes)],
+          ['MC numbers', (c.mcNumbers?.length ?? 0) > 1 && c.mcNumbers!.map((n) => `MC-${n}`).join(', ')],
           ['Officers', c.officers.join('; ')],
           ['Address', c.physicalAddress],
           ['Mailing address', c.mailingAddress !== c.physicalAddress && c.mailingAddress],
           ['Fax', formatPhone(c.fax)],
           ['USDOT status', c.usdotStatus && <StatusPill code={c.usdotStatus} />],
+          ['USDOT since', formatDate(c.addedOn)],
           ['Operation', c.operation],
         ]} />
       </DetailBox>
@@ -79,9 +93,11 @@ export function CarrierDetails({ carrier: c }: { carrier: ScannedCarrier }) {
       <DetailBox title="Cargo">
         <div>{c.cargo.join(', ') || '—'}</div>
       </DetailBox>
-      <DetailBox title="Insurance policies (active / pending)">
-        <InsurancePanel mc={c.mc} />
-      </DetailBox>
+      {c.mc != null && (
+        <DetailBox title="Insurance policies (active / pending)">
+          <InsurancePanel mc={c.mc} />
+        </DetailBox>
+      )}
     </div>
   )
 }

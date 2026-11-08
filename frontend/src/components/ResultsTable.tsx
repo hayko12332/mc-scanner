@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { track } from '../lib/analytics'
 import { authorityLabel, carrierKey } from '../lib/carrier'
 import { formatDate, formatNumber, formatPhone } from '../lib/format'
 import type { ScannedCarrier } from '../types'
@@ -9,7 +10,11 @@ const COLUMNS = ['MC', 'USDOT', 'Name', 'Phone', 'Cell', 'Email', 'Authority', '
 
 function CopyCell({ value, display, onCopy }: { value: string; display?: string; onCopy: (text: string) => void }) {
   return (
-    <td className="copy" title={value ? 'Click to copy' : undefined} onClick={() => value && onCopy(value)}>
+    <td className="copy" title={value ? 'Click to copy' : undefined} onClick={() => {
+      if (!value) return
+      onCopy(value)
+      track('copy', { what: value.includes('@') ? 'email' : 'phone' })
+    }}>
       {display ?? value}
     </td>
   )
@@ -34,7 +39,10 @@ function CarrierRow({ carrier: c, onCopy }: { carrier: ScannedCarrier; onCopy: (
         <td className="num">{formatNumber(c.powerUnits)}</td>
         <td className="num">{formatDate(c.addedOn)}</td>
         <td>
-          <button className="small" onClick={() => setOpen(!open)}>{open ? 'Hide ▴' : 'More info ▾'}</button>
+          <button className="small" onClick={() => {
+            if (!open) track('details_open', { mc: c.mc, from: 'scanner' })
+            setOpen(!open)
+          }}>{open ? 'Hide ▴' : 'More info ▾'}</button>
         </td>
       </tr>
       {open && (

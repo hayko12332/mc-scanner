@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { buildAuthority, LEGACY_FIELDS, MOTUS_FIELDS, summarizeMotus, type AuthorityMode } from './authority.mapper.js';
 import { CENSUS_FIELDS, censusToCarriers } from './census.mapper.js';
-import type { Carrier, ScanResult } from './fmcsa.types.js';
+import type { Authority, ScanResult } from './fmcsa.types.js';
 import { docketToMc, docketVariants, legacyDocket } from './normalize.js';
 import { DATASETS, inList, SocrataClient } from './socrata.client.js';
 
@@ -23,13 +23,18 @@ export class CarriersService {
 
     const wanted = new Set(mcs);
     const candidates = census.flatMap((rec) => censusToCarriers(rec, wanted));
-    const carriers = candidates.length ? await this.withAuthority(candidates, mode) : [];
+    const authority = candidates.length ? await this.authorities(candidates.map((c) => c.mc), mode) : new Map();
+    const carriers = candidates.flatMap((c) => {
+      const a = authority.get(c.mc);
+      return a ? [{ ...c, authority: a }] : [];
+    });
     carriers.sort((a, b) => a.mc - b.mc);
     return { from, to, censusRecords: census.length, carriers };
   }
 
-  private async withAuthority(candidates: Omit<Carrier, 'authority'>[], mode: AuthorityMode): Promise<Carrier[]> {
-    const mcs = [...new Set(candidates.map((c) => c.mc))];
+  /** Authority per MC from the legacy L&I and Motus files; MCs the mode rejects are left out. */
+  async authorities(mcList: number[], mode: AuthorityMode): Promise<Map<number, Authority>> {
+    const mcs = [...new Set(mcList)];
     const [legacyRows, motusRows] = await Promise.all([
       this.socrata.query(DATASETS.legacyCarrier, {
         $select: LEGACY_FIELDS.join(','),
@@ -45,9 +50,11 @@ export class CarriersService {
     const legacy = new Map(legacyRows.map((row) => [docketToMc(row.docket_number ?? ''), row]));
     const motus = summarizeMotus(motusRows);
 
-    return candidates.flatMap((c) => {
-      const authority = buildAuthority(legacy.get(c.mc), motus.get(c.mc), mode);
-      return authority ? [{ ...c, authority }] : [];
-    });
+    const out = new Map<number, Authority>();
+    for (const mc of mcs) {
+      const authority = buildAuthority(legacy.get(mc), motus.get(mc), mode);
+      if (authority) out.set(mc, authority);
+    }
+    return out;
   }
 }

@@ -1,4 +1,6 @@
-import type { AuthorityMode, Insurance, SaferSnapshot, ScanResult } from './types'
+import type {
+  AuthorityMode, Insurance, LookupResult, LookupType, RegistryResult, SaferSnapshot, ScanResult,
+} from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -33,4 +35,8 @@ export const api = {
   safer: (mc: number, signal?: AbortSignal) => get<SaferSnapshot>(`/safer/${mc}`, signal),
   insurance: (mc: number) => get<Insurance>(`/carriers/${mc}/insurance`),
   saferPageUrl: (dot: string) => `/api/safer/page/${encodeURIComponent(dot)}`,
+  lookup: (q: string, type: LookupType, signal?: AbortSignal) =>
+    get<LookupResult>(`/lookup?${new URLSearchParams({ q, type })}`, signal),
+  registry: (state: string, name: string, signal?: AbortSignal) =>
+    get<RegistryResult>(`/registry?${new URLSearchParams({ state, name })}`, signal),
 }

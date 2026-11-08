@@ -1,9 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { fileURLToPath } from 'node:url';
+import { AnalyticsModule } from './analytics/analytics.module.js';
 import { FmcsaModule } from './fmcsa/fmcsa.module.js';
 import { HealthController } from './health.controller.js';
+import { RegistryModule } from './registry/registry.module.js';
 import { SaferModule } from './safer/safer.module.js';
+import { TelegramModule } from './telegram/telegram.module.js';
 
 @Module({
   imports: [
@@ -14,6 +17,9 @@ import { SaferModule } from './safer/safer.module.js';
     }),
     FmcsaModule,
     SaferModule,
+    RegistryModule,
+    AnalyticsModule,
+    TelegramModule,
   ],
   controllers: [HealthController],
 })

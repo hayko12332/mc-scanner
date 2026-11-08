@@ -9,6 +9,15 @@ export interface Filters {
 
 export const carrierKey = (c: { mc: number; dot: string }) => `${c.mc}|${c.dot}`
 
+const ENTITY: Record<string, string> = {
+  C: 'Carrier', B: 'Broker', S: 'Shipper', F: 'Freight forwarder', R: 'Registrant', T: 'Cargo tank',
+  I: 'Intermodal equipment provider',
+}
+
+/** Census entity codes ("C;B") -> "Carrier + Broker". */
+export const entityLabel = (codes: string) =>
+  codes.split(/[;,\s]+/).filter(Boolean).map((c) => ENTITY[c] ?? c).join(' + ')
+
 export const isBroker = (c: ScannedCarrier) =>
   c.safer ? c.safer.broker : c.authority.broker === 'A' || c.entityTypes.includes('B')
 

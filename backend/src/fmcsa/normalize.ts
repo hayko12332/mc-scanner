@@ -1,3 +1,6 @@
+export const joinAddress = (street?: string, city?: string, state?: string, zip?: string) =>
+  [street, city, [state, zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+
 /** FMCSA files mix YYYYMMDD, MM/DD/YYYY and ISO timestamps; normalize to YYYY-MM-DD. */
 export function toIsoDate(value: string | undefined): string | null {
   if (!value) return null;

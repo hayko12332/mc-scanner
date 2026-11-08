@@ -12,6 +12,7 @@ const loadInsurance = (mc: number) => {
 
 function PolicyTable({ policies, lastColumn }: { policies: Policy[]; lastColumn: 'Posted' | 'Reason' }) {
   return (
+    <div className="table-scroll">
     <table className="policies">
       <thead>
         <tr>
@@ -32,6 +33,7 @@ function PolicyTable({ policies, lastColumn }: { policies: Policy[]; lastColumn:
         ))}
       </tbody>
     </table>
+    </div>
   )
 }
 

@@ -1,35 +1,30 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
-import { ResultsTable } from './components/ResultsTable'
-import { ScanPanel } from './components/ScanPanel'
-import { StatsBar } from './components/StatsBar'
-import { useScanner, type ScanProgress, type ScanSettings } from './hooks/useScanner'
 import { useToast } from './hooks/useToast'
-import { downloadCsv, passesFilters, type Filters } from './lib/carrier'
-import { formatPhone } from './lib/format'
-import { loadState, saveState } from './lib/storage'
+import { track } from './lib/analytics'
+import { LookupPage } from './pages/LookupPage'
+import { ScannerPage } from './pages/ScannerPage'
 
-interface SavedState extends ScanProgress {
-  settings: ScanSettings
-  filters: Filters
-}
+const isLookup = (hash: string) => hash.startsWith('#/lookup')
 
-const DEFAULT_SETTINGS: ScanSettings = {
-  startMc: '1',
-  endMc: '',
-  batchSize: '100',
-  delayMs: '300',
-  saferConcurrency: '3',
-  useSafer: true,
+/** Current location hash, plus the last lookup hash so the Lookup tab keeps its search while you are away. */
+function useHash() {
+  const [hash, setHash] = useState(location.hash)
+  const [lastLookup, setLastLookup] = useState(isLookup(location.hash) ? location.hash : '#/lookup')
+  useEffect(() => {
+    const onChange = () => {
+      setHash(location.hash)
+      if (isLookup(location.hash)) setLastLookup(location.hash)
+    }
+    addEventListener('hashchange', onChange)
+    return () => removeEventListener('hashchange', onChange)
+  }, [])
+  return { hash, lastLookup }
 }
-const DEFAULT_FILTERS: Filters = { skipCarrierBroker: true, onlyActive: true, onlyWithPhone: true }
 
 export default function App() {
-  const saved = useMemo(() => loadState<SavedState>(), [])
-  const [settings, setSettings] = useState<ScanSettings>({ ...DEFAULT_SETTINGS, ...saved.settings })
-  const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, ...saved.filters })
-  const onAdvance = useCallback((mc: number) => setSettings((s) => ({ ...s, startMc: String(mc) })), [])
-  const scanner = useScanner(saved, onAdvance)
+  const { hash, lastLookup } = useHash()
+  const page = isLookup(hash) ? 'lookup' : 'scanner'
   const toast = useToast()
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
 
@@ -37,12 +32,9 @@ export default function App() {
     api.health().then(() => setBackendOk(true), () => setBackendOk(false))
   }, [])
 
-  const { rows, checked, saferRejected, nextMc } = scanner
   useEffect(() => {
-    saveState<SavedState>({ settings, filters, rows, checked, saferRejected, nextMc })
-  }, [settings, filters, rows, checked, saferRejected, nextMc])
-
-  const visible = useMemo(() => rows.filter((c) => passesFilters(c, filters)), [rows, filters])
+    track('page_view', { page })
+  }, [page])
 
   const copy = useCallback(async (text: string, what = text) => {
     if (!text) return toast.show('Nothing to copy')
@@ -54,46 +46,28 @@ export default function App() {
     }
   }, [toast])
 
-  const copyAll = (values: string[], noun: string) => {
-    const unique = [...new Set(values.filter(Boolean))]
-    void copy(unique.join('\n'), `${unique.length} ${noun}`)
-  }
-
   return (
     <div className="wrap">
-      <h1>MC Scanner — FMCSA</h1>
-      <p className="sub">
-        Continuous carrier lookup by MC number (MC, MC+1, MC+2 …). Data: official FMCSA files (Company Census +
-        Licensing &amp; Insurance) on data.transportation.gov, updated daily, with live SAFER verification.
-      </p>
+      <header className="top">
+        <h1>MC Scanner — FMCSA</h1>
+        <nav className="tabs">
+          <a href="#/" className={page === 'scanner' ? 'active' : ''}>Scanner</a>
+          <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}>Lookup</a>
+        </nav>
+      </header>
 
-      <ScanPanel
-        settings={settings}
-        onSettings={setSettings}
-        filters={filters}
-        onFilters={setFilters}
-        backendOk={backendOk}
-        running={scanner.running}
-        status={scanner.status}
-        onStart={() => void scanner.start(settings)}
-        onStop={scanner.stop}
-        onCsv={() => (visible.length ? downloadCsv(visible) : toast.show('No data'))}
-        onCopyEmails={() => copyAll(visible.map((c) => c.email), 'emails')}
-        onCopyPhones={() => copyAll(visible.flatMap((c) => [c.phone, c.cellPhone]).filter(Boolean).map(formatPhone), 'phones')}
-        onClear={() => confirm('Delete all found records?') && scanner.clear()}
-      />
+      {/* Scanner and Lookup stay mounted so a running scan keeps going while you look something up. */}
+      <div hidden={page !== 'scanner'}>
+        <ScannerPage backendOk={backendOk} copy={(t, w) => void copy(t, w)} toast={toast.show} />
+      </div>
+      <div hidden={page !== 'lookup'}>
+        <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
+      </div>
 
-      <StatsBar
-        current={scanner.current}
-        checked={checked}
-        found={visible.length}
-        withPhone={visible.filter((c) => c.phone || c.cellPhone).length}
-        saferRejected={saferRejected}
-        rate={scanner.rate}
-      />
-
-      <ResultsTable carriers={visible} onCopy={(text) => void copy(text)} />
-
+      <footer className="footer">
+        Free to use. Data: FMCSA open data and SAFER. We record anonymous usage (pages opened, searches) to improve
+        the service.
+      </footer>
       <div className={`toast ${toast.message ? 'show' : ''}`}>{toast.message}</div>
     </div>
   )
