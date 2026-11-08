@@ -16,8 +16,9 @@ describe('TelegramService', () => {
     Object.assign(config, { telegramBotToken: '1:TEST', publicUrl: 'https://scanner.example' });
     sent = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: { body: string }) => {
-      sent.push({ method: url.split('/').pop()!, body: JSON.parse(init.body) });
-      return new Response(JSON.stringify({ ok: true, result: true }));
+      const method = url.split('/').pop()!;
+      sent.push({ method, body: JSON.parse(init.body) });
+      return new Response(JSON.stringify({ ok: true, result: method === 'sendMessage' ? { message_id: 7 } : true }));
     }));
     analytics = { recordServer: vi.fn(async () => {}), recordFeedback: vi.fn(async () => {}) };
     bot = new TelegramService(analytics as never);
@@ -62,6 +63,32 @@ describe('TelegramService', () => {
     await bot.handle({ update_id: 9, callback_query: { id: 'q1', from, data: 'features', message: { message_id: 1, chat: { id: 42, type: 'private' } } } });
     expect(sent.some((s) => s.method === 'answerCallbackQuery')).toBe(true);
     expect(texts().at(-1)).toContain('What MC Scanner does');
+  });
+
+  it('posts and pins the intro when added to a group as admin, with plain links only', async () => {
+    await bot.handle({
+      update_id: 20,
+      my_chat_member: {
+        chat: { id: -100, type: 'supergroup', title: 'MC Scanner Community' }, from,
+        old_chat_member: { status: 'member' }, new_chat_member: { status: 'administrator' },
+      },
+    });
+    const intro = sent.find((s) => s.method === 'sendMessage')!;
+    expect(intro.body.chat_id).toBe(-100);
+    expect(String(intro.body.text)).toContain('https://scanner.example/');
+    expect(JSON.stringify(intro.body.reply_markup)).not.toContain('web_app');
+    expect(sent.some((s) => s.method === 'pinChatMessage')).toBe(true);
+  });
+
+  it('ignores plain chatter in groups but answers its commands', async () => {
+    const group = (text: string): TgUpdate => ({
+      update_id: 30, message: { message_id: 1, chat: { id: -100, type: 'supergroup' }, from, text },
+    });
+    await bot.handle(group('hello everyone'));
+    expect(sent).toHaveLength(0);
+    await bot.handle(group('/features'));
+    expect(texts()[0]).toContain('What MC Scanner does');
+    expect(markup(0)).not.toContain('web_app');
   });
 
   it('escapes HTML in the echoed suggestion', async () => {

@@ -1,4 +1,4 @@
-import { Body, Controller, ForbiddenException, Headers, HttpCode, Logger, NotFoundException, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Headers, HttpCode, Logger, NotFoundException, Post } from '@nestjs/common';
 import { timingSafeEqual } from 'node:crypto';
 import { TelegramService, type TgUpdate } from './telegram.service.js';
 
@@ -7,6 +7,12 @@ export class TelegramController {
   private readonly logger = new Logger(TelegramController.name);
 
   constructor(private readonly telegram: TelegramService) {}
+
+  /** GET /api/telegram/links — bot and community group links for the website footer. */
+  @Get('links')
+  links() {
+    return this.telegram.links();
+  }
 
   /** POST /api/telegram/webhook — called by Telegram for every message to the bot. */
   @Post('webhook')

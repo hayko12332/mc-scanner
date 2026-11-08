@@ -6,12 +6,17 @@ import { RateLimiter } from '../analytics/rate-limiter.js';
 import { config } from '../config.js';
 
 interface TgUser { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string; language_code?: string }
-interface TgMessage { message_id: number; chat: { id: number; type: string }; from?: TgUser; text?: string }
+interface TgChat { id: number; type: string; title?: string }
+interface TgMessage { message_id: number; chat: TgChat; from?: TgUser; text?: string }
 export interface TgUpdate {
   update_id: number;
   message?: TgMessage;
   callback_query?: { id: string; from: TgUser; data?: string; message?: TgMessage };
+  /** The bot's own membership changed, e.g. it was added to a group. */
+  my_chat_member?: { chat: TgChat; from: TgUser; old_chat_member: { status: string }; new_chat_member: { status: string } };
 }
+
+const isGroup = (chat: TgChat) => chat.type === 'group' || chat.type === 'supergroup';
 
 const WEBHOOK_PATH = '/api/telegram/webhook';
 /** How long the bot waits for the suggestion after "Suggest a feature". */
@@ -48,6 +53,8 @@ export class TelegramService implements OnApplicationBootstrap {
   /** Chats where the next text message is a suggestion (in memory: a restart just asks again). */
   private readonly awaitingSuggestion = new Map<number, number>();
   private readonly suggestionLimiter = new RateLimiter(5, 10 * 60_000);
+  /** The bot's @username, read from Telegram at startup. */
+  private username = '';
 
   constructor(private readonly analytics: AnalyticsService) {}
 
@@ -55,8 +62,25 @@ export class TelegramService implements OnApplicationBootstrap {
     return !!config.telegramBotToken && config.publicUrl.startsWith('https://');
   }
 
+  /** Public links shown on the website. */
+  links() {
+    return {
+      bot: this.username ? `https://t.me/${this.username}` : '',
+      group: config.telegramGroupUrl,
+    };
+  }
+
   private get siteUrl() {
     return config.publicUrl + '/';
+  }
+
+  private get botUrl() {
+    return this.username ? `https://t.me/${this.username}` : this.siteUrl;
+  }
+
+  /** "Join our group" button row, when the group link is configured. */
+  private groupRow() {
+    return config.telegramGroupUrl ? [[{ text: '👥 Join our Telegram group', url: config.telegramGroupUrl }]] : [];
   }
 
   async onApplicationBootstrap() {
@@ -71,10 +95,12 @@ export class TelegramService implements OnApplicationBootstrap {
 
   /** Point the bot at this server, set the "Open" menu button and the command list. */
   private async setup() {
+    const me = (await this.call('getMe', {})) as { username?: string };
+    this.username = me.username ?? '';
     await this.call('setWebhook', {
       url: config.publicUrl + WEBHOOK_PATH,
       secret_token: this.webhookSecret,
-      allowed_updates: ['message', 'callback_query'],
+      allowed_updates: ['message', 'callback_query', 'my_chat_member'],
     });
     await this.call('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Open', web_app: { url: this.siteUrl } } });
     await this.call('setMyCommands', {
@@ -93,8 +119,11 @@ export class TelegramService implements OnApplicationBootstrap {
 
   async handle(update: TgUpdate): Promise<unknown> {
     if (update.callback_query) return this.handleButton(update.callback_query);
+    if (update.my_chat_member) return this.handleMembership(update.my_chat_member);
     const msg = update.message;
-    if (!msg || msg.chat.type !== 'private' || !msg.from || msg.from.is_bot) return;
+    if (!msg || !msg.from || msg.from.is_bot) return;
+    if (isGroup(msg.chat)) return this.handleGroupMessage(msg);
+    if (msg.chat.type !== 'private') return;
     const tg = this.tgUser(msg.from);
     const text = (msg.text ?? '').trim();
     const [first, ...rest] = text.split(/\s+/);
@@ -124,6 +153,53 @@ export class TelegramService implements OnApplicationBootstrap {
     await this.send(msg.chat.id, 'Choose an option below — or tap “💡 Suggest a feature” to send us an idea.', this.mainKeyboard());
   }
 
+  /** Added to a group: post the intro with links to the bot and the website, and pin it. */
+  private async handleMembership(m: NonNullable<TgUpdate['my_chat_member']>) {
+    if (!isGroup(m.chat)) return;
+    const was = ['member', 'administrator', 'creator'].includes(m.old_chat_member.status);
+    const now = ['member', 'administrator'].includes(m.new_chat_member.status);
+    this.logger.log(`Group "${m.chat.title ?? ''}" (chat id ${m.chat.id}): bot is now ${m.new_chat_member.status}`);
+    // Post once when added, and again when promoted to admin so the intro can be pinned.
+    if (!now || (was && m.new_chat_member.status !== 'administrator')) return;
+    await this.track('bot_added_to_group', this.tgUser(m.from), { chat: m.chat.id, title: m.chat.title ?? '', status: m.new_chat_member.status });
+    await this.postGroupIntro(m.chat.id, true);
+  }
+
+  /** In groups the bot only answers its commands (privacy mode): /start, /about, /features, /website. */
+  private async handleGroupMessage(msg: TgMessage) {
+    const first = (msg.text ?? '').trim().split(/\s+/)[0];
+    if (!first.startsWith('/')) return;
+    const [cmd, mention] = first.slice(1).toLowerCase().split('@');
+    if (mention && this.username && mention !== this.username.toLowerCase()) return;
+    if (cmd === 'start' || cmd === 'about' || cmd === 'website') return this.postGroupIntro(msg.chat.id, false);
+    if (cmd === 'features') return this.sendFeatures(msg.chat.id, true);
+  }
+
+  private async postGroupIntro(chatId: number, pin: boolean) {
+    const sent = (await this.send(chatId, [
+      '🚚 <b>MC Scanner — free FMCSA carrier lookup</b>',
+      '',
+      '🔎 Find authorized carriers by MC number with phone and email, verified live on SAFER.',
+      '🏢 Check any company by MC, USDOT, email or phone: authority, insurance, fleet, state registration, liens and courts.',
+      '🚧 Coming soon: CRM for dispatchers.',
+      '',
+      `🤖 Bot: @${this.username || 'MC Scanner'} — tap the button below and press Start`,
+      `🌐 Website: ${this.siteUrl}`,
+      '',
+      '💡 Ideas and requests are welcome here or in the bot.',
+    ].join('\n'), {
+      inline_keyboard: [
+        [{ text: '🤖 Open the bot', url: `${this.botUrl}?start=group` }],
+        [{ text: '🌐 Open the website', url: this.siteUrl }],
+      ],
+    })) as { message_id?: number };
+    if (pin && sent?.message_id) {
+      // Needs the "Pin messages" admin right; without it the intro simply stays unpinned.
+      await this.call('pinChatMessage', { chat_id: chatId, message_id: sent.message_id, disable_notification: true })
+        .catch((e: Error) => this.logger.warn(`Could not pin the intro in ${chatId}: ${e.message}`));
+    }
+  }
+
   private async handleButton(q: NonNullable<TgUpdate['callback_query']>) {
     await this.call('answerCallbackQuery', { callback_query_id: q.id }).catch(() => undefined);
     const chatId = q.message?.chat.id;
@@ -149,22 +225,31 @@ export class TelegramService implements OnApplicationBootstrap {
         [{ text: '🚚 Open in Telegram', web_app: { url: this.siteUrl } }],
         [{ text: '🌐 Open website in browser', url: this.siteUrl }],
         [{ text: '✨ Features', callback_data: 'features' }, { text: '💡 Suggest a feature', callback_data: 'suggest' }],
+        ...this.groupRow(),
       ],
     }).then(() => this.send(chatId, 'The menu below is always here 👇', this.mainKeyboard()));
   }
 
-  private sendFeatures(chatId: number) {
+  /** Mini App (web_app) buttons only work in private chats, so groups get plain links. */
+  private sendFeatures(chatId: number, inGroup = false) {
     return this.send(chatId, FEATURES, {
-      inline_keyboard: [
-        [{ text: '🚚 Open in Telegram', web_app: { url: this.siteUrl } }, { text: '🌐 Website', url: this.siteUrl }],
-        [{ text: '💡 Suggest a feature', callback_data: 'suggest' }],
-      ],
+      inline_keyboard: inGroup
+        ? [[{ text: '🤖 Open the bot', url: `${this.botUrl}?start=group` }, { text: '🌐 Website', url: this.siteUrl }]]
+        : [
+            [{ text: '🚚 Open in Telegram', web_app: { url: this.siteUrl } }, { text: '🌐 Website', url: this.siteUrl }],
+            [{ text: '💡 Suggest a feature', callback_data: 'suggest' }],
+            ...this.groupRow(),
+          ],
     });
   }
 
   private sendWebsite(chatId: number) {
     return this.send(chatId, `🌐 MC Scanner website:\n${this.siteUrl}\n\nWorks in any browser, on phone and desktop.`, {
-      inline_keyboard: [[{ text: '🌐 Open website', url: this.siteUrl }], [{ text: '🚚 Open in Telegram', web_app: { url: this.siteUrl } }]],
+      inline_keyboard: [
+        [{ text: '🌐 Open website', url: this.siteUrl }],
+        [{ text: '🚚 Open in Telegram', web_app: { url: this.siteUrl } }],
+        ...this.groupRow(),
+      ],
     });
   }
 

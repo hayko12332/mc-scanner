@@ -30,8 +30,11 @@ export default function App() {
   const toast = useToast()
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
 
+  const [telegram, setTelegram] = useState({ bot: '', group: '' })
+
   useEffect(() => {
     api.health().then(() => setBackendOk(true), () => setBackendOk(false))
+    api.telegramLinks().then(setTelegram, () => {})
   }, [])
 
   useEffect(() => {
@@ -67,9 +70,15 @@ export default function App() {
       <div hidden={page !== 'lookup'}>
         <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
       </div>
-      {page === 'feedback' && <FeedbackPage />}
+      {page === 'feedback' && <FeedbackPage groupUrl={telegram.group} />}
 
       <footer className="footer">
+        {(telegram.bot || telegram.group) && (
+          <p className="footer-links">
+            {telegram.bot && <a href={telegram.bot} target="_blank" rel="noopener">🤖 Telegram bot @{telegram.bot.split('/').pop()}</a>}
+            {telegram.group && <a href={telegram.group} target="_blank" rel="noopener">👥 Join our Telegram group</a>}
+          </p>
+        )}
         Free to use. Data: FMCSA open data and SAFER. We record anonymous usage (pages opened, searches) to improve
         the service.
       </footer>

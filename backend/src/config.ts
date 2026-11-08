@@ -16,6 +16,8 @@ export const config = {
 
   // Telegram bot (token from @BotFather). It opens the site as a Telegram Mini App.
   telegramBotToken: env('TELEGRAM_BOT_TOKEN'),
+  // Invite link of the community group (https://t.me/...), shown in the bot and on the site.
+  telegramGroupUrl: env('TELEGRAM_GROUP_URL'),
   // Public https address of the site; Render sets RENDER_EXTERNAL_URL automatically.
   publicUrl: (env('PUBLIC_URL') || env('RENDER_EXTERNAL_URL')).replace(/\/+$/, ''),
   // Render's free plan puts the service to sleep after 15 idle minutes and the next visitor (or Telegram

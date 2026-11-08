@@ -144,6 +144,7 @@ button.icon { padding: 0 5px; line-height: 18px; color: var(--muted); }
 .entity .kv-row { grid-template-columns: 70px 1fr; }
 
 .footer { margin-top: 24px; font-size: 12px; color: var(--muted); }
+.footer-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 6px; font-size: 13px; }
 .in-telegram .wrap { padding-top: 10px; }
 
 .coming-soon {

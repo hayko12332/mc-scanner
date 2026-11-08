@@ -5,7 +5,7 @@ import { telegramInitData } from '../lib/telegram'
 
 const MAX = 3000
 
-export function FeedbackPage() {
+export function FeedbackPage({ groupUrl }: { groupUrl: string }) {
   const [message, setMessage] = useState('')
   const [contact, setContact] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle')
@@ -37,6 +37,7 @@ export function FeedbackPage() {
       <p className="sub">
         Tell us what would make MC Scanner more useful — a missing filter, data you need, or what the dispatcher
         CRM should do. We read every suggestion.
+        {groupUrl && <> You can also discuss ideas in our <a href={groupUrl} target="_blank" rel="noopener">Telegram group</a>.</>}
       </p>
       <form className="panel feedback" onSubmit={submit}>
         <label className="field">
