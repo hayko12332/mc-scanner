@@ -147,11 +147,14 @@ export function LookupPage({ hash, copy }: { hash: string; copy: (text: string) 
 
   return (
     <>
-      <p className="sub">
-        Look up one company by MC number, USDOT number, email or phone: FMCSA record, live SAFER check, insurance,
-        state business registration, UCC liens and court records.
-      </p>
-      <form className="panel controls" onSubmit={submit}>
+      <div className="page-head">
+        <h1>Company lookup</h1>
+        <p>
+          Check any trucking company by MC, USDOT, email or phone: FMCSA record, live SAFER check, insurance, state
+          business registration, UCC liens and court records.
+        </p>
+      </div>
+      <form className="panel controls lookup-form" onSubmit={submit}>
         <label className="field grow">
           MC, USDOT, email or phone
           <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="MC-1650101, 2952744, info@acme.com, (614) 555-1234" autoFocus />
@@ -162,8 +165,15 @@ export function LookupPage({ hash, copy }: { hash: string; copy: (text: string) 
             {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </label>
-        <button className="primary" type="submit" disabled={loading}>{loading ? 'Searching…' : 'Search'}</button>
+        <button className="primary big" type="submit" disabled={loading}>{loading ? 'Searching…' : 'Search'}</button>
       </form>
+      {!q && (
+        <p className="examples">
+          Try:
+          <a href={lookupHref('MC-1650101')}>MC-1650101</a>
+          <a href={lookupHref('2952744')}>USDOT 2952744</a>
+        </p>
+      )}
 
       {error && <p className="panel error">{error}</p>}
       {result && (

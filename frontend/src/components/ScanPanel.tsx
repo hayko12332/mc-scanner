@@ -10,6 +10,9 @@ interface Props {
   running: boolean
   status: Status
   hasResults: boolean
+  /** Live counters shown while a scan runs. */
+  found: number
+  checked: number
   onStart: () => void
   onStop: () => void
   onCsv: () => void
@@ -52,13 +55,33 @@ export function ScanPanel(p: Props) {
 
   return (
     <div className="panel scan-panel">
+      <div className="tool-head">
+        <h2>Carrier scanner</h2>
+        <p>Authorized carriers only · phone &amp; email · verified on SAFER</p>
+      </div>
       <div className="controls start-row">
         {numberInput({ key: 'startMc', label: 'Start from MC', min: 1 })}
-        <button className="primary big" onClick={p.onStart} disabled={p.running || p.backendOk === false}>
-          ▶ {p.hasResults ? 'Continue' : 'Start scanning'}
+        <button className={`primary big ${p.running ? 'busy' : ''}`} onClick={p.onStart} disabled={p.running || p.backendOk === false}>
+          {p.running ? <><span className="spinner" /> Scanning…</> : <>▶ {p.hasResults ? 'Continue' : 'Start scanning'}</>}
         </button>
-        <button className="big" onClick={p.onStop} disabled={!p.running}>⏸ Pause</button>
+        <button className={`big ${p.running ? 'stop' : ''}`} onClick={p.onStop} disabled={!p.running}>⏸ Pause</button>
       </div>
+
+      {p.running && (
+        <div className="live" role="status">
+          <div className="live-top">
+            <span className="pulse" />
+            <b>Scanning in progress</b>
+            <span className="muted">{p.status.text}</span>
+          </div>
+          <div className="progress"><i /></div>
+          <div className="live-counts">
+            <span><b>{p.found.toLocaleString('en-US')}</b> carriers found</span>
+            <span><b>{p.checked.toLocaleString('en-US')}</b> MC numbers checked</span>
+            <span className="muted">Results appear below as they are found ↓</span>
+          </div>
+        </div>
+      )}
 
       <div className="controls">
         <label className="check">
@@ -100,7 +123,7 @@ export function ScanPanel(p: Props) {
         </div>
       )}
 
-      <div className={`status ${p.status.tone === 'error' ? 'error' : ''}`}>{p.status.text}</div>
+      {!p.running && <div className={`status ${p.status.tone === 'error' ? 'error' : ''}`}>{p.status.text}</div>}
       {p.backendOk === false && <div className="status error">Server not reachable. Please reload the page in a minute.</div>}
     </div>
   )

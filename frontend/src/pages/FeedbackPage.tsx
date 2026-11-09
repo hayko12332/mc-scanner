@@ -34,11 +34,14 @@ export function FeedbackPage({ groupUrl }: { groupUrl: string }) {
 
   return (
     <>
-      <p className="sub">
-        Tell us what would make MC Scanner more useful — a missing filter, data you need, or what the dispatcher
-        CRM should do. We read every suggestion.
-        {groupUrl && <> You can also discuss ideas in our <a href={groupUrl} target="_blank" rel="noopener">Telegram group</a>.</>}
-      </p>
+      <div className="page-head">
+        <h1>Suggest a feature</h1>
+        <p>
+          Tell us what would make MC Scanner more useful — a missing filter, data you need, or what the dispatcher
+          CRM should do. We read every suggestion.
+          {groupUrl && <> You can also discuss ideas in our <a href={groupUrl} target="_blank" rel="noopener">Telegram group</a>.</>}
+        </p>
+      </div>
       <form className="panel feedback" onSubmit={submit}>
         <label className="field">
           What would you like to see?

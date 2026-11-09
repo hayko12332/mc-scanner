@@ -52,40 +52,56 @@ export default function App() {
   }, [toast])
 
   return (
-    <div className="wrap">
-      <header className="top">
-        <a href="#/" className="brand">
-          <img src="/logo.svg" alt="" width="32" height="32" />
-          <h1>MC Scanner</h1>
-        </a>
-        <nav className="tabs">
-          <a href="#/" className={page === 'scanner' ? 'active' : ''}>Scanner</a>
-          <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}>Lookup</a>
-          <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}>Suggestions</a>
-        </nav>
+    <>
+      <header className="nav">
+        <div className="wrap nav-inner">
+          <a href="#/" className="brand">
+            <img src="/logo.svg" alt="" width="34" height="34" />
+            MC Scanner
+          </a>
+          <nav className="tabs">
+            <a href="#/" className={page === 'scanner' ? 'active' : ''}>Scanner</a>
+            <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}>Lookup</a>
+            <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}>Suggestions</a>
+          </nav>
+          {telegram.bot && <a className="btn nav-cta" href={telegram.bot} target="_blank" rel="noopener">🤖 Telegram bot</a>}
+        </div>
       </header>
 
-      {/* Scanner and Lookup stay mounted so a running scan keeps going while you look something up. */}
-      <div hidden={page !== 'scanner'}>
-        <ScannerPage backendOk={backendOk} copy={(t, w) => void copy(t, w)} toast={toast.show} />
-      </div>
-      <div hidden={page !== 'lookup'}>
-        <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
-      </div>
-      {page === 'feedback' && <FeedbackPage groupUrl={telegram.group} />}
-      {page !== 'feedback' && <ComingSoon />}
+      <main className="wrap">
+        {/* Scanner and Lookup stay mounted so a running scan keeps going while you look something up. */}
+        <div hidden={page !== 'scanner'}>
+          <ScannerPage backendOk={backendOk} copy={(t, w) => void copy(t, w)} toast={toast.show} />
+        </div>
+        <div hidden={page !== 'lookup'}>
+          <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
+        </div>
+        {page === 'feedback' && <FeedbackPage groupUrl={telegram.group} />}
+        {page !== 'feedback' && <ComingSoon />}
+      </main>
 
-      <footer className="footer">
-        {(telegram.bot || telegram.group) && (
-          <p className="footer-links">
-            {telegram.bot && <a href={telegram.bot} target="_blank" rel="noopener">🤖 Telegram bot @{telegram.bot.split('/').pop()}</a>}
-            {telegram.group && <a href={telegram.group} target="_blank" rel="noopener">👥 Join our Telegram group</a>}
-          </p>
-        )}
-        Free to use. Data: FMCSA open data and SAFER. We record anonymous usage (pages opened, searches) to improve
-        the service.
+      <footer className="site-footer">
+        <div className="wrap footer-grid">
+          <div>
+            <a href="#/" className="brand">
+              <img src="/logo.svg" alt="" width="28" height="28" />
+              MC Scanner
+            </a>
+            <p>
+              Free FMCSA carrier lookup for dispatchers and freight brokers. Data: FMCSA open data and SAFER. We record
+              anonymous usage (pages opened, searches) to improve the service.
+            </p>
+          </div>
+          <div className="footer-links">
+            <a href="#/">Scanner</a>
+            <a href={lastLookup}>Lookup</a>
+            <a href="#/feedback">Suggestions</a>
+            {telegram.bot && <a href={telegram.bot} target="_blank" rel="noopener">Telegram bot</a>}
+            {telegram.group && <a href={telegram.group} target="_blank" rel="noopener">Telegram group</a>}
+          </div>
+        </div>
       </footer>
       <div className={`toast ${toast.message ? 'show' : ''}`}>{toast.message}</div>
-    </div>
+    </>
   )
 }
