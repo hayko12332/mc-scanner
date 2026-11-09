@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ResultsTable } from '../components/ResultsTable'
-import { CountUp, HeroNetwork } from '../components/HeroNetwork'
 import { Icon } from '../components/Icon'
-import { FeatureBento, HowItWorks } from '../components/Landing'
 import { ScanPanel } from '../components/ScanPanel'
 import { StatsBar } from '../components/StatsBar'
 import { LeadsPanel } from '../components/LeadsPanel'
 import { useLeads } from '../hooks/useLeads'
-import { useReveal } from '../hooks/useReveal'
 import { useScanner, type ScanProgress, type ScanSettings } from '../hooks/useScanner'
 import { track } from '../lib/analytics'
 import { downloadCsv, passesFilters, type Filters } from '../lib/carrier'
@@ -30,12 +27,19 @@ const DEFAULT_SETTINGS: ScanSettings = {
 const DEFAULT_FILTERS: Filters = { skipCarrierBroker: true, onlyActive: true, onlyWithPhone: true }
 
 interface Props {
+  /** Which tool is shown: New MC leads or the MC range scanner. */
+  mode: 'leads' | 'range'
+  /** Current hash; "#/leads?go=7" starts loading leads for 7 days. */
+  hash: string
+  /** Changes on every navigation, so the same "?go" link works twice. */
+  navKey: number
   backendOk: boolean | null
   copy: (text: string, what?: string) => void
   toast: (message: string) => void
 }
 
-export function ScannerPage({ backendOk, copy, toast }: Props) {
+/** The two tools (New MC leads and the MC range scanner) with their results; both keep running in the background. */
+export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Props) {
   const saved = useMemo(() => loadState<SavedState>(), [])
   const [settings, setSettings] = useState<ScanSettings>({ ...DEFAULT_SETTINGS, ...saved.settings })
   const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, ...saved.filters })
@@ -43,18 +47,6 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
   const scanner = useScanner(saved, onAdvance)
   const leads = useLeads()
   const [period, setPeriod] = useState(7)
-  // "New MC leads" is the default mode: that is what dispatchers look for first.
-  const [mode, setModeState] = useState<'leads' | 'range'>(() => {
-    try { return localStorage.getItem('mcScanner.mode') === 'range' ? 'range' : 'leads' } catch { return 'leads' }
-  })
-  const setMode = (m: 'leads' | 'range') => {
-    setModeState(m)
-    try { localStorage.setItem('mcScanner.mode', m) } catch { /* storage blocked */ }
-    track('mode', { mode: m })
-  }
-  // First-time visitors see what the tool does; returning users with saved results go straight to work.
-  const [showHero] = useState(() => !saved.rows?.length && !leads.rows.length)
-  useReveal([showHero])
 
   const { rows, checked, saferRejected, nextMc } = scanner
   useEffect(() => {
@@ -113,65 +105,29 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
     if (el && el.getBoundingClientRect().top > innerHeight * 0.5) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [shown.length, runningNow])
 
-  const startFromHero = () => {
-    setMode('leads')
-    document.getElementById('scanner')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    if (!leads.running && backendOk !== false) startLeads(7)
-  }
+  // "#/leads?go=7" (the landing page button) starts loading leads right away.
+  useEffect(() => {
+    const go = parseInt(new URLSearchParams(hash.split('?')[1] ?? '').get('go') ?? '', 10)
+    if (mode !== 'leads' || !Number.isFinite(go)) return
+    history.replaceState(null, '', '#/leads')
+    if (leads.running || backendOk === false) return
+    setPeriod(go)
+    startLeads(go)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navKey])
 
   return (
     <>
-      {showHero && (
-        <section className="hero-band">
-          <div className="hero wrap">
-            <div className="hero-text">
-              <a className="announce" href="#/feedback">
-                <span className="announce-tag">New</span>
-                Dispatcher CRM is coming — tell us what you need
-                <Icon name="arrow" size={14} />
-              </a>
-              <h1>New MC leads <span className="hl">with phone &amp; email</span> every day</h1>
-              <p className="hero-sub">
-                Carriers that just got their operating authority — reach them before other dispatchers do. Or scan any
-                MC range and verify carriers live on SAFER. Built for dispatchers and freight brokers.
-              </p>
-              <div className="hero-cta">
-                <button className="primary big glow" onClick={startFromHero} disabled={backendOk === false}>
-                  <Icon name="zap" size={16} />Get new MC leads
-                </button>
-                <a className="btn big ghost" href="#/lookup"><Icon name="search" size={17} />Check a company</a>
-              </div>
-              <ul className="trust">
-                <li><Icon name="database" size={15} />Official FMCSA data</li>
-                <li><Icon name="shield" size={15} />Live SAFER check</li>
-                <li><Icon name="zap" size={15} />No sign-up</li>
-              </ul>
-            </div>
-            <HeroNetwork />
-          </div>
-          <div className="wrap">
-            <div className="hero-stats reveal">
-              <div><span className="stat-icon"><Icon name="zap" /></span><b><CountUp to={150} suffix="+" /></b><span>new carriers every day</span></div>
-              <div><span className="stat-icon"><Icon name="shield" /></span><b><CountUp to={100} suffix="%" /></b><span>carriers verified on SAFER</span></div>
-              <div><span className="stat-icon"><Icon name="refresh" /></span><b>Daily</b><span>FMCSA census &amp; L&amp;I refresh</span></div>
-              <div><span className="stat-icon"><Icon name="dollar" /></span><b>$<CountUp to={0} /></b><span>free, unlimited CSV export</span></div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {showHero && <HowItWorks />}
-
-      <section id="scanner" className="section-anchor">
+      <section id="scanner" className="section-anchor tools">
         <div className="mode-tabs" role="tablist" aria-label="Mode">
-          <button role="tab" aria-selected={isLeads} className={isLeads ? 'on' : ''} onClick={() => setMode('leads')}>
+          <a href="#/leads" role="tab" aria-selected={isLeads} className={isLeads ? 'on' : ''}>
             <Icon name="zap" size={18} />
             <span><b>New MC leads <span className="new-tag">NEW</span></b><small>Carriers that just got authority</small></span>
-          </button>
-          <button role="tab" aria-selected={!isLeads} className={!isLeads ? 'on' : ''} onClick={() => setMode('range')}>
+          </a>
+          <a href="#/scan" role="tab" aria-selected={!isLeads} className={!isLeads ? 'on' : ''}>
             <Icon name="scan" size={18} />
             <span><b>Scan MC range</b><small>Walk MC numbers one by one</small></span>
-          </button>
+          </a>
         </div>
         {isLeads ? (
           <LeadsPanel
@@ -235,7 +191,6 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
         </section>
       )}
 
-      {showHero && <FeatureBento />}
     </>
   )
 }

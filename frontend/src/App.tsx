@@ -6,6 +6,7 @@ import { Icon } from './components/Icon'
 import { track } from './lib/analytics'
 import { FeedbackPage } from './pages/FeedbackPage'
 import { LookupPage } from './pages/LookupPage'
+import { HomePage } from './pages/HomePage'
 import { ScannerPage } from './pages/ScannerPage'
 
 const isLookup = (hash: string) => hash.startsWith('#/lookup')
@@ -13,21 +14,28 @@ const isLookup = (hash: string) => hash.startsWith('#/lookup')
 /** Current location hash, plus the last lookup hash so the Lookup tab keeps its search while you are away. */
 function useHash() {
   const [hash, setHash] = useState(location.hash)
+  const [navKey, setNavKey] = useState(0)
   const [lastLookup, setLastLookup] = useState(isLookup(location.hash) ? location.hash : '#/lookup')
   useEffect(() => {
     const onChange = () => {
       setHash(location.hash)
+      setNavKey((n) => n + 1)
       if (isLookup(location.hash)) setLastLookup(location.hash)
     }
     addEventListener('hashchange', onChange)
     return () => removeEventListener('hashchange', onChange)
   }, [])
-  return { hash, lastLookup }
+  return { hash, navKey, lastLookup }
 }
 
 export default function App() {
-  const { hash, lastLookup } = useHash()
-  const page = isLookup(hash) ? 'lookup' : hash.startsWith('#/feedback') ? 'feedback' : 'scanner'
+  const { hash, navKey, lastLookup } = useHash()
+  const page = isLookup(hash) ? 'lookup'
+    : hash.startsWith('#/feedback') ? 'feedback'
+    : hash.startsWith('#/leads') ? 'leads'
+    : hash.startsWith('#/scan') ? 'scan'
+    : 'home'
+  const isTool = page === 'leads' || page === 'scan'
   const toast = useToast()
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
 
@@ -40,6 +48,7 @@ export default function App() {
 
   useEffect(() => {
     track('page_view', { page })
+    scrollTo(0, 0)
   }, [page])
 
   const copy = useCallback(async (text: string, what = text) => {
@@ -64,7 +73,8 @@ export default function App() {
             </span>
           </a>
           <nav className="tabs">
-            <a href="#/" className={page === 'scanner' ? 'active' : ''}><Icon name="scan" size={16} />Scanner</a>
+            <a href="#/leads" className={page === 'leads' ? 'active' : ''}><Icon name="zap" size={16} /><span className="hide-sm">New&nbsp;</span>Leads</a>
+            <a href="#/scan" className={page === 'scan' ? 'active' : ''}><Icon name="scan" size={16} />Scanner</a>
             <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}><Icon name="search" size={16} />Lookup</a>
             <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}><Icon name="bulb" size={16} />Ideas</a>
           </nav>
@@ -84,9 +94,17 @@ export default function App() {
       </header>
 
       <main className="wrap">
-        {/* Scanner and Lookup stay mounted so a running scan keeps going while you look something up. */}
-        <div hidden={page !== 'scanner'}>
-          <ScannerPage backendOk={backendOk} copy={(t, w) => void copy(t, w)} toast={toast.show} />
+        {page === 'home' && <HomePage backendOk={backendOk} />}
+        {/* The tools and Lookup stay mounted so a running scan keeps going while you look something up. */}
+        <div hidden={!isTool}>
+          <ScannerPage
+            mode={page === 'scan' ? 'range' : 'leads'}
+            hash={hash}
+            navKey={navKey}
+            backendOk={backendOk}
+            copy={(t, w) => void copy(t, w)}
+            toast={toast.show}
+          />
         </div>
         <div hidden={page !== 'lookup'}>
           <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
@@ -108,9 +126,10 @@ export default function App() {
             </p>
           </div>
           <div className="footer-links">
-            <a href="#/">Scanner</a>
+            <a href="#/leads">New MC leads</a>
+            <a href="#/scan">MC scanner</a>
             <a href={lastLookup}>Lookup</a>
-            <a href="#/feedback">Suggestions</a>
+            <a href="#/feedback">Ideas</a>
             {telegram.support && <a href={telegram.support} target="_blank" rel="noopener">Support</a>}
             {telegram.bot && <a href={telegram.bot} target="_blank" rel="noopener">Telegram bot</a>}
             {telegram.group && <a href={telegram.group} target="_blank" rel="noopener">Telegram group</a>}
