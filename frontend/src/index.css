@@ -107,91 +107,79 @@ button.small { padding: 4px 10px; font-size: 12px; border-radius: 8px; font-weig
 button.icon { padding: 0 6px; line-height: 20px; color: var(--muted); font-weight: 400; }
 button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
 
-/* ---------- Hero ---------- */
-.hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding: 28px 0 44px; }
+/* ---------- Hero: dark band with an animated freight network ---------- */
+body { overflow-x: clip; }
+.hero-band {
+  position: relative; width: 100vw; left: 50%; margin: -28px 0 0 -50vw; color: #e2e8f0; overflow: hidden;
+  background:
+    radial-gradient(1200px 500px at 75% 30%, rgba(37, 99, 235, 0.35), transparent 60%),
+    radial-gradient(800px 400px at 10% 90%, rgba(34, 211, 238, 0.12), transparent 60%),
+    linear-gradient(180deg, #070d1c, #0b1730 60%, #0d1b38);
+}
+.hero-band::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0.5;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.22) 1px, transparent 1px); background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse at 60% 40%, #000 30%, transparent 75%);
+}
+.hero { position: relative; display: grid; grid-template-columns: 0.95fr 1.05fr; gap: 40px; align-items: center; padding-top: 64px; padding-bottom: 72px; }
 .badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
 .badge {
   display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 99px;
   background: var(--accent-soft); color: var(--accent); font-size: 13px; font-weight: 600;
 }
-.hero h1 { font-size: 46px; line-height: 1.08; margin: 0 0 18px; font-weight: 800; letter-spacing: -0.035em; }
-.hero h1 .hl { color: var(--accent); }
-.hero-sub { font-size: 18px; color: var(--muted); margin: 0 0 26px; max-width: 540px; }
-.hero-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 26px; }
-.trust { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--muted); font-size: 14px; }
-.trust span::before { content: '✓'; color: var(--ok); font-weight: 800; margin-right: 7px; }
+.hero .badge { background: rgba(255, 255, 255, 0.08); color: #bfdbfe; border: 1px solid rgba(255, 255, 255, 0.12); }
+.hero h1 { font-size: 50px; line-height: 1.06; margin: 0 0 18px; font-weight: 800; letter-spacing: -0.035em; color: #fff; }
+.hero h1 .hl {
+  background: linear-gradient(90deg, #60a5fa, #22d3ee); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero-sub { font-size: 18px; color: #94a3b8; margin: 0 0 28px; max-width: 520px; }
+.hero-cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.btn.ghost { background: rgba(255, 255, 255, 0.06); color: #fff; border-color: rgba(255, 255, 255, 0.18); }
+.btn.ghost:hover { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.3); }
 
-.preview {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 18px; box-shadow: var(--shadow-lg);
-  overflow: hidden;
+.network { position: relative; }
+.network-map { width: 100%; height: auto; display: block; overflow: visible; }
+.lane-base { fill: none; stroke: rgba(148, 163, 184, 0.16); stroke-width: 1.2; }
+.lane-flow {
+  fill: none; stroke: url(#lane-glow); stroke-width: 2.2; stroke-linecap: round;
+  stroke-dasharray: 16 84; stroke-dashoffset: 100; animation: lane var(--dur, 4s) linear var(--delay, 0s) infinite;
 }
-.preview-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 18px;
-  border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: 13px;
-}
-.preview-head b { font-size: 14px; }
-.dots { display: flex; gap: 6px; }
-.dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--border); display: block; }
-.preview-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-.preview-row:last-child { border-bottom: 0; }
-.preview-name { font-weight: 700; font-size: 14px; }
-.preview-meta { color: var(--muted); font-size: 12.5px; }
-.preview-contacts { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
-.preview-foot { padding: 12px 18px; font-size: 12px; color: var(--muted); background: var(--surface-2); text-align: center; }
+.hub-dot { fill: #93c5fd; }
+.hub-ring { fill: none; stroke: #60a5fa; stroke-width: 1.2; transform-box: fill-box; transform-origin: center; opacity: 0; animation: hub 2.6s ease-out var(--delay, 0s) infinite; }
+.hub-label { fill: #94a3b8; font-size: 10px; font-weight: 500; letter-spacing: 0.02em; }
+@keyframes lane { to { stroke-dashoffset: 0; } }
+@keyframes hub { 0% { transform: scale(0.4); opacity: 0.9; } 100% { transform: scale(1.8); opacity: 0; } }
 
-/* Example result "scans" in: rows slide in one after another, a scan line sweeps the card. */
-.preview { position: relative; }
-.preview-live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; color: var(--ok); font-size: 12.5px; }
-.preview-row { opacity: 0; animation: row-in 0.6s ease-out var(--d, 0ms) forwards; }
-.preview-row .pill { animation: pop 0.4s ease-out calc(var(--d, 0ms) + 450ms) both; }
-.preview-scanline {
-  position: absolute; left: 0; right: 0; top: 49px; height: 2px; z-index: 1; pointer-events: none;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-  animation: scanline 3.2s ease-in-out infinite;
+.feed { position: absolute; left: -24px; bottom: -48px; width: 340px; }
+.feed-card.pos-2 { display: none; }
+.feed-head { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; color: #86efac; margin: 0 0 8px 4px; }
+.feed-card {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 11px 12px; margin-bottom: 8px;
+  border-radius: 14px; background: rgba(15, 23, 42, 0.72); border: 1px solid rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  transition: opacity 0.5s ease, transform 0.5s ease;
 }
-@keyframes row-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-@keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 70% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); } }
-@keyframes scanline { 0% { top: 49px; opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { top: calc(100% - 44px); opacity: 0; } }
+.feed-card.pos-0 { animation: feed-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.feed-card.pos-1 { opacity: 0.75; transform: scale(0.97); }
+.feed-check {
+  width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: rgba(34, 197, 94, 0.18); color: #4ade80; font-weight: 800; font-size: 13px;
+}
+.feed-body { min-width: 0; display: flex; flex-direction: column; }
+.feed-body b { color: #fff; font-size: 13.5px; }
+.feed-body span { color: #94a3b8; font-size: 11.5px; white-space: nowrap; }
+.feed-side { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.feed-pill { font-size: 10.5px; font-weight: 700; color: #4ade80; background: rgba(34, 197, 94, 0.14); padding: 2px 7px; border-radius: 99px; }
+.feed-phone { font-size: 11.5px; color: #bfdbfe; font-variant-numeric: tabular-nums; }
+@keyframes feed-in { from { opacity: 0; transform: translateY(-14px) scale(0.98); } to { opacity: 1; transform: none; } }
 
-/* Dispatch lane: a truck drives from pickup to delivery */
-.road-scene { position: relative; height: 150px; margin: -8px 0 8px; overflow: hidden; border-radius: 18px; }
-.road {
-  position: absolute; left: 0; right: 0; bottom: 18px; height: 34px; border-radius: 10px;
-  background: #1f2937; box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.06);
+.stats-band {
+  position: relative; z-index: 2; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin: -34px auto 0; max-width: 1100px;
+  background: var(--border); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow-lg);
 }
-.road-lines {
-  position: absolute; left: 0; right: 0; top: 50%; height: 3px; margin-top: -1.5px;
-  background: repeating-linear-gradient(90deg, #facc15 0 26px, transparent 26px 50px);
-  animation: road 0.9s linear infinite;
-}
-.truck { position: absolute; bottom: 30px; left: 0; animation: drive 11s linear infinite; }
-.truck-svg { display: block; filter: drop-shadow(0 6px 8px rgba(15, 23, 42, 0.25)); animation: bounce 0.5s ease-in-out infinite alternate; }
-.wheel { animation: spin 0.5s linear infinite; }
-.lane-pin { position: absolute; top: 18px; display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 1; }
-.lane-pin.pickup { left: 6%; }
-.lane-pin.delivery { right: 6%; }
-.pin-dot {
-  width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 3px solid var(--surface);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent); animation: ring 1.8s ease-out infinite;
-}
-.delivery .pin-dot { background: #16a34a; animation-delay: 0.9s; }
-.pin-label {
-  font-size: 12.5px; color: var(--muted); background: var(--surface); border: 1px solid var(--border);
-  padding: 3px 10px; border-radius: 99px; box-shadow: var(--shadow); white-space: nowrap;
-}
-.pin-label b { color: var(--text); margin-right: 4px; }
-.load-tag {
-  position: absolute; top: 22px; left: 50%; transform: translateX(-50%); font-size: 12.5px; color: var(--muted);
-  border: 1px dashed var(--border); border-radius: 8px; padding: 3px 10px; background: var(--surface); white-space: nowrap;
-}
-.load-tag b { color: var(--ok); }
-@keyframes road { to { background-position-x: -50px; } }
-@keyframes drive { from { transform: translateX(-170px); } to { transform: translateX(calc(min(1180px, 100vw) + 20px)); } }
-@keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-1.5px); } }
-@keyframes ring {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
-  100% { box-shadow: 0 0 0 14px transparent; }
-}
+.stats-band > div { background: var(--surface); padding: 18px 20px; }
+.stats-band b { display: block; font-size: 28px; font-weight: 800; letter-spacing: -0.03em; color: var(--accent); font-variant-numeric: tabular-nums; }
+.stats-band > div > span { font-size: 13px; color: var(--muted); }
 
 /* Sections fade up as they scroll into view */
 .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.6s ease, transform 0.6s ease; transition-delay: var(--d, 0ms); }
@@ -203,8 +191,8 @@ button:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
-  .preview-row, .reveal { opacity: 1; transform: none; }
-  .truck { left: 45%; }
+  .reveal { opacity: 1; transform: none; }
+  .lane-flow { stroke-dasharray: none; stroke-dashoffset: 0; opacity: 0.5; }
 }
 
 /* ---------- Sections ---------- */
@@ -407,7 +395,8 @@ table.policies th { color: var(--muted); font-weight: 600; }
 
 /* ---------- Responsive ---------- */
 @media (max-width: 960px) {
-  .hero { grid-template-columns: 1fr; gap: 32px; padding-top: 12px; }
+  .hero { grid-template-columns: 1fr; gap: 24px; padding-top: 44px; padding-bottom: 110px; }
+  .feed { left: 0; }
   .hero h1 { font-size: 38px; }
   .stats { grid-template-columns: repeat(3, 1fr); }
   .features { grid-template-columns: repeat(2, 1fr); }
@@ -420,10 +409,13 @@ table.policies th { color: var(--muted); font-weight: 600; }
   .nav-cta .btn { padding: 7px 12px; font-size: 13px; }
   .nav-bot { display: none; }
   .section-anchor { scroll-margin-top: 118px; }
-  .road-scene { height: 130px; }
-  .load-tag { display: none; }
-  .lane-pin.pickup { left: 2%; }
-  .lane-pin.delivery { right: 2%; }
+  .hero { padding-top: 36px; padding-bottom: 96px; gap: 20px; }
+  .feed { position: relative; left: auto; bottom: auto; width: auto; margin-top: 4px; }
+  .hero { padding-bottom: 40px; }
+  .feed-card.pos-2 { display: none; }
+  .stats-band { grid-template-columns: repeat(2, 1fr); margin-top: 40px; }
+  .stats-band b { font-size: 22px; }
+  .hub-label { font-size: 13px; }
   .results-actions button { flex: 1 1 40%; }
   .results-head h3 { font-size: 18px; }
   .live-status { font-size: 15px; }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { ResultsTable } from '../components/ResultsTable'
-import { RoadScene } from '../components/RoadScene'
+import { CountUp, HeroNetwork } from '../components/HeroNetwork'
 import { ScanPanel } from '../components/ScanPanel'
 import { StatsBar } from '../components/StatsBar'
 import { useReveal } from '../hooks/useReveal'
@@ -97,32 +97,36 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
   return (
     <>
       {showHero && (
-        <section className="hero">
-          <div>
-            <div className="badge-row">
-              <span className="badge">Free</span>
-              <span className="badge">No sign-up</span>
-              <span className="badge">Official FMCSA data</span>
+        <section className="hero-band">
+          <div className="hero wrap">
+            <div className="hero-text">
+              <div className="badge-row">
+                <span className="badge">Free</span>
+                <span className="badge">No sign-up</span>
+                <span className="badge">Official FMCSA data</span>
+              </div>
+              <h1>Find authorized trucking carriers <span className="hl">with phone &amp; email</span></h1>
+              <p className="hero-sub">
+                Scan MC numbers and get a ready list of active carriers, each verified live on SAFER. Built for
+                dispatchers and freight brokers.
+              </p>
+              <div className="hero-cta">
+                <button className="primary big" onClick={startFromHero} disabled={backendOk === false}>▶ Start free scan</button>
+                <a className="btn big ghost" href="#/lookup">🔎 Check a company</a>
+              </div>
             </div>
-            <h1>Find authorized trucking carriers <span className="hl">with phone &amp; email</span></h1>
-            <p className="hero-sub">
-              Scan MC numbers and get a ready list of active carriers, each verified live on SAFER. Built for
-              dispatchers and freight brokers.
-            </p>
-            <div className="hero-cta">
-              <button className="primary big" onClick={startFromHero} disabled={backendOk === false}>▶ Start free scan</button>
-              <a className="btn big" href="#/lookup">🔎 Check a company</a>
-            </div>
-            <div className="trust">
-              <span>Updated daily</span>
-              <span>Live SAFER check</span>
-              <span>Export to CSV</span>
-            </div>
+            <HeroNetwork />
           </div>
-          <ResultPreview />
         </section>
       )}
-      {showHero && <RoadScene />}
+      {showHero && (
+        <section className="stats-band reveal">
+          <div><b>~<CountUp to={300} /></b><span>MC numbers checked per minute</span></div>
+          <div><b><CountUp to={100} suffix="%" /></b><span>of carriers verified live on SAFER</span></div>
+          <div><b>Daily</b><span>fresh FMCSA census &amp; L&amp;I data</span></div>
+          <div><b>$<CountUp to={0} /></b><span>free, no sign-up, no limits on export</span></div>
+        </section>
+      )}
 
       {showHero && (
         <section className="section">
@@ -223,36 +227,3 @@ const FEATURES: [string, string, string][] = [
   ['⬇️', 'Copy & export', 'Copy all phones or emails in one click, or download a CSV for your CRM or dialer.'],
   ['🤖', 'Telegram bot', 'The same scanner and lookup inside Telegram — open it from @MCUSDOTScannerbot.'],
 ]
-
-/** Illustration of a scan result for first-time visitors; contacts are masked on purpose. */
-function ResultPreview() {
-  const rows = [
-    ['B•••• Express LLC', 'MC-1000012', 'TX · 6 trucks', '(214) •••-••37', 'dispatch@••••.com'],
-    ['S•••• Trucking Inc', 'MC-1000047', 'IL · 3 trucks', '(773) •••-••91', 'ops@••••.com'],
-    ['M•••• Logistics LLC', 'MC-1000083', 'GA · 12 trucks', '(404) •••-••15', 'info@••••.com'],
-  ]
-  return (
-    <div className="preview" aria-label="Example of a scan result">
-      <div className="preview-head">
-        <span className="preview-live"><span className="pulse" /> Live scan</span>
-        <b>Example result</b>
-        <span className="muted">200 MCs → 31 carriers</span>
-      </div>
-      <div className="preview-scanline" />
-      {rows.map(([name, mc, meta, phone, email], i) => (
-        <div key={mc} className="preview-row" style={{ '--d': `${500 + i * 700}ms` } as CSSProperties}>
-          <div>
-            <div className="preview-name">{name}</div>
-            <div className="preview-meta">{mc} · {meta}</div>
-          </div>
-          <div><span className="pill pill-ok">AUTHORIZED ✓ SAFER</span></div>
-          <div className="preview-contacts">
-            <span>📞 {phone}</span>
-            <span>✉️ {email}</span>
-          </div>
-        </div>
-      ))}
-      <div className="preview-foot">Contacts are hidden in this example. Run a scan to see real ones.</div>
-    </div>
-  )
-}
