@@ -11,6 +11,7 @@ export const DATASETS = {
   legacyInsurance: 'qh9u-swkp', // L&I ActPendInsur - legacy policies, no new filings since 05/2026
   motusInsurance: 'c5y8-a4uz', // Motus Insur - current active/pending policies
   motusInsuranceHistory: '3uet-3z4i', // Motus InsHist - cancelled/replaced policies
+  motusAuthHistory: 'yu5v-wbh6', // Motus AuthHist - authority status changes with dates (grants of new carriers)
 } as const;
 
 export type Row = Record<string, string | undefined>;

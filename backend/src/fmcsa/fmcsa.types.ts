@@ -54,6 +54,16 @@ export interface Carrier {
   hazmat: boolean;
   cargo: string[];
   authority: Authority;
+  /** Date the carrier authority was granted (New MC leads only). */
+  grantedOn?: string | null;
+}
+
+/** Carriers whose operating authority was granted on one day. */
+export interface LeadsDay {
+  date: string;
+  /** Property-carrier grants that day before contact / authority filtering. */
+  granted: number;
+  carriers: Carrier[];
 }
 
 /** A company found by individual lookup: may have no MC, no authority record, or be a broker. */

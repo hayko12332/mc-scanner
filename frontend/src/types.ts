@@ -107,6 +107,15 @@ export type SaferChecked = SaferRecord & { checkedAt: string }
 /** A carrier kept by the scanner, with the live SAFER result when it was verified. */
 export interface ScannedCarrier extends Carrier {
   safer?: SaferChecked
+  /** Date the operating authority was granted (New MC leads only). */
+  grantedOn?: string | null
+}
+
+/** "New MC leads" for one day: carriers granted authority that day. */
+export interface LeadsDay {
+  date: string
+  granted: number
+  carriers: ScannedCarrier[]
 }
 
 /** A company found by individual lookup: may have no MC, no authority record, or be a broker. */

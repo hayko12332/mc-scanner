@@ -1,5 +1,5 @@
 import type {
-  AuthorityMode, Insurance, LookupResult, LookupType, RegistryResult, SaferSnapshot, ScanResult,
+  AuthorityMode, Insurance, LeadsDay, LookupResult, LookupType, RegistryResult, SaferSnapshot, ScanResult,
 } from './types'
 
 export class ApiError extends Error {
@@ -34,6 +34,7 @@ export const api = {
     get<ScanResult>(`/carriers?from=${from}&to=${to}&mode=${mode}`, signal),
   safer: (mc: number, signal?: AbortSignal) => get<SaferSnapshot>(`/safer/${mc}`, signal),
   insurance: (mc: number) => get<Insurance>(`/carriers/${mc}/insurance`),
+  newLeads: (date: string, signal?: AbortSignal) => get<LeadsDay>(`/carriers/new?date=${date}`, signal),
   saferPageUrl: (dot: string) => `/api/safer/page/${encodeURIComponent(dot)}`,
   lookup: (q: string, type: LookupType, signal?: AbortSignal) =>
     get<LookupResult>(`/lookup?${new URLSearchParams({ q, type })}`, signal),
