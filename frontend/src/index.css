@@ -108,8 +108,33 @@ table.policies th { color: var(--muted); font-weight: 600; }
 }
 .toast.show { opacity: 1; }
 
-header.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-bottom: 6px; }
+header.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; margin-bottom: 14px; }
 header.top h1 { margin: 0; }
+.brand { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; }
+.brand img { border-radius: 8px; display: block; }
+
+.hero { margin: 4px 0 16px; }
+.hero h2 { font-size: 26px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+.hero-sub { font-size: 16px; margin: 0 0 12px; color: var(--muted); }
+.hero-points { margin: 0 0 10px; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 14px; }
+.hero-points li { position: relative; padding-left: 22px; }
+.hero-points li::before { content: '✓'; position: absolute; left: 0; color: var(--ok); font-weight: 700; }
+.hero-data { margin: 0; font-size: 12px; color: var(--muted); }
+
+.start-row { align-items: flex-end; }
+.start-row .field input { width: 180px; font-size: 16px; padding: 9px 11px; }
+button.big { padding: 10px 18px; font-size: 15px; }
+.scan-panel > .controls + .controls { margin-top: 14px; }
+.advanced { margin-top: 12px; }
+.advanced summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+.advanced[open] summary { margin-bottom: 10px; }
+.advanced .rules { margin-bottom: 0; }
+.actions { padding-top: 12px; border-top: 1px solid var(--border); }
+.status:empty { display: none; }
+
+.how h3 { margin: 0 0 8px; font-size: 15px; }
+.how ol { margin: 0 0 10px; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
+.how p { margin: 0; font-size: 13px; }
 .tabs { display: flex; gap: 4px; }
 .tabs a {
   padding: 5px 12px; border-radius: 7px; text-decoration: none; color: var(--muted); border: 1px solid transparent;
@@ -169,4 +194,10 @@ button.icon { padding: 0 5px; line-height: 18px; color: var(--muted); }
   .field input { width: 100%; }
   .field { flex: 1 1 140px; }
   .kv-row { grid-template-columns: 110px 1fr; }
+  .hero h2 { font-size: 22px; }
+  .hero-sub { font-size: 15px; }
+  .start-row .field { flex: 1 1 100%; }
+  .start-row .field input { width: 100%; }
+  .start-row button.primary { flex: 1 1 auto; }
+  .actions button { flex: 1 1 40%; padding: 8px 10px; }
 }

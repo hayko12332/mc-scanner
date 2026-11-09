@@ -9,6 +9,7 @@ interface Props {
   backendOk: boolean | null
   running: boolean
   status: Status
+  hasResults: boolean
   onStart: () => void
   onStop: () => void
   onCsv: () => void
@@ -17,8 +18,9 @@ interface Props {
   onClear: () => void
 }
 
-const NUMBER_FIELDS: { key: keyof ScanSettings; label: string; placeholder?: string; min: number; max?: number }[] = [
-  { key: 'startMc', label: 'Start MC', min: 1 },
+type NumberField = { key: keyof ScanSettings; label: string; placeholder?: string; min: number; max?: number }
+
+const ADVANCED_FIELDS: NumberField[] = [
   { key: 'endMc', label: 'End MC (empty = no limit)', placeholder: '—', min: 1 },
   { key: 'batchSize', label: 'Batch size (MCs per request)', min: 1, max: 200 },
   { key: 'delayMs', label: 'Delay between batches, ms', min: 0 },
@@ -26,32 +28,38 @@ const NUMBER_FIELDS: { key: keyof ScanSettings; label: string; placeholder?: str
 ]
 
 const FILTERS: { key: keyof Filters; label: string }[] = [
-  { key: 'skipCarrierBroker', label: 'Skip carrier + broker' },
-  { key: 'onlyActive', label: 'USDOT status ACTIVE only' },
   { key: 'onlyWithPhone', label: 'With phone only' },
+  { key: 'onlyActive', label: 'USDOT status ACTIVE only' },
+  { key: 'skipCarrierBroker', label: 'Skip carrier + broker' },
 ]
 
 export function ScanPanel(p: Props) {
-  const backendState =
-    p.backendOk == null ? 'Connecting to backend…' : p.backendOk ? '✓ Backend connected' : '✗ Backend not reachable'
+  const numberInput = (f: NumberField) => (
+    <label key={f.key} className="field">
+      {f.label}
+      <input
+        type="number"
+        inputMode="numeric"
+        min={f.min}
+        max={f.max}
+        placeholder={f.placeholder}
+        value={p.settings[f.key] as string}
+        disabled={p.running}
+        onChange={(e) => p.onSettings({ ...p.settings, [f.key]: e.target.value })}
+      />
+    </label>
+  )
+
   return (
-    <div className="panel">
-      <div className="controls">
-        {NUMBER_FIELDS.map((f) => (
-          <label key={f.key} className="field">
-            {f.label}
-            <input
-              type="number"
-              min={f.min}
-              max={f.max}
-              placeholder={f.placeholder}
-              value={p.settings[f.key] as string}
-              disabled={p.running}
-              onChange={(e) => p.onSettings({ ...p.settings, [f.key]: e.target.value })}
-            />
-          </label>
-        ))}
+    <div className="panel scan-panel">
+      <div className="controls start-row">
+        {numberInput({ key: 'startMc', label: 'Start from MC', min: 1 })}
+        <button className="primary big" onClick={p.onStart} disabled={p.running || p.backendOk === false}>
+          ▶ {p.hasResults ? 'Continue' : 'Start scanning'}
+        </button>
+        <button className="big" onClick={p.onStop} disabled={!p.running}>⏸ Pause</button>
       </div>
+
       <div className="controls">
         <label className="check">
           <input
@@ -60,11 +68,8 @@ export function ScanPanel(p: Props) {
             disabled={p.running}
             onChange={(e) => p.onSettings({ ...p.settings, useSafer: e.target.checked })}
           />
-          Verify every MC on SAFER (live)
+          Verify every carrier on SAFER (live)
         </label>
-        <span className={`muted small-text ${p.backendOk === false ? 'error' : ''}`}>{backendState}</span>
-      </div>
-      <div className="controls">
         {FILTERS.map((f) => (
           <label key={f.key} className="check">
             <input
@@ -76,19 +81,27 @@ export function ScanPanel(p: Props) {
           </label>
         ))}
       </div>
-      <p className="rules">
-        Always: carriers only (brokers are skipped), email required, AUTHORIZED only. With SAFER verification the
-        authority status comes live from SAFER for every MC; without it, from the FMCSA files (L&amp;I + Motus).
-      </p>
-      <div className="controls">
-        <button className="primary" onClick={p.onStart} disabled={p.running || p.backendOk === false}>▶ Start</button>
-        <button onClick={p.onStop} disabled={!p.running}>⏸ Pause</button>
-        <button onClick={p.onCsv}>⬇ CSV</button>
-        <button onClick={p.onCopyEmails}>Copy emails</button>
-        <button onClick={p.onCopyPhones}>Copy phones</button>
-        <button onClick={p.onClear} disabled={p.running}>Clear</button>
-      </div>
+
+      <details className="advanced">
+        <summary>Advanced settings</summary>
+        <div className="controls">{ADVANCED_FIELDS.map(numberInput)}</div>
+        <p className="rules">
+          Always: carriers only (brokers are skipped), email required, AUTHORIZED only. With SAFER verification the
+          authority status comes live from SAFER for every MC; without it, from the FMCSA files (L&amp;I + Motus).
+        </p>
+      </details>
+
+      {p.hasResults && (
+        <div className="controls actions">
+          <button onClick={p.onCsv}>⬇ Download CSV</button>
+          <button onClick={p.onCopyEmails}>Copy all emails</button>
+          <button onClick={p.onCopyPhones}>Copy all phones</button>
+          <button onClick={p.onClear} disabled={p.running}>Clear</button>
+        </div>
+      )}
+
       <div className={`status ${p.status.tone === 'error' ? 'error' : ''}`}>{p.status.text}</div>
+      {p.backendOk === false && <div className="status error">Server not reachable. Please reload the page in a minute.</div>}
     </div>
   )
 }

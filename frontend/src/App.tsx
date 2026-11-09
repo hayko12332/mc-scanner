@@ -54,14 +54,16 @@ export default function App() {
   return (
     <div className="wrap">
       <header className="top">
-        <h1>MC Scanner — FMCSA</h1>
+        <a href="#/" className="brand">
+          <img src="/logo.svg" alt="" width="32" height="32" />
+          <h1>MC Scanner</h1>
+        </a>
         <nav className="tabs">
           <a href="#/" className={page === 'scanner' ? 'active' : ''}>Scanner</a>
           <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}>Lookup</a>
           <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}>Suggestions</a>
         </nav>
       </header>
-      <ComingSoon />
 
       {/* Scanner and Lookup stay mounted so a running scan keeps going while you look something up. */}
       <div hidden={page !== 'scanner'}>
@@ -71,6 +73,7 @@ export default function App() {
         <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
       </div>
       {page === 'feedback' && <FeedbackPage groupUrl={telegram.group} />}
+      {page !== 'feedback' && <ComingSoon />}
 
       <footer className="footer">
         {(telegram.bot || telegram.group) && (

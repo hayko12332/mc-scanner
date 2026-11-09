@@ -50,7 +50,7 @@ export function useScanner(initial: Partial<ScanProgress>, onAdvance: (nextMc: n
   const [status, setStatus] = useState<Status>({
     text: initial.nextMc
       ? `Restored ${initial.rows?.length ?? 0} records. You can continue from MC ${initial.nextMc}.`
-      : 'Ready. Enter an MC number and press Start.',
+      : '',
     tone: 'info',
   })
   const seen = useRef(new Set((initial.rows ?? []).map(carrierKey)))

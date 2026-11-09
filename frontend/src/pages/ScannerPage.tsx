@@ -35,6 +35,8 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
   const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, ...saved.filters })
   const onAdvance = useCallback((mc: number) => setSettings((s) => ({ ...s, startMc: String(mc) })), [])
   const scanner = useScanner(saved, onAdvance)
+  // First-time visitors see what the tool does; returning users with saved results go straight to work.
+  const [showHero] = useState(() => !saved.rows?.length)
 
   const { rows, checked, saferRejected, nextMc } = scanner
   useEffect(() => {
@@ -65,12 +67,24 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
     void scanner.start(settings)
   }
 
+  const started = scanner.running || checked > 0 || rows.length > 0
+
   return (
     <>
-      <p className="sub">
-        Continuous carrier lookup by MC number (MC, MC+1, MC+2 …). Data: official FMCSA files (Company Census +
-        Licensing &amp; Insurance) on data.transportation.gov, updated daily, with live SAFER verification.
-      </p>
+      {showHero && (
+        <section className="hero">
+          <h2>Find authorized trucking carriers with phone &amp; email</h2>
+          <p className="hero-sub">Free FMCSA carrier lookup for dispatchers and brokers. No sign-up.</p>
+          <ul className="hero-points">
+            <li><b>Scans MC numbers in a row</b> (MC, MC+1, MC+2 …) and keeps only authorized carriers</li>
+            <li><b>Live SAFER check</b> of every carrier it finds</li>
+            <li><b>Copy all phones and emails</b> in one click or download CSV</li>
+          </ul>
+          <p className="hero-data">
+            Data: official FMCSA files (Company Census, Licensing &amp; Insurance), updated daily.
+          </p>
+        </section>
+      )}
 
       <ScanPanel
         settings={settings}
@@ -80,6 +94,7 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
         backendOk={backendOk}
         running={scanner.running}
         status={scanner.status}
+        hasResults={rows.length > 0}
         onStart={start}
         onStop={scanner.stop}
         onCsv={() => {
@@ -92,16 +107,32 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
         onClear={() => confirm('Delete all found records?') && scanner.clear()}
       />
 
-      <StatsBar
-        current={scanner.current}
-        checked={checked}
-        found={visible.length}
-        withPhone={visible.filter((c) => c.phone || c.cellPhone).length}
-        saferRejected={saferRejected}
-        rate={scanner.rate}
-      />
-
-      <ResultsTable carriers={visible} onCopy={(text) => copy(text)} />
+      {started ? (
+        <>
+          <StatsBar
+            current={scanner.current}
+            checked={checked}
+            found={visible.length}
+            withPhone={visible.filter((c) => c.phone || c.cellPhone).length}
+            saferRejected={saferRejected}
+            rate={scanner.rate}
+          />
+          <ResultsTable carriers={visible} onCopy={(text) => copy(text)} />
+        </>
+      ) : (
+        <div className="panel how">
+          <h3>How it works</h3>
+          <ol>
+            <li><b>Pick a starting MC</b> or keep the one above.</li>
+            <li><b>Press Start scanning.</b> Carriers with phone and email show up here as they are found.</li>
+            <li><b>Click any phone or email to copy it</b>, or copy them all / download CSV.</li>
+          </ol>
+          <p className="muted">
+            Need to check one company? Use <a href="#/lookup">Lookup</a> by MC, USDOT, email or phone: authority,
+            insurance, fleet and state registration.
+          </p>
+        </div>
+      )}
     </>
   )
 }
