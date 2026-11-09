@@ -7,6 +7,8 @@ import type { StoredEvent, StoredFeedback } from './analytics.types.js';
 export interface AnalyticsStore {
   insert(events: StoredEvent[]): Promise<void>;
   insertFeedback(feedback: StoredFeedback): Promise<void>;
+  /** Whether any event from this visitor is already stored. */
+  hasVisitor(visitorId: string): Promise<boolean>;
   close(): Promise<void>;
 }
 
@@ -28,6 +30,7 @@ const SCHEMA = `
     tg_name     TEXT NOT NULL DEFAULT ''
   );
   CREATE INDEX IF NOT EXISTS analytics_events_at ON analytics_events (at);
+  CREATE INDEX IF NOT EXISTS analytics_events_visitor ON analytics_events (visitor_id);
   CREATE TABLE IF NOT EXISTS feedback (
     id          BIGSERIAL PRIMARY KEY,
     at          TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -81,6 +84,12 @@ export class PostgresStore implements AnalyticsStore {
     );
   }
 
+  async hasVisitor(visitorId: string): Promise<boolean> {
+    await this.ready;
+    const r = await this.pool.query('SELECT 1 FROM analytics_events WHERE visitor_id = $1 LIMIT 1', [visitorId]);
+    return r.rowCount! > 0;
+  }
+
   close() {
     return this.pool.end();
   }
@@ -88,11 +97,19 @@ export class PostgresStore implements AnalyticsStore {
 
 /** Newline-delimited JSON files: fine for local runs; on Render's free plan the disk is wiped on every deploy. */
 export class FileStore implements AnalyticsStore {
+  /** Visitors seen since this server started (the file itself is not searched). */
+  private readonly seen = new Set<string>();
+
   constructor(private readonly file: string) {}
 
   async insert(events: StoredEvent[]): Promise<void> {
     if (!events.length) return;
+    for (const e of events) this.seen.add(e.visitorId);
     await this.append(this.file, events.map((e) => JSON.stringify(e) + '\n').join(''));
+  }
+
+  async hasVisitor(visitorId: string): Promise<boolean> {
+    return this.seen.has(visitorId);
   }
 
   insertFeedback(f: StoredFeedback): Promise<void> {

@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, Logger, ServiceUnavailableException, type OnModuleDestroy } from '@nestjs/common';
 import { config } from '../config.js';
 import { createStore, type AnalyticsStore } from './analytics.store.js';
-import type { EventBatch, FeedbackInput, StoredEvent, TelegramUser } from './analytics.types.js';
+import type { EventBatch, FeedbackInput, StoredEvent, StoredFeedback, TelegramUser } from './analytics.types.js';
+import { OwnerNotifier } from './owner-notifier.js';
 import { verifyInitData } from './telegram-auth.js';
 
 /** Request facts the server adds to every event. */
@@ -19,10 +20,27 @@ const MAX_FEEDBACK = 3000;
 
 const clip = (s: unknown, n: number) => (typeof s === 'string' ? s.slice(0, n) : '');
 
+/** Plain-text bot message (alerts to the site owner). */
+async function sendTelegram(chatId: number, text: string) {
+  const res = await fetch(`https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text, link_preview_options: { is_disabled: true } }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const data = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
+  if (!data.ok) throw new Error(data.description ?? `HTTP ${res.status}`);
+}
+
 @Injectable()
 export class AnalyticsService implements OnModuleDestroy {
   private readonly logger = new Logger(AnalyticsService.name);
   private readonly store: AnalyticsStore = createStore(config.databaseUrl, config.analyticsFile);
+  private readonly notifier = new OwnerNotifier({
+    ownerTelegramId: config.telegramBotToken ? config.ownerTelegramId : 0,
+    ownerVisitorIds: config.ownerVisitorIds,
+    send: (chatId, text) => sendTelegram(chatId, text),
+  });
 
   /** Validate and store a browser batch; returns how many events were kept. */
   async recordBatch(batch: EventBatch, ctx: RequestContext): Promise<number> {
@@ -47,17 +65,22 @@ export class AnalyticsService implements OnModuleDestroy {
         tg,
       })];
     });
+    const isNew = events.length > 0 && this.notifier.enabled && !(await this.isKnownVisitor(batch.visitorId));
     await this.save(events);
+    // Alerts go out in the background so the browser's request is not held up.
+    void this.notifier.send(this.notifier.siteAlerts(events, isNew));
     return events.length;
   }
 
   /** Server-side event, e.g. a Telegram /start. */
   async recordServer(event: string, props: Record<string, unknown>, tg: TelegramUser | null): Promise<void> {
     const id = tg ? `tg:${tg.id}` : 'server';
-    await this.save([this.event(event, props, {
+    const stored = this.event(event, props, {
       at: new Date(), visitorId: id, sessionId: id, path: '', referrer: '',
       ctx: { ip: '', country: '', userAgent: '' }, tg,
-    })]);
+    });
+    await this.save([stored]);
+    if (event === 'bot_start') void this.notifier.send([this.notifier.botStartAlert(stored)]);
   }
 
   /** Store a suggestion. Unlike analytics, a failure is reported so the user knows it was not saved. */
@@ -67,24 +90,26 @@ export class AnalyticsService implements OnModuleDestroy {
     // From the bot the Telegram user is known for sure; from the site it comes from signed Mini App data.
     const tg = botUser ?? verifyInitData(clip(input.tgInitData, 4096), config.telegramBotToken);
     const visitorId = ID.test(input.visitorId ?? '') ? input.visitorId! : '';
+    const feedback: StoredFeedback = {
+      at: new Date().toISOString(),
+      message,
+      contact: clip(input.contact, 200).trim(),
+      page: clip(input.page, 300),
+      visitorId,
+      ip: ctx.ip,
+      country: ctx.country,
+      userAgent: clip(ctx.userAgent, 400),
+      tgUserId: tg?.id ?? null,
+      tgUsername: tg?.username ?? '',
+      tgName: tg?.name ?? '',
+    };
     try {
-      await this.store.insertFeedback({
-        at: new Date().toISOString(),
-        message,
-        contact: clip(input.contact, 200).trim(),
-        page: clip(input.page, 300),
-        visitorId,
-        ip: ctx.ip,
-        country: ctx.country,
-        userAgent: clip(ctx.userAgent, 400),
-        tgUserId: tg?.id ?? null,
-        tgUsername: tg?.username ?? '',
-        tgName: tg?.name ?? '',
-      });
+      await this.store.insertFeedback(feedback);
     } catch (e) {
       this.logger.error(`Could not store feedback: ${(e as Error).message}`);
       throw new ServiceUnavailableException('Could not save your suggestion right now, please try again later.');
     }
+    void this.notifier.send([this.notifier.feedbackAlert(feedback)]);
     if (visitorId) {
       await this.save([this.event('feedback_sent', { length: message.length }, {
         at: new Date(), visitorId, sessionId: visitorId, path: clip(input.page, 300), referrer: '', ctx, tg,
@@ -116,6 +141,15 @@ export class AnalyticsService implements OnModuleDestroy {
       tgUsername: o.tg?.username ?? '',
       tgName: o.tg?.name ?? '',
     };
+  }
+
+  /** If the lookup fails, assume the visitor is known: a missed alert is better than a false one. */
+  private async isKnownVisitor(visitorId: string) {
+    try {
+      return await this.store.hasVisitor(visitorId);
+    } catch {
+      return true;
+    }
   }
 
   private async save(events: StoredEvent[]) {

@@ -18,6 +18,11 @@ export const config = {
   telegramBotToken: env('TELEGRAM_BOT_TOKEN'),
   // Invite link of the community group (https://t.me/...), shown in the bot and on the site.
   telegramGroupUrl: env('TELEGRAM_GROUP_URL'),
+  // The owner's Telegram user id: the bot messages them about new visitors, /start and suggestions.
+  // They must have opened the bot once. Empty = no alerts.
+  ownerTelegramId: Number(env('OWNER_TELEGRAM_ID')) || 0,
+  // The owner's own browser visitor ids (comma-separated), so their visits are not reported.
+  ownerVisitorIds: env('OWNER_VISITOR_IDS').split(',').map((s) => s.trim()).filter(Boolean),
   // Public https address of the site; Render sets RENDER_EXTERNAL_URL automatically.
   publicUrl: (env('PUBLIC_URL') || env('RENDER_EXTERNAL_URL')).replace(/\/+$/, ''),
   // Render's free plan puts the service to sleep after 15 idle minutes and the next visitor (or Telegram
