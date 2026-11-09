@@ -44,7 +44,8 @@ export class InsuranceService {
   /** Motus (current system) first; the legacy L&I file only when Motus has nothing for this MC. */
   async forMc(mc: number): Promise<Insurance> {
     const where = `docket_number in (${inList(docketVariants([mc]))})`;
-    const [current, past] = await Promise.all([
+    // Motus is current; the legacy L&I file (frozen since 05/2026) is the fallback and may be retired.
+    const [currentRes, pastRes] = await Promise.allSettled([
       this.socrata.query(DATASETS.motusInsurance, { $where: where, $order: 'effective_date DESC', $limit: '100' }),
       this.socrata.query(DATASETS.motusInsuranceHistory, {
         $where: `${where} AND cancl_effective_date IS NOT NULL AND (ins_type_desc IS NULL OR ins_type_desc not like '%CANCELLATION%')`,
@@ -52,10 +53,18 @@ export class InsuranceService {
         $limit: '15',
       }),
     ]);
+    const current = currentRes.status === 'fulfilled' ? currentRes.value : [];
+    const past = pastRes.status === 'fulfilled' ? pastRes.value : [];
     if (current.length || past.length) {
       return { source: 'Motus', current: current.map(motusPolicy), past: past.map(motusPastPolicy) };
     }
-    const legacy = await this.socrata.query(DATASETS.legacyInsurance, { $where: where, $limit: '100' });
-    return { source: 'L&I', current: legacy.map(legacyPolicy), past: [] };
+    try {
+      const legacy = await this.socrata.query(DATASETS.legacyInsurance, { $where: where, $limit: '100' });
+      return { source: 'L&I', current: legacy.map(legacyPolicy), past: [] };
+    } catch {
+      // No legacy file: an empty Motus answer is the truth; if Motus failed too, report the error.
+      if (currentRes.status === 'rejected') throw currentRes.reason;
+      return { source: 'Motus', current: [], past: [] };
+    }
   }
 }

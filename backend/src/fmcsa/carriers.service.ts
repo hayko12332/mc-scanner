@@ -98,7 +98,9 @@ export class CarriersService {
   /** Authority per MC from the legacy L&I and Motus files; MCs the mode rejects are left out. */
   async authorities(mcList: number[], mode: AuthorityMode): Promise<Map<number, Authority>> {
     const mcs = [...new Set(mcList)];
-    const [legacyRows, motusRows] = await Promise.all([
+    // Either system may be missing (the legacy L&I file is frozen since 05/2026 and may be retired):
+    // work with whatever answers, fail only when neither does.
+    const [legacyRes, motusRes] = await Promise.allSettled([
       this.socrata.query(DATASETS.legacyCarrier, {
         $select: LEGACY_FIELDS.join(','),
         $where: `docket_number in (${inList(mcs.map(legacyDocket))})`,
@@ -110,6 +112,9 @@ export class CarriersService {
         $limit: '5000',
       }),
     ]);
+    if (legacyRes.status === 'rejected' && motusRes.status === 'rejected') throw motusRes.reason;
+    const legacyRows = legacyRes.status === 'fulfilled' ? legacyRes.value : [];
+    const motusRows = motusRes.status === 'fulfilled' ? motusRes.value : [];
     const legacy = new Map(legacyRows.map((row) => [docketToMc(row.docket_number ?? ''), row]));
     const motus = summarizeMotus(motusRows);
 

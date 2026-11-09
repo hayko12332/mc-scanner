@@ -1,5 +1,6 @@
 import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
 import { config } from '../config.js';
+import { sourceMonitor } from './source-monitor.js';
 
 const FMCSA_HOST = 'data.transportation.gov';
 
@@ -13,6 +14,9 @@ export const DATASETS = {
   motusInsuranceHistory: '3uet-3z4i', // Motus InsHist - cancelled/replaced policies
   motusAuthHistory: 'yu5v-wbh6', // Motus AuthHist - authority status changes with dates (grants of new carriers)
 } as const;
+
+/** Readable name of an FMCSA dataset id for alerts. */
+const DATASET_NAMES: Record<string, string> = Object.fromEntries(Object.entries(DATASETS).map(([k, v]) => [v, `${k} (${v})`]));
 
 export type Row = Record<string, string | undefined>;
 
@@ -38,7 +42,11 @@ export class SocrataClient {
       if (attempt) await sleep(Math.min(15_000, 1000 * 2 ** attempt));
       try {
         const res = await fetch(url, { headers, signal: AbortSignal.timeout(60_000) });
-        if (res.ok) return (await res.json()) as T[];
+        if (res.ok) {
+          const rows = (await res.json()) as T[];
+          if (host === FMCSA_HOST) sourceMonitor.ok(DATASET_NAMES[dataset] ?? dataset);
+          return rows;
+        }
         lastError = `HTTP ${res.status}`;
         // 4xx other than throttling means a bad query; retrying won't help.
         if (res.status < 500 && res.status !== 429) break;
@@ -47,6 +55,8 @@ export class SocrataClient {
       }
       this.logger.warn(`${host}/${dataset}: ${lastError} (attempt ${attempt + 1})`);
     }
+    // FMCSA datasets are watched: removal (404), schema changes (400) and outages reach the owner in Telegram.
+    if (host === FMCSA_HOST) sourceMonitor.failed(DATASET_NAMES[dataset] ?? dataset, lastError);
     throw new BadGatewayException(`Open data ${host} (${dataset}): ${lastError}`);
   }
 }
