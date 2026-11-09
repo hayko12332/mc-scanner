@@ -5,7 +5,7 @@ import { telegramInitData } from '../lib/telegram'
 
 const MAX = 3000
 
-export function FeedbackPage({ groupUrl }: { groupUrl: string }) {
+export function FeedbackPage({ groupUrl, supportUrl }: { groupUrl: string; supportUrl: string }) {
   const [message, setMessage] = useState('')
   const [contact, setContact] = useState('')
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle')
@@ -41,6 +41,12 @@ export function FeedbackPage({ groupUrl }: { groupUrl: string }) {
           CRM should do. We read every suggestion.
           {groupUrl && <> You can also discuss ideas in our <a href={groupUrl} target="_blank" rel="noopener">Telegram group</a>.</>}
         </p>
+        {supportUrl && (
+          <p className="support-note">
+            🆘 Need help or have a question? <a href={supportUrl} target="_blank" rel="noopener">Write to support in Telegram</a> — we
+            answer in the chat.
+          </p>
+        )}
       </div>
       <form className="panel feedback" onSubmit={submit}>
         <label className="field">

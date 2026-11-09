@@ -30,11 +30,11 @@ export default function App() {
   const toast = useToast()
   const [backendOk, setBackendOk] = useState<boolean | null>(null)
 
-  const [telegram, setTelegram] = useState({ bot: '', group: '' })
+  const [telegram, setTelegram] = useState({ bot: '', group: '', support: '' })
 
   useEffect(() => {
     api.health().then(() => setBackendOk(true), () => setBackendOk(false))
-    api.telegramLinks().then(setTelegram, () => {})
+    api.telegramLinks().then((l) => setTelegram({ support: '', ...l }), () => {})
   }, [])
 
   useEffect(() => {
@@ -64,7 +64,14 @@ export default function App() {
             <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}>Lookup</a>
             <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}>Suggestions</a>
           </nav>
-          {telegram.bot && <a className="btn nav-cta" href={telegram.bot} target="_blank" rel="noopener">🤖 Telegram bot</a>}
+          <div className="nav-cta">
+            {telegram.support && (
+              <a className="btn" href={telegram.support} target="_blank" rel="noopener" title="Questions or help? Write to us in Telegram">
+                🆘 Support
+              </a>
+            )}
+            {telegram.bot && <a className="btn nav-bot" href={telegram.bot} target="_blank" rel="noopener">🤖 Telegram bot</a>}
+          </div>
         </div>
       </header>
 
@@ -76,7 +83,7 @@ export default function App() {
         <div hidden={page !== 'lookup'}>
           <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
         </div>
-        {page === 'feedback' && <FeedbackPage groupUrl={telegram.group} />}
+        {page === 'feedback' && <FeedbackPage groupUrl={telegram.group} supportUrl={telegram.support} />}
         {page !== 'feedback' && <ComingSoon />}
       </main>
 
@@ -96,6 +103,7 @@ export default function App() {
             <a href="#/">Scanner</a>
             <a href={lastLookup}>Lookup</a>
             <a href="#/feedback">Suggestions</a>
+            {telegram.support && <a href={telegram.support} target="_blank" rel="noopener">Support</a>}
             {telegram.bot && <a href={telegram.bot} target="_blank" rel="noopener">Telegram bot</a>}
             {telegram.group && <a href={telegram.group} target="_blank" rel="noopener">Telegram group</a>}
           </div>

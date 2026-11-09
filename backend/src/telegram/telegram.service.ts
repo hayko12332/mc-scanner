@@ -7,7 +7,7 @@ import { config } from '../config.js';
 
 interface TgUser { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string; language_code?: string }
 interface TgChat { id: number; type: string; title?: string }
-interface TgMessage { message_id: number; chat: TgChat; from?: TgUser; text?: string }
+interface TgMessage { message_id: number; chat: TgChat; from?: TgUser; text?: string; caption?: string; reply_to_message?: TgMessage }
 export interface TgUpdate {
   update_id: number;
   message?: TgMessage;
@@ -21,10 +21,13 @@ const isGroup = (chat: TgChat) => chat.type === 'group' || chat.type === 'superg
 const WEBHOOK_PATH = '/api/telegram/webhook';
 /** How long the bot waits for the suggestion after "Suggest a feature". */
 const SUGGESTION_WAIT_MS = 30 * 60_000;
+/** Tag on support questions forwarded to the owner; the owner's reply is routed back by it. */
+const SUPPORT_TAG = /#u(\d+)\b/;
 
 // Reply-keyboard labels; a tap sends the label as a message.
 const BTN_FEATURES = '✨ Features';
 const BTN_SUGGEST = '💡 Suggest a feature';
+const BTN_SUPPORT = '🆘 Support';
 const BTN_WEBSITE = '🌐 Website';
 const BTN_OPEN = '🚚 Open MC Scanner';
 
@@ -53,6 +56,7 @@ export class TelegramService implements OnApplicationBootstrap {
   /** Chats where the next text message is a suggestion (in memory: a restart just asks again). */
   private readonly awaitingSuggestion = new Map<number, number>();
   private readonly suggestionLimiter = new RateLimiter(5, 10 * 60_000);
+  private readonly supportLimiter = new RateLimiter(20, 10 * 60_000);
   /** The bot's @username, read from Telegram at startup. */
   private username = '';
 
@@ -64,9 +68,12 @@ export class TelegramService implements OnApplicationBootstrap {
 
   /** Public links shown on the website. */
   links() {
+    const bot = this.username ? `https://t.me/${this.username}` : '';
     return {
-      bot: this.username ? `https://t.me/${this.username}` : '',
+      bot,
       group: config.telegramGroupUrl,
+      // Opens the bot straight in "ask a question" mode.
+      support: bot && this.supportEnabled ? `${bot}?start=support` : '',
     };
   }
 
@@ -108,6 +115,7 @@ export class TelegramService implements OnApplicationBootstrap {
         { command: 'start', description: 'Open MC Scanner' },
         { command: 'features', description: 'What MC Scanner can do' },
         { command: 'suggest', description: 'Suggest a feature' },
+        { command: 'support', description: 'Ask a question / get help' },
         { command: 'website', description: 'Link to the website' },
       ],
     });
@@ -129,9 +137,20 @@ export class TelegramService implements OnApplicationBootstrap {
     const [first, ...rest] = text.split(/\s+/);
     const command = first.startsWith('/') ? first.slice(1).split('@')[0].toLowerCase() : '';
 
+    // The owner answers a support question by replying to the forwarded message.
+    const replyTag = msg.reply_to_message?.text?.match(SUPPORT_TAG);
+    if (this.isOwner(msg.from.id) && replyTag && !command) return this.answerSupport(Number(replyTag[1]), msg);
+
     if (command === 'start') {
       await this.track('bot_start', tg, { text: text.slice(0, 100), language: msg.from.language_code ?? '' });
+      // t.me/<bot>?start=support (the website's Support button) opens straight into a question.
+      if (rest[0] === 'support') return this.askSupport(msg.chat.id, tg);
       return this.sendWelcome(msg.chat.id);
+    }
+    if (command === 'support' || command === 'help' || text === BTN_SUPPORT) {
+      const inline = rest.join(' ');
+      if (command && inline) return this.forwardSupport(msg.chat.id, tg, inline);
+      return this.askSupport(msg.chat.id, tg);
     }
     if (command === 'features' || text === BTN_FEATURES) {
       await this.track('bot_features', tg);
@@ -149,8 +168,64 @@ export class TelegramService implements OnApplicationBootstrap {
     if (!command && text && this.isAwaiting(msg.chat.id)) {
       return this.saveSuggestion(msg.chat.id, tg, text);
     }
+    // Anything else a person writes is a question for support (when the owner is set up to receive it).
+    const freeText = text || (msg.caption ?? '').trim();
+    if (!command && freeText && this.supportEnabled) return this.forwardSupport(msg.chat.id, tg, freeText);
     await this.track('bot_message', tg, { text: text.slice(0, 100) });
     await this.send(msg.chat.id, 'Choose an option below — or tap “💡 Suggest a feature” to send us an idea.', this.mainKeyboard());
+  }
+
+  private get supportEnabled() {
+    return config.ownerTelegramId > 0;
+  }
+
+  private isOwner(userId: number) {
+    return this.supportEnabled && userId === config.ownerTelegramId;
+  }
+
+  private async askSupport(chatId: number, tg: TelegramUser) {
+    await this.track('bot_support_open', tg);
+    if (!this.supportEnabled) {
+      return this.send(chatId, 'Support is not available right now. You can ask in our Telegram group.', {
+        inline_keyboard: this.groupRow(),
+      });
+    }
+    await this.send(chatId, [
+      '🆘 <b>Support</b>',
+      '',
+      'Write your question in one message — how to use the scanner, a problem, anything. We will answer right here in this chat.',
+    ].join('\n'), { force_reply: true, input_field_placeholder: 'Your question…' });
+  }
+
+  /** Sends the user's question to the owner, tagged so that the owner's reply finds its way back. */
+  private async forwardSupport(chatId: number, tg: TelegramUser, text: string) {
+    this.awaitingSuggestion.delete(chatId);
+    if (!this.supportLimiter.take(String(tg.id))) {
+      return this.send(chatId, 'You have sent many messages — we will answer soon, please wait a bit.', this.mainKeyboard());
+    }
+    await this.track('bot_support_message', tg, { length: text.length });
+    const who = [tg.name, tg.username ? `@${tg.username}` : ''].filter(Boolean).join(' ') || 'Someone';
+    await this.send(config.ownerTelegramId, [
+      `🆘 <b>Support question</b> #u${tg.id}`,
+      `From: ${esc(who)} (id ${tg.id})`,
+      '',
+      esc(text.slice(0, 3500)),
+      '',
+      '↩️ <i>Reply to this message to answer — the bot will deliver it.</i>',
+    ].join('\n'));
+    await this.send(chatId, '✅ Your message has been sent to support. We will reply here, usually within a few hours.', this.mainKeyboard());
+  }
+
+  /** Delivers the owner's reply to the user who asked. */
+  private async answerSupport(userId: number, reply: TgMessage) {
+    const text = (reply.text ?? reply.caption ?? '').trim();
+    if (!text) return this.send(reply.chat.id, 'Only text replies can be delivered.');
+    try {
+      await this.send(userId, `💬 <b>MC Scanner support:</b>\n\n${esc(text.slice(0, 3800))}`, this.mainKeyboard());
+      await this.send(reply.chat.id, '✅ Delivered.');
+    } catch (e) {
+      await this.send(reply.chat.id, `❌ Not delivered: ${esc((e as Error).message)}`);
+    }
   }
 
   /** Added to a group: post the intro with links to the bot and the website, and pin it. */
@@ -210,6 +285,7 @@ export class TelegramService implements OnApplicationBootstrap {
       return this.sendFeatures(chatId);
     }
     if (q.data === 'suggest') return this.askSuggestion(chatId, tg);
+    if (q.data === 'support') return this.askSupport(chatId, tg);
   }
 
   private sendWelcome(chatId: number) {
@@ -225,6 +301,7 @@ export class TelegramService implements OnApplicationBootstrap {
         [{ text: '🚚 Open in Telegram', web_app: { url: this.siteUrl } }],
         [{ text: '🌐 Open website in browser', url: this.siteUrl }],
         [{ text: '✨ Features', callback_data: 'features' }, { text: '💡 Suggest a feature', callback_data: 'suggest' }],
+        ...(this.supportEnabled ? [[{ text: '🆘 Support — ask a question', callback_data: 'support' }]] : []),
         ...this.groupRow(),
       ],
     }).then(() => this.send(chatId, 'The menu below is always here 👇', this.mainKeyboard()));
@@ -288,7 +365,7 @@ export class TelegramService implements OnApplicationBootstrap {
       keyboard: [
         [{ text: BTN_OPEN, web_app: { url: this.siteUrl } }],
         [{ text: BTN_FEATURES }, { text: BTN_SUGGEST }],
-        [{ text: BTN_WEBSITE }],
+        this.supportEnabled ? [{ text: BTN_SUPPORT }, { text: BTN_WEBSITE }] : [{ text: BTN_WEBSITE }],
       ],
       resize_keyboard: true,
       is_persistent: true,

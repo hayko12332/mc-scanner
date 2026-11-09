@@ -39,7 +39,7 @@ export const api = {
     get<LookupResult>(`/lookup?${new URLSearchParams({ q, type })}`, signal),
   registry: (state: string, name: string, signal?: AbortSignal) =>
     get<RegistryResult>(`/registry?${new URLSearchParams({ state, name })}`, signal),
-  telegramLinks: () => get<{ bot: string; group: string }>('/telegram/links'),
+  telegramLinks: () => get<{ bot: string; group: string; support?: string }>('/telegram/links'),
   feedback: (body: { message: string; contact: string; page: string; visitorId: string; tgInitData: string }) =>
     get<null>('/feedback', undefined, {
       method: 'POST',

@@ -60,9 +60,35 @@ function CarrierRow({ carrier: c, onCopy }: { carrier: ScannedCarrier; onCopy: (
   )
 }
 
-export function ResultsTable({ carriers, running, onCopy }: { carriers: ScannedCarrier[]; running: boolean; onCopy: (text: string) => void }) {
+interface Props {
+  carriers: ScannedCarrier[]
+  running: boolean
+  onCopy: (text: string) => void
+  onCsv: () => void
+  onCopyEmails: () => void
+  onCopyPhones: () => void
+  onClear: () => void
+}
+
+export function ResultsTable({ carriers, running, onCopy, ...actions }: Props) {
+  const n = carriers.length
   return (
-    <div className="panel table-wrap">
+    <>
+      <div className="results-head">
+        <h3>
+          {n.toLocaleString('en-US')} {n === 1 ? 'carrier' : 'carriers'} found
+          {running && <span className="muted"> · scanning…</span>}
+        </h3>
+        {n > 0 && (
+          <div className="results-actions">
+            <button onClick={actions.onCsv}>⬇ Download CSV</button>
+            <button onClick={actions.onCopyPhones}>Copy all phones</button>
+            <button onClick={actions.onCopyEmails}>Copy all emails</button>
+            <button onClick={actions.onClear} disabled={running}>Clear</button>
+          </div>
+        )}
+      </div>
+      <div className="panel table-wrap">
       <table className="results">
         <thead>
           <tr>{COLUMNS.map((h, i) => <th key={i}>{h}</th>)}</tr>
@@ -79,5 +105,6 @@ export function ResultsTable({ carriers, running, onCopy }: { carriers: ScannedC
         </p>
       )}
     </div>
+    </>
   )
 }

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { ResultsTable } from '../components/ResultsTable'
+import { RoadScene } from '../components/RoadScene'
 import { ScanPanel } from '../components/ScanPanel'
 import { StatsBar } from '../components/StatsBar'
+import { useReveal } from '../hooks/useReveal'
 import { useScanner, type ScanProgress, type ScanSettings } from '../hooks/useScanner'
 import { track } from '../lib/analytics'
 import { downloadCsv, passesFilters, type Filters } from '../lib/carrier'
@@ -37,6 +39,7 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
   const scanner = useScanner(saved, onAdvance)
   // First-time visitors see what the tool does; returning users with saved results go straight to work.
   const [showHero] = useState(() => !saved.rows?.length)
+  useReveal([showHero])
 
   const { rows, checked, saferRejected, nextMc } = scanner
   useEffect(() => {
@@ -68,6 +71,23 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
   }
 
   const started = scanner.running || checked > 0 || rows.length > 0
+
+  // When a run finds its first carrier, bring the results into view (they are below the fold on phones).
+  const resultsRef = useRef<HTMLElement>(null)
+  const runStartCount = useRef(0)
+  const autoScrolled = useRef(false)
+  useEffect(() => {
+    if (!scanner.running) return
+    runStartCount.current = visible.length
+    autoScrolled.current = false
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanner.running])
+  useEffect(() => {
+    if (!scanner.running || autoScrolled.current || visible.length <= runStartCount.current) return
+    autoScrolled.current = true
+    const el = resultsRef.current
+    if (el && el.getBoundingClientRect().top > innerHeight * 0.5) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [visible.length, scanner.running])
 
   const startFromHero = () => {
     document.getElementById('scanner')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -102,25 +122,26 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
           <ResultPreview />
         </section>
       )}
+      {showHero && <RoadScene />}
 
       {showHero && (
         <section className="section">
-          <div className="section-head">
+          <div className="section-head reveal">
             <h2>How it works</h2>
             <p>From an MC number to a call list in under a minute.</p>
           </div>
           <div className="steps">
-            <div className="step">
+            <div className="step reveal">
               <div className="step-num">1</div>
               <h3>Pick a starting MC</h3>
               <p>Enter any MC number, or keep the default. The scanner checks MC, MC+1, MC+2 and so on.</p>
             </div>
-            <div className="step">
+            <div className="step reveal" style={{ '--d': '120ms' } as CSSProperties}>
               <div className="step-num">2</div>
               <h3>Press Start</h3>
               <p>Only authorized carriers with a phone and email are kept, each re-checked on SAFER live.</p>
             </div>
-            <div className="step">
+            <div className="step reveal" style={{ '--d': '240ms' } as CSSProperties}>
               <div className="step-num">3</div>
               <h3>Call or export</h3>
               <p>Click a phone or email to copy it, copy them all in one click, or download a CSV.</p>
@@ -143,40 +164,45 @@ export function ScannerPage({ backendOk, copy, toast }: Props) {
         checked={checked}
         onStart={start}
         onStop={scanner.stop}
-        onCsv={() => {
-          if (!visible.length) return toast('No data')
-          downloadCsv(visible)
-          track('csv_export', { rows: visible.length })
-        }}
-        onCopyEmails={() => copyAll(visible.map((c) => c.email), 'emails')}
-        onCopyPhones={() => copyAll(visible.flatMap((c) => [c.phone, c.cellPhone]).filter(Boolean).map(formatPhone), 'phones')}
-        onClear={() => confirm('Delete all found records?') && scanner.clear()}
+        onViewResults={() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
         />
-
-        {started && (
-          <>
-            <StatsBar
-              current={scanner.current}
-              checked={checked}
-              found={visible.length}
-              withPhone={visible.filter((c) => c.phone || c.cellPhone).length}
-              saferRejected={saferRejected}
-              rate={scanner.rate}
-            />
-            <ResultsTable carriers={visible} running={scanner.running} onCopy={(text) => copy(text)} />
-          </>
-        )}
       </section>
+
+      {started && (
+        <section ref={resultsRef} id="results" className="section-anchor">
+          <ResultsTable
+            carriers={visible}
+            running={scanner.running}
+            onCopy={(text) => copy(text)}
+            onCsv={() => {
+              if (!visible.length) return toast('No data')
+              downloadCsv(visible)
+              track('csv_export', { rows: visible.length })
+            }}
+            onCopyEmails={() => copyAll(visible.map((c) => c.email), 'emails')}
+            onCopyPhones={() => copyAll(visible.flatMap((c) => [c.phone, c.cellPhone]).filter(Boolean).map(formatPhone), 'phones')}
+            onClear={() => confirm('Delete all found records?') && scanner.clear()}
+          />
+          <StatsBar
+            current={scanner.current}
+            checked={checked}
+            found={visible.length}
+            withPhone={visible.filter((c) => c.phone || c.cellPhone).length}
+            saferRejected={saferRejected}
+            rate={scanner.rate}
+          />
+        </section>
+      )}
 
       {showHero && (
         <section className="section">
-          <div className="section-head">
+          <div className="section-head reveal">
             <h2>Everything you need to vet a carrier</h2>
             <p>One free tool instead of a dozen tabs with SAFER, L&amp;I and state registries.</p>
           </div>
           <div className="features">
-            {FEATURES.map(([icon, title, text]) => (
-              <div key={title} className="feature">
+            {FEATURES.map(([icon, title, text], i) => (
+              <div key={title} className="feature reveal" style={{ '--d': `${(i % 3) * 110}ms` } as CSSProperties}>
                 <div className="feature-icon">{icon}</div>
                 <h3>{title}</h3>
                 <p>{text}</p>
@@ -208,12 +234,13 @@ function ResultPreview() {
   return (
     <div className="preview" aria-label="Example of a scan result">
       <div className="preview-head">
-        <div className="dots"><i /><i /><i /></div>
+        <span className="preview-live"><span className="pulse" /> Live scan</span>
         <b>Example result</b>
         <span className="muted">200 MCs → 31 carriers</span>
       </div>
-      {rows.map(([name, mc, meta, phone, email]) => (
-        <div key={mc} className="preview-row">
+      <div className="preview-scanline" />
+      {rows.map(([name, mc, meta, phone, email], i) => (
+        <div key={mc} className="preview-row" style={{ '--d': `${500 + i * 700}ms` } as CSSProperties}>
           <div>
             <div className="preview-name">{name}</div>
             <div className="preview-meta">{mc} · {meta}</div>

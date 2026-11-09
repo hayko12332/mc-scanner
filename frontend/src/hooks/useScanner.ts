@@ -85,7 +85,7 @@ export function useScanner(initial: Partial<ScanProgress>, onAdvance: (nextMc: n
         }
         const to = Math.min(end, mc + batchSize - 1)
         setCurrent(`MC-${mc} … MC-${to}`)
-        say(`Searching MC ${mc}–${to}…`)
+        say(`Checking MC ${mc} – ${to} in FMCSA records…`)
 
         const result = await api.scan(mc, to, settings.useSafer ? 'lenient' : 'strict', ctrl.signal)
         const batchSeen = new Set<string>()

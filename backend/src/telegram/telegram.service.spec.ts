@@ -13,7 +13,7 @@ describe('TelegramService', () => {
   let bot: TelegramService;
 
   beforeEach(() => {
-    Object.assign(config, { telegramBotToken: '1:TEST', publicUrl: 'https://scanner.example' });
+    Object.assign(config, { telegramBotToken: '1:TEST', publicUrl: 'https://scanner.example', ownerTelegramId: 0 });
     sent = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init: { body: string }) => {
       const method = url.split('/').pop()!;
@@ -63,6 +63,46 @@ describe('TelegramService', () => {
     await bot.handle({ update_id: 9, callback_query: { id: 'q1', from, data: 'features', message: { message_id: 1, chat: { id: 42, type: 'private' } } } });
     expect(sent.some((s) => s.method === 'answerCallbackQuery')).toBe(true);
     expect(texts().at(-1)).toContain('What MC Scanner does');
+  });
+
+  describe('support', () => {
+    const OWNER = 777;
+    beforeEach(() => Object.assign(config, { ownerTelegramId: OWNER }));
+    const ownerReply = (text: string, quoted: string): TgUpdate => ({
+      update_id: 50,
+      message: {
+        message_id: 50, chat: { id: OWNER, type: 'private' }, from: { id: OWNER, first_name: 'Owner' }, text,
+        reply_to_message: { message_id: 7, chat: { id: OWNER, type: 'private' }, text: quoted },
+      },
+    });
+
+    it('?start=support asks for the question, which is forwarded to the owner with a tag', async () => {
+      await bot.handle(msg('/start support', 1));
+      expect(texts()[0]).toContain('Support');
+      await bot.handle(msg('How do I export <emails>?', 2));
+      const toOwner = sent.find((s) => s.method === 'sendMessage' && s.body.chat_id === OWNER)!;
+      expect(String(toOwner.body.text)).toContain('#u42');
+      expect(String(toOwner.body.text)).toContain('Ann @ann');
+      expect(String(toOwner.body.text)).toContain('How do I export &lt;emails&gt;?');
+      expect(texts().at(-1)).toContain('sent to support');
+    });
+
+    it('free text goes to support; the owner reply is delivered back to the user', async () => {
+      await bot.handle(msg('hello, is it free?', 3));
+      expect(sent.some((s) => s.body.chat_id === OWNER)).toBe(true);
+      sent = [];
+      await bot.handle(ownerReply('Yes, totally free.', '🆘 Support question #u42\nFrom: Ann @ann (id 42)'));
+      const toUser = sent.find((s) => s.method === 'sendMessage' && s.body.chat_id === 42)!;
+      expect(String(toUser.body.text)).toContain('Yes, totally free.');
+      expect(texts().at(-1)).toContain('Delivered');
+    });
+
+    it('the support link is published only when support is on', () => {
+      (bot as unknown as { username: string }).username = 'TestBot';
+      expect(bot.links().support).toBe('https://t.me/TestBot?start=support');
+      Object.assign(config, { ownerTelegramId: 0 });
+      expect(bot.links().support).toBe('');
+    });
   });
 
   it('posts and pins the intro when added to a group as admin, with plain links only', async () => {

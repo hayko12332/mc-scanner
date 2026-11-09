@@ -15,10 +15,7 @@ interface Props {
   checked: number
   onStart: () => void
   onStop: () => void
-  onCsv: () => void
-  onCopyEmails: () => void
-  onCopyPhones: () => void
-  onClear: () => void
+  onViewResults: () => void
 }
 
 type NumberField = { key: keyof ScanSettings; label: string; placeholder?: string; min: number; max?: number }
@@ -71,14 +68,14 @@ export function ScanPanel(p: Props) {
         <div className="live" role="status">
           <div className="live-top">
             <span className="pulse" />
-            <b>Scanning in progress</b>
-            <span className="muted">{p.status.text}</span>
+            <span className="live-title">Scanning in progress</span>
           </div>
+          <div className="live-status">{p.status.text}</div>
           <div className="progress"><i /></div>
           <div className="live-counts">
             <span><b>{p.found.toLocaleString('en-US')}</b> carriers found</span>
             <span><b>{p.checked.toLocaleString('en-US')}</b> MC numbers checked</span>
-            <span className="muted">Results appear below as they are found ↓</span>
+            {p.found > 0 && <button className="small primary" onClick={p.onViewResults}>View results ↓</button>}
           </div>
         </div>
       )}
@@ -113,15 +110,6 @@ export function ScanPanel(p: Props) {
           authority status comes live from SAFER for every MC; without it, from the FMCSA files (L&amp;I + Motus).
         </p>
       </details>
-
-      {p.hasResults && (
-        <div className="controls actions">
-          <button onClick={p.onCsv}>⬇ Download CSV</button>
-          <button onClick={p.onCopyEmails}>Copy all emails</button>
-          <button onClick={p.onCopyPhones}>Copy all phones</button>
-          <button onClick={p.onClear} disabled={p.running}>Clear</button>
-        </div>
-      )}
 
       {!p.running && <div className={`status ${p.status.tone === 'error' ? 'error' : ''}`}>{p.status.text}</div>}
       {p.backendOk === false && <div className="status error">Server not reachable. Please reload the page in a minute.</div>}

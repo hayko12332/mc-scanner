@@ -49,7 +49,7 @@ export async function verifyWithSafer(
     while (next < mcs.length) {
       const mc = mcs[next++]
       results.set(mc, await checkSafer(mc, workers.signal, onStatus))
-      onStatus(`SAFER: checked ${++done} of ${mcs.length}…`)
+      onStatus(`Verifying carriers on SAFER: ${++done} of ${mcs.length}…`)
     }
   }
   try {
