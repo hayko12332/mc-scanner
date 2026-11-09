@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import { useToast } from './hooks/useToast'
 import { ComingSoon } from './components/ComingSoon'
+import { Icon } from './components/Icon'
 import { track } from './lib/analytics'
 import { FeedbackPage } from './pages/FeedbackPage'
 import { LookupPage } from './pages/LookupPage'
@@ -57,20 +58,27 @@ export default function App() {
         <div className="wrap nav-inner">
           <a href="#/" className="brand">
             <img src="/logo.svg" alt="" width="34" height="34" />
-            MC Scanner
+            <span className="brand-text">
+              MC Scanner
+              <small>FMCSA carrier finder</small>
+            </span>
           </a>
           <nav className="tabs">
-            <a href="#/" className={page === 'scanner' ? 'active' : ''}>Scanner</a>
-            <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}>Lookup</a>
-            <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}>Suggestions</a>
+            <a href="#/" className={page === 'scanner' ? 'active' : ''}><Icon name="scan" size={16} />Scanner</a>
+            <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}><Icon name="search" size={16} />Lookup</a>
+            <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}><Icon name="bulb" size={16} />Ideas</a>
           </nav>
           <div className="nav-cta">
             {telegram.support && (
-              <a className="btn" href={telegram.support} target="_blank" rel="noopener" title="Questions or help? Write to us in Telegram">
-                🆘 Support
+              <a className="nav-link" href={telegram.support} target="_blank" rel="noopener" title="Questions or help? Write to us in Telegram">
+                <Icon name="lifebuoy" size={18} /><span className="hide-sm">Support</span>
               </a>
             )}
-            {telegram.bot && <a className="btn nav-bot" href={telegram.bot} target="_blank" rel="noopener">🤖 Telegram bot</a>}
+            {telegram.bot && (
+              <a className="btn nav-tg" href={telegram.bot} target="_blank" rel="noopener">
+                <Icon name="send" size={16} /><span className="hide-sm">Open in </span>Telegram
+              </a>
+            )}
           </div>
         </div>
       </header>

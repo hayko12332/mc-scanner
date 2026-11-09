@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import { CarrierDetails } from '../components/CarrierDetails'
 import { PublicRecords } from '../components/PublicRecords'
+import { Icon, type IconName } from '../components/Icon'
 import { Pill, StatusPill } from '../components/ui'
 import { track } from '../lib/analytics'
 import { entityLabel } from '../lib/carrier'
@@ -122,6 +123,7 @@ export function LookupPage({ hash, copy }: { hash: string; copy: (text: string) 
     setInputType(type)
     setResult(null)
     setError('')
+    setLoading(false)
     if (!q) return
     const ctrl = new AbortController()
     setLoading(true)
@@ -147,33 +149,52 @@ export function LookupPage({ hash, copy }: { hash: string; copy: (text: string) 
 
   return (
     <>
-      <div className="page-head">
-        <h1>Company lookup</h1>
-        <p>
-          Check any trucking company by MC, USDOT, email or phone: FMCSA record, live SAFER check, insurance, state
-          business registration, UCC liens and court records.
-        </p>
-      </div>
-      <form className="panel controls lookup-form" onSubmit={submit}>
-        <label className="field grow">
-          MC, USDOT, email or phone
-          <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="MC-1650101, 2952744, info@acme.com, (614) 555-1234" autoFocus />
-        </label>
-        <label className="field">
-          Search as
-          <select value={inputType} onChange={(e) => setInputType(e.target.value as LookupType)}>
-            {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
-        </label>
-        <button className="primary big" type="submit" disabled={loading}>{loading ? 'Searching…' : 'Search'}</button>
-      </form>
-      {!q && (
-        <p className="examples">
-          Try:
-          <a href={lookupHref('MC-1650101')}>MC-1650101</a>
-          <a href={lookupHref('2952744')}>USDOT 2952744</a>
-        </p>
-      )}
+      <section className="hero-band lookup-band">
+        <div className="wrap lookup-hero">
+          <span className="eyebrow dark">Company lookup</span>
+          <h1>Check any carrier <span className="hl">in one search</span></h1>
+          <p className="hero-sub">
+            Search by MC, USDOT, email or phone: FMCSA record, live SAFER check, insurance, state registration, UCC
+            liens and court records — all on one card.
+          </p>
+          <form className="search-box" onSubmit={submit}>
+            <Icon name="search" size={20} className="search-icon" />
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder="MC-1650101, USDOT 2952744, info@acme.com or (614) 555-1234"
+              aria-label="MC, USDOT, email or phone"
+              autoFocus
+            />
+            <button className="primary big glow" type="submit" disabled={loading}>
+              {loading ? <><span className="spinner" /> Searching…</> : <>Search<Icon name="arrow" size={16} /></>}
+            </button>
+          </form>
+          <div className="search-meta">
+            <div className="segmented" role="radiogroup" aria-label="Search as">
+              {TYPES.map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={inputType === t.value}
+                  className={inputType === t.value ? 'on' : ''}
+                  onClick={() => setInputType(t.value)}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="examples">
+              <span>Try:</span>
+              <a href={lookupHref('MC-1650101')}>MC-1650101</a>
+              <a href={lookupHref('2952744')}>USDOT 2952744</a>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {!q && <WhatYouGet />}
 
       {error && <p className="panel error">{error}</p>}
       {result && (
@@ -193,5 +214,37 @@ export function LookupPage({ hash, copy }: { hash: string; copy: (text: string) 
         </>
       )}
     </>
+  )
+}
+
+const GETS: [IconName, string, string][] = [
+  ['shield', 'Authority & SAFER status', 'Common, contract and broker authority from L&I, re-checked live on SAFER.'],
+  ['file', 'Insurance & policy history', 'BIPD and cargo on file, active policies with insurers, past cancellations.'],
+  ['building', 'Fleet & operation', 'Power units, drivers, cargo types, MCS-150 date, carrier or broker.'],
+  ['search', 'Related companies', 'Other USDOT records sharing the same phone or email — spot re-registrations.'],
+  ['database', 'State registration', 'Business entity status and officers from the state registry where available.'],
+  ['bulb', 'UCC liens & courts', 'Quick links to UCC filings, federal court and bankruptcy records.'],
+]
+
+/** Empty state: what one lookup returns. */
+function WhatYouGet() {
+  return (
+    <section className="section lookup-gets">
+      <div className="section-head">
+        <span className="eyebrow">What you get</span>
+        <h2>Everything about a company on one card</h2>
+      </div>
+      <div className="gets">
+        {GETS.map(([icon, title, text]) => (
+          <div key={title} className="get">
+            <div className="tile-icon"><Icon name={icon} /></div>
+            <div>
+              <h3>{title}</h3>
+              <p>{text}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }

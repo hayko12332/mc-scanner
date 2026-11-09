@@ -4,6 +4,7 @@ import { authorityLabel, carrierKey } from '../lib/carrier'
 import { formatDate, formatNumber, formatPhone } from '../lib/format'
 import type { ScannedCarrier } from '../types'
 import { CarrierDetails } from './CarrierDetails'
+import { Icon } from './Icon'
 import { Pill } from './ui'
 
 const COLUMNS = ['Company', 'Phone', 'Email', 'Authority', 'State', 'Trucks', 'Added', '']
@@ -81,9 +82,9 @@ export function ResultsTable({ carriers, running, onCopy, ...actions }: Props) {
         </h3>
         {n > 0 && (
           <div className="results-actions">
-            <button onClick={actions.onCsv}>⬇ Download CSV</button>
-            <button onClick={actions.onCopyPhones}>Copy all phones</button>
-            <button onClick={actions.onCopyEmails}>Copy all emails</button>
+            <button className="primary" onClick={actions.onCsv}><Icon name="download" size={16} />Download CSV</button>
+            <button onClick={actions.onCopyPhones}><Icon name="phone" size={15} />Copy all phones</button>
+            <button onClick={actions.onCopyEmails}><Icon name="copy" size={15} />Copy all emails</button>
             <button onClick={actions.onClear} disabled={running}>Clear</button>
           </div>
         )}

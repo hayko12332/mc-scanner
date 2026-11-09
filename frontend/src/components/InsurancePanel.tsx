@@ -10,29 +10,29 @@ const loadInsurance = (mc: number) => {
   return cache.get(mc)!
 }
 
+/** Policies as compact cards (no horizontal scrolling, works in narrow columns and on phones). */
 function PolicyTable({ policies, lastColumn }: { policies: Policy[]; lastColumn: 'Posted' | 'Reason' }) {
   return (
-    <div className="table-scroll">
-    <table className="policies">
-      <thead>
-        <tr>
-          <th>Type</th><th>Insurer</th><th>Policy</th><th>Coverage</th><th>Effective</th><th>Cancelled</th><th>{lastColumn}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {policies.map((p, i) => (
-          <tr key={`${p.policyNumber}-${i}`}>
-            <td>{p.type || '—'}</td>
-            <td>{p.company || '—'}</td>
-            <td>{p.policyNumber || '—'}</td>
-            <td>{formatMoney(p.amount)}{p.underlying ? ` (underlying ${formatMoney(p.underlying)})` : ''}</td>
-            <td>{formatDate(p.effectiveDate)}</td>
-            <td>{formatDate(p.cancelledDate)}</td>
-            <td>{lastColumn === 'Posted' ? formatDate(p.postedDate) : p.reason}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="policy-list">
+      {policies.map((p, i) => (
+        <div key={`${p.policyNumber}-${i}`} className="policy">
+          <div className="policy-top">
+            <b>{p.type || '—'}</b>
+            <span className="policy-amt">
+              {formatMoney(p.amount)}{p.underlying ? ` (underlying ${formatMoney(p.underlying)})` : ''}
+            </span>
+          </div>
+          <div className="policy-co">{p.company || '—'}</div>
+          <div className="policy-meta">
+            <span>Policy <b>{p.policyNumber || '—'}</b></span>
+            <span>Effective <b>{formatDate(p.effectiveDate)}</b></span>
+            {p.cancelledDate && <span>Cancelled <b>{formatDate(p.cancelledDate)}</b></span>}
+            {lastColumn === 'Posted'
+              ? <span>Posted <b>{formatDate(p.postedDate)}</b></span>
+              : p.reason && <span>Reason <b>{p.reason}</b></span>}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
