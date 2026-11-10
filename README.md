@@ -1,4 +1,4 @@
-# MC Scanner
+# LeadHaul
 
 Continuous FMCSA carrier lookup by MC number: walks MC, MC+1, MC+2 … and keeps authorized carriers
 (not brokers) that have an email, with phone, authority, insurance and a live SAFER check.

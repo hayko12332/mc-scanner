@@ -1,28 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 640 640">
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 64 64">
+  <!-- LeadHaul: a road running to the horizon, with the new lead (orange) waiting there. -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#3b82f6"/>
-      <stop offset="1" stop-color="#1e40af"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16295a"/>
+      <stop offset="1" stop-color="#070d1c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.24" r="0.34">
+      <stop offset="0" stop-color="#f97316" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#f97316" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="lead" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fdba74"/>
+      <stop offset="1" stop-color="#ea580c"/>
     </linearGradient>
   </defs>
-  <rect width="640" height="640" fill="url(#bg)"/>
-  <!-- Truck: trailer with "MC", cab, wheels. Kept inside the central circle Telegram crops to. -->
-  <g fill="#ffffff">
-    <rect x="112" y="214" width="262" height="168" rx="18"/>
-    <path d="M390 254h76c10 0 19 5 24 13l36 54c4 6 6 13 6 20v41h-142z"/>
-    <rect x="98" y="392" width="434" height="22" rx="11"/>
-  </g>
-  <path d="M414 276h46l30 45h-76z" fill="#1e40af"/>
-  <text x="243" y="335" text-anchor="middle" font-family="Helvetica Neue, Arial, sans-serif" font-weight="800"
-        font-size="96" fill="#1e40af" letter-spacing="2">MC</text>
-  <g fill="#1e40af" stroke="#ffffff" stroke-width="12">
-    <circle cx="190" cy="420" r="34"/>
-    <circle cx="300" cy="420" r="34"/>
-    <circle cx="462" cy="420" r="34"/>
-  </g>
-  <!-- Magnifier -->
-  <g fill="none" stroke="#fbbf24" stroke-linecap="round">
-    <circle cx="420" cy="196" r="58" stroke-width="22" fill="#1e40af" fill-opacity="0.35"/>
-    <path d="M462 238l46 46" stroke-width="30"/>
+  <rect width="64" height="64" fill="url(#bg)"/>
+  <rect width="64" height="64" fill="url(#glow)"/>
+  <!-- Kept inside the central circle that Telegram crops avatars to. -->
+  <g transform="translate(32 33) scale(0.9) translate(-32 -33)">
+    <path d="M14 54 28 22M50 54 36 22" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round"/>
+    <path d="M32 50v-5M32 39v-4M32 30v-2" fill="none" stroke="#60a5fa" stroke-width="3.5" stroke-linecap="round"/>
+    <circle cx="32" cy="15" r="5.5" fill="url(#lead)"/>
   </g>
 </svg>

@@ -3,7 +3,7 @@ import { Icon } from '../components/Icon'
 import { FeatureBento, FinalCta, HowItWorks } from '../components/Landing'
 import { useReveal } from '../hooks/useReveal'
 
-/** Landing page: what MC Scanner is, with buttons into the tools. */
+/** Landing page: what LeadHaul is, with buttons into the tools. */
 export function HomePage({ backendOk }: { backendOk: boolean | null }) {
   useReveal([])
   return (

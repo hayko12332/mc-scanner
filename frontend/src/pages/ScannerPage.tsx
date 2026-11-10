@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ResultsTable } from '../components/ResultsTable'
+import { SheetsDialog } from '../components/SheetsDialog'
 import { Icon } from '../components/Icon'
 import { ScanPanel } from '../components/ScanPanel'
 import { StatsBar } from '../components/StatsBar'
@@ -8,7 +9,7 @@ import { useLeads } from '../hooks/useLeads'
 import { useScanner, type ScanProgress, type ScanSettings } from '../hooks/useScanner'
 import { track } from '../lib/analytics'
 import { passesFilters, type Filters } from '../lib/carrier'
-import { copyForSheets, downloadCsv, downloadVcf, downloadXlsx, printCallSheet } from '../lib/export'
+import { copyForSheets, downloadCsv, downloadVcf, downloadXlsx, onExportNotice, printCallSheet } from '../lib/export'
 import { formatPhone } from '../lib/format'
 import { loadState, saveState } from '../lib/storage'
 
@@ -48,6 +49,9 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
   const scanner = useScanner(saved, onAdvance)
   const leads = useLeads()
   const [period, setPeriod] = useState(7)
+  /** Google Sheets dialog: rows copied, or null when closed. */
+  const [sheets, setSheets] = useState<{ rows: number; copied: boolean } | null>(null)
+  useEffect(() => onExportNotice(toast), [toast])
 
   const { rows, checked, saferRejected, nextMc } = scanner
   useEffect(() => {
@@ -180,8 +184,8 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
               else if (format === 'vcf') downloadVcf(shown)
               else if (format === 'print') printCallSheet(shown)
               else copyForSheets(shown).then(
-                () => toast('Copied — press Ctrl+V (⌘V) in the new Google Sheet'),
-                () => toast('Could not copy — try Excel or CSV'),
+                () => setSheets({ rows: shown.length, copied: true }),
+                () => setSheets({ rows: shown.length, copied: false }),
               )
             }}
             onCopyEmails={() => copyAll(shown.map((c) => c.email), 'emails')}
@@ -197,6 +201,14 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
             rate={scanner.rate}
           />}
         </section>
+      )}
+      {sheets && (
+        <SheetsDialog
+          {...sheets}
+          onClose={() => setSheets(null)}
+          onCopyAgain={() => copyForSheets(shown).then(() => toast('Copied again'), () => setSheets({ rows: shown.length, copied: false }))}
+          onDownload={(f) => { track('csv_export', { rows: shown.length, mode, format: f, from: 'sheets' }); (f === 'xlsx' ? downloadXlsx : downloadCsv)(shown); setSheets(null) }}
+        />
       )}
 
     </>

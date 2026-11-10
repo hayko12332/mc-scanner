@@ -77,9 +77,10 @@ main.wrap { padding-top: 28px; padding-bottom: 56px; }
 .brand { display: flex; align-items: center; gap: 11px; color: var(--text); font-weight: 800; font-size: 18px; letter-spacing: -0.02em; }
 .nav .brand { color: #fff; }
 .brand:hover { text-decoration: none; }
-.brand img { border-radius: 10px; display: block; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 6px 18px rgba(37, 99, 235, 0.45); }
+.brand img { border-radius: 10px; display: block; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.14), 0 6px 18px rgba(249, 115, 22, 0.22); }
 .brand-text { display: flex; flex-direction: column; line-height: 1.1; }
 .brand-text small { font-size: 11px; font-weight: 500; color: #64748b; letter-spacing: 0.01em; }
+.brand-text em { font-style: normal; color: #60a5fa; }
 .tabs {
   display: flex; gap: 2px; padding: 4px; border-radius: 12px;
   background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.08);
@@ -790,10 +791,67 @@ button.idea-submit { width: 100%; border: 0; border-radius: 14px; background: li
 .ok-text { color: var(--ok); margin: 0; font-weight: 600; }
 
 /* ---------- Footer, toast ---------- */
-.site-footer { border-top: 1px solid var(--border); background: var(--surface); padding: 28px 0 36px; font-size: 13px; color: var(--muted); }
-.footer-grid { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; align-items: flex-start; }
-.footer-links { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 14px; font-weight: 500; }
-.site-footer p { margin: 8px 0 0; max-width: 560px; }
+/* Footer: dark, like the header */
+.site-footer {
+  position: relative; overflow: hidden; margin-top: 24px; color: #94a3b8; font-size: 14px;
+  background:
+    radial-gradient(900px 320px at 15% 0%, rgba(37, 99, 235, 0.22), transparent 60%),
+    linear-gradient(180deg, #0b1730, #070d1c);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.site-footer::before {
+  content: ''; position: absolute; inset: 0 0 auto; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(96, 165, 250, 0.55), transparent);
+}
+.site-footer .wrap { position: relative; z-index: 1; }
+.footer-top { display: grid; grid-template-columns: 2.1fr repeat(3, 1fr); gap: 32px; padding: 56px 0 40px; }
+.footer-brand .brand { color: #fff; }
+.footer-brand p { margin: 16px 0 18px; max-width: 400px; line-height: 1.6; color: #94a3b8; }
+.footer-status {
+  display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 10px; border-radius: 99px;
+  font-size: 12.5px; font-weight: 500; color: #cbd5e1;
+  background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.09);
+}
+.footer-status i { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18); }
+.footer-status.up i { animation: status-pulse 2.4s ease-in-out infinite; }
+.footer-status.down i { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.18); }
+@keyframes status-pulse { 50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.05); } }
+.footer-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+.footer-actions .btn { padding: 9px 15px; font-size: 14px; white-space: nowrap; }
+.footer-actions .glow { box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.4), 0 8px 24px rgba(37, 99, 235, 0.45); }
+.btn.footer-tg { color: #e2e8f0; background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.12); }
+.btn.footer-tg:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.footer-col { display: flex; flex-direction: column; gap: 12px; }
+.footer-col h4 {
+  margin: 6px 0 4px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b;
+}
+.footer-col a { display: inline-flex; align-items: center; gap: 7px; width: fit-content; color: #cbd5e1; transition: color 0.15s; }
+.footer-col a:hover { color: #fff; text-decoration: none; }
+.footer-col a .ext { opacity: 0; transform: translateX(-4px) rotate(-45deg); transition: opacity 0.15s, transform 0.15s; color: #60a5fa; }
+.footer-col a:hover .ext { opacity: 1; transform: translateX(0) rotate(-45deg); }
+.footer-tag {
+  padding: 1px 7px; border-radius: 99px; font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em;
+  color: #fdba74; background: rgba(249, 115, 22, 0.14); border: 1px solid rgba(249, 115, 22, 0.3);
+}
+.footer-tag.soon { color: #93c5fd; background: rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.3); }
+.footer-bottom {
+  display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 22px 0 28px; font-size: 12.5px; color: #64748b;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+.footer-bottom span:first-child { color: #94a3b8; font-weight: 500; }
+.footer-mark {
+  height: 0.56em; overflow: hidden; text-align: center; white-space: nowrap; pointer-events: none; user-select: none;
+  font-size: clamp(56px, 14.5vw, 200px); font-weight: 800; letter-spacing: -0.045em; line-height: 0.78;
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.16), rgba(148, 163, 184, 0) 70%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+@media (max-width: 860px) {
+  .footer-top { grid-template-columns: 1fr 1fr; gap: 32px 24px; padding-top: 44px; }
+  .footer-brand { grid-column: 1 / -1; }
+}
+@media (max-width: 420px) {
+  .footer-bottom { flex-direction: column; }
+}
 .toast {
   position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
   background: var(--text); color: var(--bg); padding: 9px 16px; border-radius: 10px; font-size: 14px; font-weight: 500;
@@ -979,3 +1037,44 @@ button.idea-submit { width: 100%; border: 0; border-radius: 14px; background: li
   .nav-cta .nav-tg { display: none; }
   .section-cta .btn { width: 100%; }
 }
+
+/* ---------- Dialog (Google Sheets export) ---------- */
+.dialog-backdrop {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px;
+  background: rgba(7, 13, 28, 0.6); backdrop-filter: blur(4px); animation: fade-in 0.15s ease-out;
+}
+.dialog {
+  position: relative; width: min(460px, 100%); padding: 28px; border-radius: 18px;
+  background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-lg);
+  animation: dialog-in 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.dialog h3 { margin: 14px 0 10px; font-size: 20px; letter-spacing: -0.02em; }
+.dialog-close {
+  position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; padding: 0; border: 0;
+  font-size: 22px; font-weight: 400; color: var(--muted); background: transparent;
+}
+.dialog-close:hover { color: var(--text); background: var(--surface-2); }
+.dialog-icon {
+  width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+  color: #16a34a; background: var(--ok-soft); border: 1px solid color-mix(in srgb, #16a34a 25%, transparent);
+}
+.dialog-ok { display: flex; align-items: center; gap: 8px; margin: 0 0 18px; font-weight: 600; color: var(--ok); }
+.dialog-warn { margin: 0 0 18px; padding: 12px 14px; border-radius: 10px; color: var(--warn); background: var(--warn-soft); }
+.dialog-steps { list-style: none; counter-reset: step; margin: 0 0 22px; padding: 0; display: grid; gap: 14px; }
+.dialog-steps li { counter-increment: step; position: relative; padding-left: 42px; display: grid; gap: 2px; }
+.dialog-steps li::before {
+  content: counter(step); position: absolute; left: 0; top: -1px; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--accent); background: var(--accent-soft);
+}
+.dialog-steps span { font-size: 13px; color: var(--muted); }
+.dialog-steps kbd {
+  padding: 1px 7px; border-radius: 6px; font: 600 13px Inter, sans-serif; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); box-shadow: 0 1px 0 var(--border);
+}
+.dialog-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.dialog-actions .btn.primary { flex: 1; min-width: 200px; }
+.dialog-alt { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+button.linkish { padding: 0; border: 0; background: none; font-size: inherit; font-weight: 600; color: var(--accent); }
+button.linkish:hover { text-decoration: underline; }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+@keyframes fade-in { from { opacity: 0; } }

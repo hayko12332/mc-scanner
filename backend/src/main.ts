@@ -8,6 +8,6 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.enableShutdownHooks();
   await app.listen(config.port);
-  Logger.log(`MC Scanner on http://localhost:${config.port}`, 'Bootstrap');
+  Logger.log(`LeadHaul on http://localhost:${config.port}`, 'Bootstrap');
 }
 await bootstrap();

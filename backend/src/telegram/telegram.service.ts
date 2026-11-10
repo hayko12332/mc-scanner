@@ -30,11 +30,13 @@ const BTN_SUGGEST = '💡 Suggest a feature';
 const BTN_SUPPORT = '🆘 Support';
 const BTN_WEBSITE = '🌐 Website';
 const BTN_OPEN = '⚡ New MC leads';
+/** Bot display name. */
+const BOT_NAME = 'LeadHaul · New MC leads';
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const FEATURES = [
-  '✨ <b>What MC Scanner does</b>',
+  '✨ <b>What LeadHaul does</b>',
   '',
   '⚡ <b>New MC leads</b>',
   'Carriers that just got their operating authority — today, yesterday, last 7 / 14 / 30 days. Phone + email for each. Most of them don’t have a dispatcher yet.',
@@ -132,13 +134,16 @@ export class TelegramService implements OnApplicationBootstrap {
     await this.call('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Leads', web_app: { url: this.viewUrl('leads') } } });
     await this.call('setMyCommands', {
       commands: [
-        { command: 'start', description: 'New MC leads & MC Scanner' },
-        { command: 'features', description: 'What MC Scanner can do' },
+        { command: 'start', description: 'New MC leads & MC scanner' },
+        { command: 'features', description: 'What LeadHaul can do' },
         { command: 'suggest', description: 'Suggest a feature' },
         { command: 'support', description: 'Ask a question / get help' },
         { command: 'website', description: 'Link to the website' },
       ],
     });
+    // Display name; Telegram only allows changing it a few times a day, so skip when it is already set.
+    const name = (await this.call('getMyName', {}).catch(() => ({}))) as { name?: string };
+    if (name.name !== BOT_NAME) await this.call('setMyName', { name: BOT_NAME }).catch(() => {});
     await this.call('setMyShortDescription', {
       short_description: `New MC leads every day: carriers that just got authority, with phone & email. Free. ${this.siteUrl}`,
     });
@@ -241,7 +246,7 @@ export class TelegramService implements OnApplicationBootstrap {
     const text = (reply.text ?? reply.caption ?? '').trim();
     if (!text) return this.send(reply.chat.id, 'Only text replies can be delivered.');
     try {
-      await this.send(userId, `💬 <b>MC Scanner support:</b>\n\n${esc(text.slice(0, 3800))}`, this.mainKeyboard());
+      await this.send(userId, `💬 <b>LeadHaul support:</b>\n\n${esc(text.slice(0, 3800))}`, this.mainKeyboard());
       await this.send(reply.chat.id, '✅ Delivered.');
     } catch (e) {
       await this.send(reply.chat.id, `❌ Not delivered: ${esc((e as Error).message)}`);
@@ -272,14 +277,14 @@ export class TelegramService implements OnApplicationBootstrap {
 
   private async postGroupIntro(chatId: number, pin: boolean) {
     const sent = (await this.send(chatId, [
-      '⚡ <b>MC Scanner — new MC leads every day</b>',
+      '⚡ <b>LeadHaul — new MC leads every day</b>',
       '',
       '🆕 Carriers that just got their operating authority, with phone and email — most have no dispatcher yet.',
       '🔎 Scan any MC range for authorized carriers, verified live on SAFER.',
       '🏢 Check any company by MC, USDOT, email or phone: authority, insurance, fleet, state registration, liens and courts.',
       '🚧 Coming soon: CRM for dispatchers.',
       '',
-      `🤖 Bot: @${this.username || 'MC Scanner'} — tap the button below and press Start`,
+      `🤖 Bot: @${this.username || 'LeadHaul'} — tap the button below and press Start`,
       `🌐 Website: ${this.siteUrl}`,
       '',
       '💡 Ideas and requests are welcome here or in the bot.',
@@ -354,7 +359,7 @@ export class TelegramService implements OnApplicationBootstrap {
   }
 
   private sendWebsite(chatId: number) {
-    return this.send(chatId, `🌐 MC Scanner website:\n${this.siteUrl}\n\nWorks in any browser, on phone and desktop.`, {
+    return this.send(chatId, `🌐 LeadHaul website:\n${this.siteUrl}\n\nWorks in any browser, on phone and desktop.`, {
       inline_keyboard: [
         [{ text: '🌐 Open website', url: this.siteUrl }],
         [{ text: '⚡ Get new MC leads', web_app: { url: this.viewUrl('leads') } }],

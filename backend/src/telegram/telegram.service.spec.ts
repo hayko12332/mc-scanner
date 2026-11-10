@@ -66,7 +66,7 @@ describe('TelegramService', () => {
     expect(analytics.recordFeedback).toHaveBeenCalledWith(expect.objectContaining({ message: 'Add a truck count filter' }), expect.anything(), expect.anything());
     await bot.handle({ update_id: 9, callback_query: { id: 'q1', from, data: 'features', message: { message_id: 1, chat: { id: 42, type: 'private' } } } });
     expect(sent.some((s) => s.method === 'answerCallbackQuery')).toBe(true);
-    expect(texts().at(-1)).toContain('What MC Scanner does');
+    expect(texts().at(-1)).toContain('What LeadHaul does');
   });
 
   describe('support', () => {
@@ -131,7 +131,7 @@ describe('TelegramService', () => {
     await bot.handle(group('hello everyone'));
     expect(sent).toHaveLength(0);
     await bot.handle(group('/features'));
-    expect(texts()[0]).toContain('What MC Scanner does');
+    expect(texts()[0]).toContain('What LeadHaul does');
     expect(markup(0)).not.toContain('web_app');
   });
 

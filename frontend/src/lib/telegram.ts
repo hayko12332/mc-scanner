@@ -4,6 +4,10 @@ interface TelegramWebApp {
   initData: string
   ready(): void
   expand(): void
+  openLink(url: string): void
+  isVersionAtLeast(version: string): boolean
+  /** Bot API 8.0+: asks the user to save a file from an https URL. */
+  downloadFile?(params: { url: string; file_name: string }, callback?: (accepted: boolean) => void): void
 }
 
 declare global {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from './api'
 import { useToast } from './hooks/useToast'
 import { ComingSoon } from './components/ComingSoon'
+import { Footer } from './components/Footer'
 import { Icon } from './components/Icon'
 import { track } from './lib/analytics'
 import { FeedbackPage } from './pages/FeedbackPage'
@@ -68,8 +69,8 @@ export default function App() {
           <a href="#/" className="brand">
             <img src="/logo.svg" alt="" width="34" height="34" />
             <span className="brand-text">
-              MC Scanner
-              <small>FMCSA carrier finder</small>
+              <span>Lead<em>Haul</em></span>
+              <small>New MC leads every day</small>
             </span>
           </a>
           <nav className="tabs">
@@ -116,29 +117,7 @@ export default function App() {
         {page !== 'feedback' && <ComingSoon />}
       </main>
 
-      <footer className="site-footer">
-        <div className="wrap footer-grid">
-          <div>
-            <a href="#/" className="brand">
-              <img src="/logo.svg" alt="" width="28" height="28" />
-              MC Scanner
-            </a>
-            <p>
-              Free FMCSA carrier lookup for dispatchers and freight brokers. Data: FMCSA open data and SAFER. We record
-              anonymous usage (pages opened, searches) to improve the service.
-            </p>
-          </div>
-          <div className="footer-links">
-            <a href="#/leads">New MC leads</a>
-            <a href="#/scan">MC scanner</a>
-            <a href={lastLookup}>Lookup</a>
-            <a href="#/feedback">Ideas</a>
-            {telegram.support && <a href={telegram.support} target="_blank" rel="noopener">Support</a>}
-            {telegram.bot && <a href={telegram.bot} target="_blank" rel="noopener">Telegram bot</a>}
-            {telegram.group && <a href={telegram.group} target="_blank" rel="noopener">Telegram group</a>}
-          </div>
-        </div>
-      </footer>
+      <Footer telegram={telegram} lastLookup={lastLookup} backendOk={backendOk} />
       <div className={`toast ${toast.message ? 'show' : ''}`}>{toast.message}</div>
     </>
   )
