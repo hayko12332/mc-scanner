@@ -4,6 +4,7 @@ import { authorityLabel, carrierKey } from '../lib/carrier'
 import { formatDate, formatNumber, formatPhone } from '../lib/format'
 import type { ScannedCarrier } from '../types'
 import { CarrierDetails } from './CarrierDetails'
+import { ExportMenu, type ExportFormat } from './ExportMenu'
 import { Icon, type IconName } from './Icon'
 
 /** Phone or email line: click the value (or the copy button) to copy it. */
@@ -117,7 +118,7 @@ interface Props {
   /** Singular noun for the count, e.g. "new carrier". */
   noun?: string
   onCopy: (text: string) => void
-  onCsv: () => void
+  onExport: (format: ExportFormat) => void
   onCopyEmails: () => void
   onCopyPhones: () => void
   onClear: () => void
@@ -134,7 +135,7 @@ export function ResultsTable({ carriers, running, noun = 'carrier', onCopy, ...a
         </h3>
         {n > 0 && (
           <div className="results-actions">
-            <button className="primary" onClick={actions.onCsv}><Icon name="download" size={16} />Download CSV</button>
+            <ExportMenu count={n} onExport={actions.onExport} />
             <button onClick={actions.onCopyPhones}><Icon name="phone" size={15} />Copy all phones</button>
             <button onClick={actions.onCopyEmails}><Icon name="mail" size={15} />Copy all emails</button>
             <button onClick={actions.onClear} disabled={running}>Clear</button>

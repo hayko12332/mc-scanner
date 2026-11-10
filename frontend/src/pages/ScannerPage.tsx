@@ -7,7 +7,8 @@ import { LeadsPanel } from '../components/LeadsPanel'
 import { useLeads } from '../hooks/useLeads'
 import { useScanner, type ScanProgress, type ScanSettings } from '../hooks/useScanner'
 import { track } from '../lib/analytics'
-import { downloadCsv, passesFilters, type Filters } from '../lib/carrier'
+import { passesFilters, type Filters } from '../lib/carrier'
+import { copyForSheets, downloadCsv, downloadVcf, downloadXlsx, printCallSheet } from '../lib/export'
 import { formatPhone } from '../lib/format'
 import { loadState, saveState } from '../lib/storage'
 
@@ -171,10 +172,17 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
             running={runningNow}
             noun={isLeads ? 'new carrier' : 'carrier'}
             onCopy={(text) => copy(text)}
-            onCsv={() => {
+            onExport={(format) => {
               if (!shown.length) return toast('No data')
-              downloadCsv(shown)
-              track('csv_export', { rows: shown.length, mode })
+              track('csv_export', { rows: shown.length, mode, format })
+              if (format === 'xlsx') downloadXlsx(shown)
+              else if (format === 'csv') downloadCsv(shown)
+              else if (format === 'vcf') downloadVcf(shown)
+              else if (format === 'print') printCallSheet(shown)
+              else copyForSheets(shown).then(
+                () => toast('Copied — press Ctrl+V (⌘V) in the new Google Sheet'),
+                () => toast('Could not copy — try Excel or CSV'),
+              )
             }}
             onCopyEmails={() => copyAll(shown.map((c) => c.email), 'emails')}
             onCopyPhones={() => copyAll(shown.flatMap((c) => [c.phone, c.cellPhone]).filter(Boolean).map(formatPhone), 'phones')}

@@ -28,18 +28,22 @@ describe('TelegramService', () => {
   const texts = () => sent.filter((s) => s.method === 'sendMessage').map((s) => String(s.body.text));
   const markup = (i: number) => JSON.stringify(sent.filter((s) => s.method === 'sendMessage')[i].body.reply_markup);
 
-  it('/start sends the Mini App button, a website link and the menu', async () => {
+  it('/start sends the banner with a caption, the New MC leads Mini App button, a website link and the menu', async () => {
     await bot.handle(msg('/start'));
-    expect(texts()[0]).toContain('https://scanner.example/');
-    expect(markup(0)).toContain('"web_app":{"url":"https://scanner.example/"}');
-    expect(markup(0)).toContain('"url":"https://scanner.example/"');
-    expect(markup(1)).toContain('💡 Suggest a feature');
+    const photo = sent.find((s) => s.method === 'sendPhoto')!;
+    expect(photo.body.photo).toBe('https://scanner.example/new-mc-leads.jpg');
+    expect(String(photo.body.caption)).toContain('New MC leads');
+    expect(String(photo.body.caption).length).toBeLessThanOrEqual(1024);
+    const kb = JSON.stringify(photo.body.reply_markup);
+    expect(kb).toContain('"web_app":{"url":"https://scanner.example/?view=leads"}');
+    expect(kb).toContain('"url":"https://scanner.example/"');
+    expect(markup(0)).toContain('💡 Suggest a feature');
     expect(analytics.recordServer).toHaveBeenCalledWith('bot_start', expect.anything(), { id: 42, username: 'ann', name: 'Ann' });
   });
 
   it('the Features button lists the features', async () => {
     await bot.handle(msg('✨ Features'));
-    expect(texts()[0]).toContain('Coming soon: CRM for dispatchers');
+    expect(texts()[0]).toContain('New MC leads');
   });
 
   it('saves the message after "Suggest a feature" as a suggestion', async () => {

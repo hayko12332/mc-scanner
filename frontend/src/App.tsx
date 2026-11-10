@@ -73,7 +73,7 @@ export default function App() {
             </span>
           </a>
           <nav className="tabs">
-            <a href="#/leads" className={page === 'leads' ? 'active' : ''}><Icon name="zap" size={16} /><span className="hide-sm">New&nbsp;</span>Leads</a>
+            <a href="#/leads" className={page === 'leads' ? 'active' : ''}><Icon name="zap" size={16} /><span><span className="hide-sm">New </span>Leads</span></a>
             <a href="#/scan" className={page === 'scan' ? 'active' : ''}><Icon name="scan" size={16} />Scanner</a>
             <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}><Icon name="search" size={16} />Lookup</a>
             <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}><Icon name="bulb" size={16} />Ideas</a>
@@ -84,9 +84,12 @@ export default function App() {
                 <Icon name="lifebuoy" size={18} /><span className="hide-sm">Support</span>
               </a>
             )}
+            {page !== 'leads' && (
+              <a className="btn nav-leads" href="#/leads?go=7"><Icon name="zap" size={16} /><span>Get <span className="hide-sm">new </span>leads</span></a>
+            )}
             {telegram.bot && (
               <a className="btn nav-tg" href={telegram.bot} target="_blank" rel="noopener">
-                <Icon name="send" size={16} /><span className="hide-sm">Open in </span>Telegram
+                <Icon name="send" size={16} />Telegram
               </a>
             )}
           </div>

@@ -27,12 +27,12 @@ function arc(a: string, b: string) {
 
 /** Examples of what the scanner finds; names and contacts are masked on purpose. */
 const FEED: [string, string, string][] = [
-  ['B•••• Express', 'MC-1000012 · TX', '(214) •••-••37'],
-  ['S•••• Trucking', 'MC-1000047 · IL', '(773) •••-••91'],
-  ['M•••• Logistics', 'MC-1000083 · GA', '(404) •••-••15'],
-  ['R•••• Freight', 'MC-1000121 · OH', '(614) •••-••02'],
-  ['A•••• Transport', 'MC-1000158 · FL', '(305) •••-••64'],
-  ['K•••• Carriers', 'MC-1000190 · CA', '(909) •••-••88'],
+  ['B•••• Logistics', 'MC-9933•••• · TX · Today', '(214) •••-••37'],
+  ['S•••• Freight', 'MC-8653•••• · IL · Today', '(773) •••-••91'],
+  ['A•••• Transport', 'MC-5289•••• · GA · Today', '(404) •••-••15'],
+  ['K•••• Carriers', 'MC-7403•••• · FL · Yesterday', '(305) •••-••64'],
+  ['R•••• Express', 'MC-6122•••• · OH · Yesterday', '(614) •••-••02'],
+  ['M•••• Trucking', 'MC-8172•••• · CA · Yesterday', '(909) •••-••88'],
 ]
 
 /**
@@ -51,7 +51,7 @@ function LiveFeed() {
   const cards = [0, 1, 2, 3].map((i) => ({ id: tick - i, i, data: at(tick - i) }))
   return (
     <div className="feed" aria-label="Example carriers found by a scan (contacts hidden)">
-      <div className="feed-head"><span className="pulse" /> Carriers found · live example</div>
+      <div className="feed-head"><span className="pulse" /> New MC leads · example</div>
       <div className="feed-list">
         {cards.map(({ id, i, data: [name, meta, phone] }) => (
           <div key={id} className={`feed-card ${i === 0 ? 'enter' : ''} ${i === 3 ? 'leave' : ''}`} style={{ '--i': i } as CSSProperties}>
@@ -61,7 +61,7 @@ function LiveFeed() {
               <span>{meta}</span>
             </div>
             <div className="feed-side">
-              <span className="feed-pill">SAFER ✓</span>
+              <span className="feed-pill">NEW</span>
               <span className="feed-phone">{phone}</span>
             </div>
           </div>

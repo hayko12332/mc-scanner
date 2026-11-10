@@ -1,5 +1,4 @@
 import type { ScannedCarrier } from '../types'
-import { formatDate, formatMoney, formatPhone } from './format'
 
 export interface Filters {
   skipCarrierBroker: boolean
@@ -40,34 +39,4 @@ export function authorityLabel(c: ScannedCarrier): string {
   return [a.common === 'A' && 'Common', a.contract === 'A' && 'Contract', a.broker === 'A' && 'Broker']
     .filter(Boolean)
     .join(' + ')
-}
-
-const yesNo = (v: string) => (v === 'Y' ? 'Yes' : v === 'N' ? 'No' : '')
-
-function csvCell(value: unknown): string {
-  const s = String(value ?? '')
-  return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
-
-export function downloadCsv(carriers: ScannedCarrier[]): void {
-  const header = ['MC', 'USDOT', 'Legal Name', 'DBA', 'Phone', 'Cell Phone', 'Fax', 'Email', 'Authority', 'SAFER Verified',
-    'USDOT Status', 'Officers', 'Address', 'State', 'Power Units', 'Drivers', 'BIPD Required', 'BIPD On File',
-    'Cargo On File', 'Bond On File', 'Cargo Types', 'Safety Rating', 'MCS-150 Date', 'Added', 'Authority Granted']
-  const lines = carriers.map((c) => [
-    `MC-${c.mc}`, c.dot, c.legalName, c.dbaName, formatPhone(c.phone), formatPhone(c.cellPhone), formatPhone(c.fax),
-    c.email, authorityLabel(c), c.safer ? formatDate(c.safer.checkedAt) : 'no', c.safer?.usdotStatus ?? c.usdotStatus,
-    c.officers.join('; '), c.physicalAddress, c.state, c.powerUnits, c.drivers,
-    formatMoney(c.authority.bipdRequired), formatMoney(c.authority.bipdOnFile), yesNo(c.authority.cargoOnFile),
-    yesNo(c.authority.bondOnFile), c.cargo.join('; '), c.safetyRating, formatDate(c.mcs150Date), formatDate(c.addedOn), formatDate(c.grantedOn ?? null),
-  ].map(csvCell).join(','))
-  const blob = new Blob(['﻿' + [header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
-  const mcs = carriers.map((c) => c.mc)
-  const a = document.createElement('a')
-  a.href = URL.createObjectURL(blob)
-  const granted = carriers.map((c) => c.grantedOn).filter(Boolean).sort() as string[]
-  a.download = granted.length
-    ? `new-mc-leads_${granted[0]}_to_${granted[granted.length - 1]}.csv`
-    : `fmcsa_MC${Math.min(...mcs)}-${Math.max(...mcs)}.csv`
-  a.click()
-  URL.revokeObjectURL(a.href)
 }

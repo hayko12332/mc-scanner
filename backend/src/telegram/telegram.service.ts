@@ -29,21 +29,41 @@ const BTN_FEATURES = '✨ Features';
 const BTN_SUGGEST = '💡 Suggest a feature';
 const BTN_SUPPORT = '🆘 Support';
 const BTN_WEBSITE = '🌐 Website';
-const BTN_OPEN = '🚚 Open MC Scanner';
+const BTN_OPEN = '⚡ New MC leads';
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 const FEATURES = [
-  '<b>✨ What MC Scanner does</b>',
+  '✨ <b>What MC Scanner does</b>',
   '',
-  '🔎 <b>Scanner</b> — walks MC numbers one by one (MC, MC+1, …) and collects authorized carriers with phone and email. Filters: carriers only, active USDOT, with phone. Export to CSV.',
-  '✅ <b>Live SAFER check</b> of every carrier it finds.',
-  '🏢 <b>Lookup</b> — check one company by MC, USDOT, email or phone: authority, insurance and policy history, fleet, cargo, and other companies that share the same phone or email.',
-  '📄 <b>Public records</b> — state business registration, UCC liens, federal court and bankruptcy links.',
+  '⚡ <b>New MC leads</b>',
+  'Carriers that just got their operating authority — today, yesterday, last 7 / 14 / 30 days. Phone + email for each. Most of them don’t have a dispatcher yet.',
   '',
-  '🚧 <b>Coming soon: CRM for dispatchers</b> — your carriers, calls, notes and follow-ups in one place.',
+  '🔎 <b>MC scanner</b>',
+  'Walks any MC range and keeps only authorized carriers, each verified live on SAFER.',
   '',
-  'Free to use. Have an idea? Tap “💡 Suggest a feature”.',
+  '🏢 <b>Company lookup</b>',
+  'Check any company by MC, USDOT, email or phone: authority, insurance history, fleet, cargo, related companies, state registration, liens and courts.',
+  '',
+  '📥 <b>Export</b>',
+  'Excel, Google Sheets, CSV, phone contacts (.vcf) or a printable call sheet.',
+  '',
+  '🚧 <i>Coming soon: CRM for dispatchers.</i> Tell us what you need — tap “💡 Suggest a feature”.',
+].join('\n');
+
+/** Welcome caption under the banner (HTML, fits Telegram's 1024-character caption limit). */
+const WELCOME = [
+  '⚡ <b>New MC leads with phone &amp; email — every day</b>',
+  '',
+  'Carriers that just got their operating authority. They don’t have a dispatcher yet — be the first to call.',
+  '',
+  '🆕 <b>150+</b> new authorized carriers a day',
+  '📅 Granted today, yesterday, last 7 / 30 days',
+  '📞 Phone + email for every carrier',
+  '🔎 Check any MC or USDOT in one tap',
+  '📥 Export to Excel, Google Sheets, CSV or contacts',
+  '',
+  '<i>Free · no sign-up · official FMCSA data</i>',
 ].join('\n');
 
 @Injectable()
@@ -109,10 +129,10 @@ export class TelegramService implements OnApplicationBootstrap {
       secret_token: this.webhookSecret,
       allowed_updates: ['message', 'callback_query', 'my_chat_member'],
     });
-    await this.call('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Open', web_app: { url: this.siteUrl } } });
+    await this.call('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Leads', web_app: { url: this.viewUrl('leads') } } });
     await this.call('setMyCommands', {
       commands: [
-        { command: 'start', description: 'Open MC Scanner' },
+        { command: 'start', description: 'New MC leads & MC Scanner' },
         { command: 'features', description: 'What MC Scanner can do' },
         { command: 'suggest', description: 'Suggest a feature' },
         { command: 'support', description: 'Ask a question / get help' },
@@ -120,7 +140,7 @@ export class TelegramService implements OnApplicationBootstrap {
       ],
     });
     await this.call('setMyShortDescription', {
-      short_description: `Free FMCSA carrier lookup: MC scanner, SAFER, insurance, registrations. ${this.siteUrl}`,
+      short_description: `New MC leads every day: carriers that just got authority, with phone & email. Free. ${this.siteUrl}`,
     });
     this.logger.log(`Telegram bot webhook set to ${config.publicUrl}${WEBHOOK_PATH}`);
   }
@@ -252,9 +272,10 @@ export class TelegramService implements OnApplicationBootstrap {
 
   private async postGroupIntro(chatId: number, pin: boolean) {
     const sent = (await this.send(chatId, [
-      '🚚 <b>MC Scanner — free FMCSA carrier lookup</b>',
+      '⚡ <b>MC Scanner — new MC leads every day</b>',
       '',
-      '🔎 Find authorized carriers by MC number with phone and email, verified live on SAFER.',
+      '🆕 Carriers that just got their operating authority, with phone and email — most have no dispatcher yet.',
+      '🔎 Scan any MC range for authorized carriers, verified live on SAFER.',
       '🏢 Check any company by MC, USDOT, email or phone: authority, insurance, fleet, state registration, liens and courts.',
       '🚧 Coming soon: CRM for dispatchers.',
       '',
@@ -288,23 +309,35 @@ export class TelegramService implements OnApplicationBootstrap {
     if (q.data === 'support') return this.askSupport(chatId, tg);
   }
 
-  private sendWelcome(chatId: number) {
-    return this.send(chatId, [
-      '<b>MC Scanner</b> — free FMCSA carrier lookup.',
-      '',
-      'Scan MC numbers for authorized carriers with phone and email, or check one company by MC, USDOT, email or phone.',
-      '',
-      `🌐 Website: ${this.siteUrl}`,
-      '🚧 Coming soon: CRM for dispatchers.',
-    ].join('\n'), {
+  /** Site URL opening a given view (Telegram adds its own data to the hash, so the view goes in the query). */
+  private viewUrl(view: 'leads' | 'lookup' | 'scan') {
+    return `${this.siteUrl}?view=${view}`;
+  }
+
+  private async sendWelcome(chatId: number) {
+    const keyboard = {
       inline_keyboard: [
-        [{ text: '🚚 Open in Telegram', web_app: { url: this.siteUrl } }],
-        [{ text: '🌐 Open website in browser', url: this.siteUrl }],
+        [{ text: '⚡ Get new MC leads', web_app: { url: this.viewUrl('leads') } }],
+        [{ text: '🔎 Check a company', web_app: { url: this.viewUrl('lookup') } }, { text: '🌐 Website', url: this.siteUrl }],
         [{ text: '✨ Features', callback_data: 'features' }, { text: '💡 Suggest a feature', callback_data: 'suggest' }],
         ...(this.supportEnabled ? [[{ text: '🆘 Support — ask a question', callback_data: 'support' }]] : []),
         ...this.groupRow(),
       ],
-    }).then(() => this.send(chatId, 'The menu below is always here 👇', this.mainKeyboard()));
+    };
+    try {
+      await this.call('sendPhoto', {
+        chat_id: chatId,
+        photo: `${this.siteUrl}new-mc-leads.jpg`,
+        caption: WELCOME,
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      });
+    } catch (e) {
+      // The banner is a nice-to-have: fall back to text if Telegram cannot fetch it.
+      this.logger.warn(`Welcome photo failed: ${(e as Error).message}`);
+      await this.send(chatId, WELCOME, keyboard);
+    }
+    await this.send(chatId, 'The menu below is always here 👇', this.mainKeyboard());
   }
 
   /** Mini App (web_app) buttons only work in private chats, so groups get plain links. */
@@ -313,7 +346,7 @@ export class TelegramService implements OnApplicationBootstrap {
       inline_keyboard: inGroup
         ? [[{ text: '🤖 Open the bot', url: `${this.botUrl}?start=group` }, { text: '🌐 Website', url: this.siteUrl }]]
         : [
-            [{ text: '🚚 Open in Telegram', web_app: { url: this.siteUrl } }, { text: '🌐 Website', url: this.siteUrl }],
+            [{ text: '⚡ Get new MC leads', web_app: { url: this.viewUrl('leads') } }, { text: '🌐 Website', url: this.siteUrl }],
             [{ text: '💡 Suggest a feature', callback_data: 'suggest' }],
             ...this.groupRow(),
           ],
@@ -324,7 +357,7 @@ export class TelegramService implements OnApplicationBootstrap {
     return this.send(chatId, `🌐 MC Scanner website:\n${this.siteUrl}\n\nWorks in any browser, on phone and desktop.`, {
       inline_keyboard: [
         [{ text: '🌐 Open website', url: this.siteUrl }],
-        [{ text: '🚚 Open in Telegram', web_app: { url: this.siteUrl } }],
+        [{ text: '⚡ Get new MC leads', web_app: { url: this.viewUrl('leads') } }],
         ...this.groupRow(),
       ],
     });
@@ -363,7 +396,7 @@ export class TelegramService implements OnApplicationBootstrap {
   private mainKeyboard() {
     return {
       keyboard: [
-        [{ text: BTN_OPEN, web_app: { url: this.siteUrl } }],
+        [{ text: BTN_OPEN, web_app: { url: this.viewUrl('leads') } }],
         [{ text: BTN_FEATURES }, { text: BTN_SUGGEST }],
         this.supportEnabled ? [{ text: BTN_SUPPORT }, { text: BTN_WEBSITE }] : [{ text: BTN_WEBSITE }],
       ],

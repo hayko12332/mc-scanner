@@ -42,9 +42,41 @@ export function HowItWorks() {
           </div>
           <div className="step-num">03</div>
           <h3>Call or export</h3>
-          <p>Click any phone or email to copy it, copy them all at once, or download a CSV for your dialer.</p>
+          <p>Click any phone or email to copy it, copy them all at once, or export to Excel or your dialer.</p>
         </div>
       </div>
+      <SectionCta note="Takes about 20 seconds · no sign-up" />
+    </section>
+  )
+}
+
+/** Centered call to action under a landing section. */
+export function SectionCta({ note, label = 'Get new MC leads' }: { note?: string; label?: string }) {
+  return (
+    <div className="section-cta reveal">
+      <a className="btn primary big glow" href="#/leads?go=7"><Icon name="zap" size={16} />{label}</a>
+      {note && <span>{note}</span>}
+    </div>
+  )
+}
+
+/** Closing band before the footer. */
+export function FinalCta() {
+  return (
+    <section className="final-cta reveal">
+      <div className="final-glow" aria-hidden="true" />
+      <span className="eyebrow dark">Free · no sign-up</span>
+      <h2>Start calling new carriers <span className="hl">today</span></h2>
+      <p>150+ carriers get their operating authority every day. Most of them don’t have a dispatcher yet.</p>
+      <div className="final-actions">
+        <a className="btn primary big glow" href="#/leads?go=7"><Icon name="zap" size={16} />Get new MC leads</a>
+        <a className="btn big ghost" href="#/lookup"><Icon name="search" size={16} />Check a company</a>
+      </div>
+      <ul className="trust">
+        <li><Icon name="database" size={15} />Official FMCSA data</li>
+        <li><Icon name="refresh" size={15} />Updated daily</li>
+        <li><Icon name="download" size={15} />Excel, CSV &amp; contacts export</li>
+      </ul>
     </section>
   )
 }
@@ -110,7 +142,7 @@ export function FeatureBento() {
         <article className="tile reveal">
           <div className="tile-icon"><Icon name="download" /></div>
           <h3>Copy &amp; export</h3>
-          <p>Copy all phones or emails in one click, or download a CSV for your CRM or dialer.</p>
+          <p>Copy all phones or emails in one click, or export to Excel, Google Sheets, CSV or phone contacts.</p>
         </article>
 
         <article className="tile wide telegram reveal" style={delay(100)}>
@@ -122,6 +154,7 @@ export function FeatureBento() {
           </a>
         </article>
       </div>
+      <SectionCta note="See who got authority this week" />
     </section>
   )
 }
