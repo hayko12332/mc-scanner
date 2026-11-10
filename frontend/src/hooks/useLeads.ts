@@ -32,6 +32,8 @@ function save(state: Saved) {
 /** YYYY-MM-DD for `daysAgo` days before today (UTC, like the FMCSA files). */
 export const isoDay = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10)
 
+const dayWord = (n: number) => (n === 1 ? 'day' : `${n} days`)
+
 const byNewest = (a: ScannedCarrier, b: ScannedCarrier) =>
   (b.grantedOn ?? '').localeCompare(a.grantedOn ?? '') || a.legalName.localeCompare(b.legalName)
 
@@ -61,7 +63,7 @@ export function useLeads() {
     setDone(0)
     setTotal(n)
     setRunning(true)
-    setStatus({ text: `Loading carriers that got their authority in the last ${n} days…`, tone: 'info' })
+    setStatus({ text: `Loading carriers that got their authority in the last ${dayWord(n)}…`, tone: 'info' })
     let failed = 0
     let next = 0
     const worker = async () => {
@@ -79,6 +81,16 @@ export function useLeads() {
       }
     }
     await Promise.all(Array.from({ length: PARALLEL }, worker))
+    // "1 day" early in the morning: FMCSA may not have today's grants yet, so show the latest day that has them.
+    for (let back = 1; n === 1 && !found.size && !failed && back <= 3 && !ctrl.signal.aborted; back++) {
+      try {
+        const day = await api.newLeads(isoDay(back), ctrl.signal)
+        for (const c of day.carriers) found.set(c.mc, c)
+        setRows([...found.values()].sort(byNewest))
+      } catch {
+        if (!ctrl.signal.aborted) failed++
+      }
+    }
     abort.current = null
     setRunning(false)
     if (ctrl.signal.aborted) return
@@ -88,7 +100,7 @@ export function useLeads() {
     save({ rows: list, days: n, fetchedAt: at })
     setStatus(failed
       ? { text: `Loaded with ${failed} day(s) missing — FMCSA did not answer. Press the button again to retry.`, tone: 'error' }
-      : { text: `${list.length.toLocaleString('en-US')} new carriers from the last ${n} days.`, tone: 'info' })
+      : { text: `${list.length.toLocaleString('en-US')} new carriers from the last ${dayWord(n)}.`, tone: 'info' })
   }, [])
 
   const stop = useCallback(() => {

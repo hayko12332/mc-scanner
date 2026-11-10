@@ -48,7 +48,8 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
   const onAdvance = useCallback((mc: number) => setSettings((s) => ({ ...s, startMc: String(mc) })), [])
   const scanner = useScanner(saved, onAdvance)
   const leads = useLeads()
-  const [period, setPeriod] = useState(7)
+  // The period of the leads on screen (kept across reloads), else a week.
+  const [period, setPeriod] = useState(leads.days || 7)
   /** Google Sheets dialog: rows copied, or null when closed. */
   const [sheets, setSheets] = useState<{ rows: number; copied: boolean } | null>(null)
   useEffect(() => onExportNotice(toast), [toast])

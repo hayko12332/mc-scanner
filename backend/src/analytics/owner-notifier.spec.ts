@@ -73,6 +73,15 @@ describe('OwnerNotifier', () => {
   });
 });
 
+describe('tool alerts', () => {
+  it('reports leads loading and the export format', () => {
+    const { n } = notifier();
+    const texts = n.siteAlerts([ev('leads_start', { days: 7 }), ev('csv_export', { rows: 5, format: 'xlsx' })], false);
+    expect(texts.join('\n')).toContain('New MC leads за 7');
+    expect(texts.join('\n')).toContain('Экспорт XLSX: 5');
+  });
+});
+
 describe('flag and device', () => {
   it('maps country codes and user agents', () => {
     expect(flag('AM')).toBe('🇦🇲');

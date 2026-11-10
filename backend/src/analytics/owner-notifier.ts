@@ -11,7 +11,7 @@ export interface NotifierOptions {
 }
 
 /** Actions reported once per visitor (per server run), besides the first visit itself. */
-const FIRST_ACTIONS = new Set(['scan_start', 'lookup', 'csv_export']);
+const FIRST_ACTIONS = new Set(['leads_start', 'scan_start', 'lookup', 'csv_export']);
 const MAX_REMEMBERED = 5000;
 
 /** Turns a two-letter country code into its flag emoji ("US" -> 🇺🇸). */
@@ -66,7 +66,8 @@ export class OwnerNotifier {
       const p = e.props;
       if (e.event === 'scan_start') texts.push(`▶️ Запустил скан с MC ${p.from}${p.to ? ` до ${p.to}` : ''}\n${who(e)}`);
       if (e.event === 'lookup') texts.push(`🔎 Ищет компанию: ${p.q} (найдено: ${p.results})\n${who(e)}`);
-      if (e.event === 'csv_export') texts.push(`⬇️ Скачал CSV: ${p.rows} перевозчиков\n${who(e)}`);
+      if (e.event === 'leads_start') texts.push(`⚡ Загружает New MC leads за ${p.days} дн.\n${who(e)}`);
+      if (e.event === 'csv_export') texts.push(`⬇️ Экспорт ${String(p.format ?? 'csv').toUpperCase()}: ${p.rows} перевозчиков\n${who(e)}`);
     }
     return texts;
   }

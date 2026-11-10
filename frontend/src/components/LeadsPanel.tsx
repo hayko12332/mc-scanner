@@ -2,7 +2,7 @@ import type { Status } from '../hooks/useScanner'
 import type { Filters } from '../lib/carrier'
 import { Icon } from './Icon'
 
-export const PERIODS = [3, 7, 14, 30] as const
+export const PERIODS = [1, 3, 7, 14, 30] as const
 
 interface Props {
   period: number
@@ -46,7 +46,7 @@ export function LeadsPanel(p: Props) {
               disabled={p.running}
               onClick={() => p.onPeriod(d)}
             >
-              {d} days
+              {d === 1 ? '1 day' : `${d} days`}
             </button>
           ))}
         </div>
@@ -65,7 +65,7 @@ export function LeadsPanel(p: Props) {
           <div className="progress determinate"><i style={{ width: `${Math.max(4, pct)}%` }} /></div>
           <div className="live-counts">
             <span><b>{p.found.toLocaleString('en-US')}</b> new carriers found</span>
-            <span><b>{p.done}</b> of {p.total} days loaded</span>
+            <span><b>{p.done}</b> of {p.total} {p.total === 1 ? "day" : "days"} loaded</span>
             {p.found > 0 && <button className="small primary" onClick={p.onViewResults}>View leads ↓</button>}
           </div>
         </div>

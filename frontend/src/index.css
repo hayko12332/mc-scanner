@@ -909,9 +909,9 @@ button.idea-submit { width: 100%; border: 0; border-radius: 14px; background: li
   .mode-tabs a { padding: 10px 12px; gap: 8px; border-radius: 12px; }
   .mode-tabs a b { font-size: 14px; }
   .mode-tabs a small, .mode-tabs .new-tag { display: none; }
-  .period-picker { flex: 1 1 100%; display: grid; grid-template-columns: repeat(4, 1fr); padding: 5px; gap: 4px; }
+  .period-picker { flex: 1 1 100%; display: grid; grid-template-columns: repeat(5, 1fr); padding: 5px; gap: 3px; }
   .period-label { display: none; }
-  .period-picker button { padding: 8px 4px; }
+  .period-picker button { padding: 8px 2px; font-size: 13px; white-space: nowrap; }
   .leads-row button.scan-go { flex: 1 1 auto; }
   .scan-row { flex-wrap: wrap; }
   .mc-input { flex: 1 1 100%; }
