@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { api } from '../api'
+import { isNewSince, loadSeen, rememberSeen } from '../lib/seenLeads'
 import type { ScannedCarrier } from '../types'
 import type { Status } from './useScanner'
 
@@ -9,6 +10,8 @@ const PARALLEL = 3
 
 interface Saved {
   rows: ScannedCarrier[]
+  /** MC numbers that were new since the load before this one. */
+  fresh?: number[]
   days: number
   fetchedAt: string
 }
@@ -37,6 +40,10 @@ const dayWord = (n: number) => (n === 1 ? 'day' : `${n} days`)
 const byNewest = (a: ScannedCarrier, b: ScannedCarrier) =>
   (b.grantedOn ?? '').localeCompare(a.grantedOn ?? '') || a.legalName.localeCompare(b.legalName)
 
+/** Carriers not seen in this browser's previous loads first, then newest grant date first. */
+const sortLeads = (list: Iterable<ScannedCarrier>, fresh: Set<number>) =>
+  [...list].sort((a, b) => Number(fresh.has(b.mc)) - Number(fresh.has(a.mc)) || byNewest(a, b))
+
 /**
  * "New MC leads": carriers granted operating authority in the last N days, newest first.
  * Days are loaded a few at a time and results appear as each day arrives.
@@ -44,6 +51,7 @@ const byNewest = (a: ScannedCarrier, b: ScannedCarrier) =>
 export function useLeads() {
   const saved = useRef(load()).current
   const [rows, setRows] = useState<ScannedCarrier[]>(saved.rows ?? [])
+  const [fresh, setFresh] = useState<Set<number>>(() => new Set(saved.fresh ?? []))
   const [days, setDays] = useState(saved.days ?? 0)
   const [fetchedAt, setFetchedAt] = useState(saved.fetchedAt ?? '')
   const [running, setRunning] = useState(false)
@@ -58,7 +66,19 @@ export function useLeads() {
     abort.current = ctrl
     const dates = Array.from({ length: n }, (_, i) => isoDay(i))
     const found = new Map<number, ScannedCarrier>()
+    // What this browser had already loaded before; anything else that falls in that date range is new to the user.
+    const seen = loadSeen()
+    const freshNow = new Set<number>()
+    const add = (carriers: ScannedCarrier[]) => {
+      for (const c of carriers) {
+        found.set(c.mc, c)
+        if (isNewSince(seen, c)) freshNow.add(c.mc)
+      }
+      setFresh(new Set(freshNow))
+      setRows(sortLeads(found.values(), freshNow))
+    }
     setRows([])
+    setFresh(new Set())
     setDays(n)
     setDone(0)
     setTotal(n)
@@ -70,9 +90,7 @@ export function useLeads() {
       while (next < dates.length && !ctrl.signal.aborted) {
         const date = dates[next++]
         try {
-          const day = await api.newLeads(date, ctrl.signal)
-          for (const c of day.carriers) found.set(c.mc, c)
-          setRows([...found.values()].sort(byNewest))
+          add((await api.newLeads(date, ctrl.signal)).carriers)
         } catch {
           if (ctrl.signal.aborted) return
           failed++
@@ -84,9 +102,7 @@ export function useLeads() {
     // "1 day" early in the morning: FMCSA may not have today's grants yet, so show the latest day that has them.
     for (let back = 1; n === 1 && !found.size && !failed && back <= 3 && !ctrl.signal.aborted; back++) {
       try {
-        const day = await api.newLeads(isoDay(back), ctrl.signal)
-        for (const c of day.carriers) found.set(c.mc, c)
-        setRows([...found.values()].sort(byNewest))
+        add((await api.newLeads(isoDay(back), ctrl.signal)).carriers)
       } catch {
         if (!ctrl.signal.aborted) failed++
       }
@@ -94,10 +110,11 @@ export function useLeads() {
     abort.current = null
     setRunning(false)
     if (ctrl.signal.aborted) return
-    const list = [...found.values()].sort(byNewest)
+    const list = sortLeads(found.values(), freshNow)
     const at = new Date().toISOString()
     setFetchedAt(at)
-    save({ rows: list, days: n, fetchedAt: at })
+    save({ rows: list, fresh: [...freshNow], days: n, fetchedAt: at })
+    if (!failed) rememberSeen(seen, list, dates[dates.length - 1])
     setStatus(failed
       ? { text: `Loaded with ${failed} day(s) missing — FMCSA did not answer. Press the button again to retry.`, tone: 'error' }
       : { text: `${list.length.toLocaleString('en-US')} new carriers from the last ${dayWord(n)}.`, tone: 'info' })
@@ -111,11 +128,12 @@ export function useLeads() {
 
   const clear = useCallback(() => {
     setRows([])
+    setFresh(new Set())
     setDays(0)
     setFetchedAt('')
     save({ rows: [], days: 0, fetchedAt: '' })
     setStatus({ text: '', tone: 'info' })
   }, [])
 
-  return { rows, days, fetchedAt, running, done, total, status, start, stop, clear }
+  return { rows, fresh, days, fetchedAt, running, done, total, status, start, stop, clear }
 }

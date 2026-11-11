@@ -1078,3 +1078,36 @@ button.linkish { padding: 0; border: 0; background: none; font-size: inherit; fo
 button.linkish:hover { text-decoration: underline; }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
 @keyframes fade-in { from { opacity: 0; } }
+
+/* Grant-day divider in New MC leads */
+.day-head {
+  display: flex; align-items: center; gap: 10px; padding: 10px 20px; background: var(--surface-2);
+  border-bottom: 1px solid var(--border); font-size: 13.5px;
+}
+.day-head b { color: var(--text); font-weight: 700; }
+.day-head .day-count {
+  margin-left: auto; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600;
+  color: var(--muted); background: var(--surface); border: 1px solid var(--border);
+}
+.day-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.day-head.fresh-hot .day-dot { background: #f97316; box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.18); }
+.day-head.fresh-hot b { color: #ea580c; }
+.day-head.fresh-hot .day-count { color: #c2410c; background: rgba(249, 115, 22, 0.1); border-color: rgba(249, 115, 22, 0.3); }
+.day-head.fresh-warm .day-dot { background: #eab308; }
+.day-head.fresh-warm b { color: var(--text); }
+@media (prefers-color-scheme: dark) {
+  .day-head.fresh-hot b { color: #fb923c; }
+  .day-head.fresh-hot .day-count { color: #fdba74; }
+}
+@media (max-width: 720px) { .day-head { padding: 9px 14px; font-size: 13px; } }
+.fresh-head { flex-wrap: wrap; background: linear-gradient(90deg, rgba(249, 115, 22, 0.12), transparent 70%), var(--surface-2); }
+.fresh-badge {
+  display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.05em; color: #fff;
+  background: linear-gradient(135deg, #fb923c, #ea580c); box-shadow: 0 3px 10px rgba(234, 88, 12, 0.3);
+}
+.fresh-head .day-count { margin-left: 0; color: #c2410c; background: rgba(249, 115, 22, 0.1); border-color: rgba(249, 115, 22, 0.3); }
+.fresh-actions { margin-left: auto; display: flex; gap: 6px; }
+.fresh-actions button { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; }
+@media (prefers-color-scheme: dark) { .fresh-head .day-count { color: #fdba74; } }
+@media (max-width: 720px) { .fresh-actions { margin-left: 0; width: 100%; } .fresh-actions button { flex: 1; } }

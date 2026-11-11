@@ -9,7 +9,7 @@ initTelegram()
 // Deep links from the Telegram bot: ?view=leads opens New MC leads (and starts loading), ?view=lookup the lookup.
 const view = new URLSearchParams(location.search).get('view')
 if (view && !location.hash.startsWith('#/')) {
-  const target = view === 'leads' ? 'leads?go=7' : view === 'lookup' ? 'lookup' : view === 'scan' ? 'scan' : ''
+  const target = view === 'leads' ? 'leads?go=1' : view === 'lookup' ? 'lookup' : view === 'scan' ? 'scan' : ''
   history.replaceState(null, '', location.pathname + '#/' + target)
 }
 initAnalytics()

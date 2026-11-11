@@ -86,7 +86,7 @@ export default function App() {
               </a>
             )}
             {page !== 'leads' && (
-              <a className="btn nav-leads" href="#/leads?go=7"><Icon name="zap" size={16} /><span>Get <span className="hide-sm">new </span>leads</span></a>
+              <a className="btn nav-leads" href="#/leads?go=1"><Icon name="zap" size={16} /><span>Get <span className="hide-sm">new </span>leads</span></a>
             )}
             {telegram.bot && (
               <a className="btn nav-tg" href={telegram.bot} target="_blank" rel="noopener">

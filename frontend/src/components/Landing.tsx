@@ -54,7 +54,7 @@ export function HowItWorks() {
 export function SectionCta({ note, label = 'Get new MC leads' }: { note?: string; label?: string }) {
   return (
     <div className="section-cta reveal">
-      <a className="btn primary big glow" href="#/leads?go=7"><Icon name="zap" size={16} />{label}</a>
+      <a className="btn primary big glow" href="#/leads?go=1"><Icon name="zap" size={16} />{label}</a>
       {note && <span>{note}</span>}
     </div>
   )
@@ -69,7 +69,7 @@ export function FinalCta() {
       <h2>Start calling new carriers <span className="hl">today</span></h2>
       <p>150+ carriers get their operating authority every day. Most of them don’t have a dispatcher yet.</p>
       <div className="final-actions">
-        <a className="btn primary big glow" href="#/leads?go=7"><Icon name="zap" size={16} />Get new MC leads</a>
+        <a className="btn primary big glow" href="#/leads?go=1"><Icon name="zap" size={16} />Get new MC leads</a>
         <a className="btn big ghost" href="#/lookup"><Icon name="search" size={16} />Check a company</a>
       </div>
       <ul className="trust">

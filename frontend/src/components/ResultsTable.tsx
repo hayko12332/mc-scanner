@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { track } from '../lib/analytics'
 import { authorityLabel, carrierKey } from '../lib/carrier'
 import { formatDate, formatNumber, formatPhone } from '../lib/format'
@@ -112,20 +112,59 @@ function CarrierRow({ carrier: c, index, onCopy }: { carrier: ScannedCarrier; in
   )
 }
 
+/** Divider above each grant day in New MC leads, so the newest day is clearly on top. */
+function DayHead({ iso, count }: { iso: string; count: number }) {
+  const f = freshness(iso)
+  const long = new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
+  return (
+    <div className={`day-head fresh-${f.level}`}>
+      <span className="day-dot" />
+      <b>{f.ago === 'Today' || f.ago === 'Yesterday' ? `${f.ago} · ${long}` : long}</b>
+      <span className="day-count">{count.toLocaleString('en-US')} new {count === 1 ? 'carrier' : 'carriers'}</span>
+    </div>
+  )
+}
+
+/** Header of the block of carriers this browser hasn't loaded before. */
+function FreshHead({ count, onCopy }: { count: number; onCopy: (kind: 'emails' | 'phones') => void }) {
+  return (
+    <div className="day-head fresh-head">
+      <span className="fresh-badge"><Icon name="zap" size={13} />NEW FOR YOU</span>
+      <b>Since your last load</b>
+      <span className="day-count">{count.toLocaleString('en-US')} {count === 1 ? 'carrier' : 'carriers'}</span>
+      <span className="fresh-actions">
+        <button onClick={() => onCopy('emails')}><Icon name="mail" size={13} />Copy emails</button>
+        <button onClick={() => onCopy('phones')}><Icon name="phone" size={13} />Copy phones</button>
+      </span>
+    </div>
+  )
+}
+
 interface Props {
   carriers: ScannedCarrier[]
   running: boolean
   /** Singular noun for the count, e.g. "new carrier". */
   noun?: string
+  /** New MC leads: carriers that are new since this browser's previous load, shown first. */
+  fresh?: Set<number>
   onCopy: (text: string) => void
+  /** Copies the emails or phones of a group of carriers. */
+  onCopyList?: (kind: 'emails' | 'phones', carriers: ScannedCarrier[]) => void
   onExport: (format: ExportFormat) => void
   onCopyEmails: () => void
   onCopyPhones: () => void
   onClear: () => void
 }
 
-export function ResultsTable({ carriers, running, noun = 'carrier', onCopy, ...actions }: Props) {
+export function ResultsTable({ carriers, running, noun = 'carrier', fresh, onCopy, onCopyList, ...actions }: Props) {
   const n = carriers.length
+  // Per-day counts exclude the carriers shown in the "new since your last load" block.
+  const freshList = useMemo(() => carriers.filter((c) => fresh?.has(c.mc)), [carriers, fresh])
+  const perDay = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const c of carriers) if (c.grantedOn && !fresh?.has(c.mc)) m.set(c.grantedOn, (m.get(c.grantedOn) ?? 0) + 1)
+    return m
+  }, [carriers, fresh])
   return (
     <>
       <div className="results-head">
@@ -148,7 +187,20 @@ export function ResultsTable({ carriers, running, noun = 'carrier', onCopy, ...a
             <span>Carrier</span><span>Contact</span><span>Authority</span><span>Location &amp; fleet</span><span />
           </div>
         )}
-        {carriers.map((c, i) => <CarrierRow key={carrierKey(c)} carrier={c} index={i} onCopy={onCopy} />)}
+        {carriers.map((c, i) => {
+          const isFresh = !!fresh?.has(c.mc)
+          const prev = carriers[i - 1]
+          const prevFresh = !!prev && !!fresh?.has(prev.mc)
+          return (
+          <Fragment key={carrierKey(c)}>
+            {isFresh && i === 0 && <FreshHead count={freshList.length} onCopy={(kind) => onCopyList?.(kind, freshList)} />}
+            {!isFresh && c.grantedOn && (!prev || prevFresh || c.grantedOn !== prev.grantedOn) && (
+              <DayHead iso={c.grantedOn} count={perDay.get(c.grantedOn) ?? 0} />
+            )}
+            <CarrierRow carrier={c} index={i} onCopy={onCopy} />
+          </Fragment>
+          )
+        })}
         {!n && (
           <p className="muted empty">
             {running

@@ -51,7 +51,7 @@ export function Footer({ telegram, lastLookup, backendOk }: { telegram: Links; l
             <p>New MC leads with phone and email every day, plus a live SAFER check on every carrier. Free for dispatchers and freight brokers.</p>
             <span className={`footer-status ${status.cls}`}><i />{status.text}</span>
             <div className="footer-actions">
-              <a className="btn primary glow" href="#/leads?go=7"><Icon name="zap" size={15} />Get new MC leads</a>
+              <a className="btn primary glow" href="#/leads?go=1"><Icon name="zap" size={15} />Get new MC leads</a>
               {telegram.bot && (
                 <a className="btn footer-tg" href={telegram.bot} target="_blank" rel="noopener"><Icon name="send" size={15} />Open in Telegram</a>
               )}

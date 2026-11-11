@@ -22,7 +22,7 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
               MC range and verify carriers live on SAFER. Built for dispatchers and freight brokers.
             </p>
             <div className="hero-cta">
-              <a className={`btn primary big glow ${backendOk === false ? 'disabled' : ''}`} href="#/leads?go=7">
+              <a className={`btn primary big glow ${backendOk === false ? 'disabled' : ''}`} href="#/leads?go=1">
                 <Icon name="zap" size={16} />Get new MC leads
               </a>
               <a className="btn big ghost" href="#/scan"><Icon name="scan" size={17} />Scan MC range</a>

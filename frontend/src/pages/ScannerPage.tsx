@@ -31,7 +31,7 @@ const DEFAULT_FILTERS: Filters = { skipCarrierBroker: true, onlyActive: true, on
 interface Props {
   /** Which tool is shown: New MC leads or the MC range scanner. */
   mode: 'leads' | 'range'
-  /** Current hash; "#/leads?go=7" starts loading leads for 7 days. */
+  /** Current hash; "#/leads?go=1" starts loading leads for 7 days. */
   hash: string
   /** Changes on every navigation, so the same "?go" link works twice. */
   navKey: number
@@ -48,8 +48,8 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
   const onAdvance = useCallback((mc: number) => setSettings((s) => ({ ...s, startMc: String(mc) })), [])
   const scanner = useScanner(saved, onAdvance)
   const leads = useLeads()
-  // The period of the leads on screen (kept across reloads), else a week.
-  const [period, setPeriod] = useState(leads.days || 7)
+  // The period of the leads on screen (kept across reloads), else one day.
+  const [period, setPeriod] = useState(leads.days || 1)
   /** Google Sheets dialog: rows copied, or null when closed. */
   const [sheets, setSheets] = useState<{ rows: number; copied: boolean } | null>(null)
   useEffect(() => onExportNotice(toast), [toast])
@@ -111,7 +111,7 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
     if (el && el.getBoundingClientRect().top > innerHeight * 0.5) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [shown.length, runningNow])
 
-  // "#/leads?go=7" (the landing page button) starts loading leads right away.
+  // "#/leads?go=1" (the landing page button) starts loading leads right away.
   useEffect(() => {
     const go = parseInt(new URLSearchParams(hash.split('?')[1] ?? '').get('go') ?? '', 10)
     if (mode !== 'leads' || !Number.isFinite(go)) return
@@ -189,6 +189,10 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
                 () => setSheets({ rows: shown.length, copied: false }),
               )
             }}
+            fresh={isLeads ? leads.fresh : undefined}
+            onCopyList={(kind, list) => kind === 'emails'
+              ? copyAll(list.map((c) => c.email), 'new emails')
+              : copyAll(list.flatMap((c) => [c.phone, c.cellPhone]).filter(Boolean).map(formatPhone), 'new phones')}
             onCopyEmails={() => copyAll(shown.map((c) => c.email), 'emails')}
             onCopyPhones={() => copyAll(shown.flatMap((c) => [c.phone, c.cellPhone]).filter(Boolean).map(formatPhone), 'phones')}
             onClear={() => confirm('Delete all found records?') && (isLeads ? leads.clear() : scanner.clear())}
