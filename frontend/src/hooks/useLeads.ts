@@ -35,7 +35,7 @@ function save(state: Saved) {
 /** YYYY-MM-DD for `daysAgo` days before today (UTC, like the FMCSA files). */
 export const isoDay = (daysAgo: number) => new Date(Date.now() - daysAgo * 86_400_000).toISOString().slice(0, 10)
 
-const dayWord = (n: number) => (n === 1 ? 'day' : `${n} days`)
+const dayWord = (n: number) => (n === 1 ? 'today and yesterday' : `the last ${n} days`)
 
 const byNewest = (a: ScannedCarrier, b: ScannedCarrier) =>
   (b.grantedOn ?? '').localeCompare(a.grantedOn ?? '') || a.legalName.localeCompare(b.legalName)
@@ -64,7 +64,8 @@ export function useLeads() {
     abort.current?.abort()
     const ctrl = new AbortController()
     abort.current = ctrl
-    const dates = Array.from({ length: n }, (_, i) => isoDay(i))
+    // "Latest" (n = 1) is today plus yesterday: FMCSA adds most of a day's grants on the following day.
+    const dates = Array.from({ length: n === 1 ? 2 : n }, (_, i) => isoDay(i))
     const found = new Map<number, ScannedCarrier>()
     // What this browser had already loaded before; anything else that falls in that date range is new to the user.
     const seen = loadSeen(load().rows)
@@ -81,9 +82,9 @@ export function useLeads() {
     setFresh(new Set())
     setDays(n)
     setDone(0)
-    setTotal(n)
+    setTotal(dates.length)
     setRunning(true)
-    setStatus({ text: `Loading carriers that got their authority in the last ${dayWord(n)}…`, tone: 'info' })
+    setStatus({ text: `Loading carriers that got their authority ${n === 1 ? '' : 'in '}${dayWord(n)}…`, tone: 'info' })
     let failed = 0
     let next = 0
     const worker = async () => {
@@ -100,7 +101,7 @@ export function useLeads() {
     }
     await Promise.all(Array.from({ length: PARALLEL }, worker))
     // "1 day" early in the morning: FMCSA may not have today's grants yet, so show the latest day that has them.
-    for (let back = 1; n === 1 && !found.size && !failed && back <= 3 && !ctrl.signal.aborted; back++) {
+    for (let back = 2; n === 1 && !found.size && !failed && back <= 4 && !ctrl.signal.aborted; back++) {
       try {
         add((await api.newLeads(isoDay(back), ctrl.signal)).carriers)
       } catch {
@@ -117,7 +118,7 @@ export function useLeads() {
     if (!failed) rememberSeen(seen, list, dates[dates.length - 1])
     setStatus(failed
       ? { text: `Loaded with ${failed} day(s) missing — FMCSA did not answer. Press the button again to retry.`, tone: 'error' }
-      : { text: `${list.length.toLocaleString('en-US')} new carriers from the last ${dayWord(n)}.`, tone: 'info' })
+      : { text: `${list.length.toLocaleString('en-US')} new carriers from ${dayWord(n)}.`, tone: 'info' })
   }, [])
 
   const stop = useCallback(() => {

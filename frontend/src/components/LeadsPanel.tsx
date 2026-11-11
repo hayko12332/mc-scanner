@@ -45,8 +45,9 @@ export function LeadsPanel(p: Props) {
               className={p.period === d ? 'on' : ''}
               disabled={p.running}
               onClick={() => p.onPeriod(d)}
+              title={d === 1 ? 'Granted today and yesterday — FMCSA adds most of a day’s new carriers on the next day' : undefined}
             >
-              {d === 1 ? '1 day' : `${d} days`}
+              {d === 1 ? 'Latest' : `${d} days`}
             </button>
           ))}
         </div>
