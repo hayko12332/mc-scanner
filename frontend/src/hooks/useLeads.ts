@@ -86,12 +86,15 @@ export function useLeads() {
     setRunning(true)
     setStatus({ text: `Loading carriers that got their authority ${n === 1 ? '' : 'in '}${dayWord(n)}…`, tone: 'info' })
     let failed = 0
+    let partial = 0
     let next = 0
     const worker = async () => {
       while (next < dates.length && !ctrl.signal.aborted) {
         const date = dates[next++]
         try {
-          add((await api.newLeads(date, ctrl.signal)).carriers)
+          const day = await api.newLeads(date, ctrl.signal)
+          if (day.partial) partial++
+          add(day.carriers)
         } catch {
           if (ctrl.signal.aborted) return
           failed++
@@ -118,7 +121,9 @@ export function useLeads() {
     if (!failed) rememberSeen(seen, list, dates[dates.length - 1])
     setStatus(failed
       ? { text: `Loaded with ${failed} day(s) missing — FMCSA did not answer. Press the button again to retry.`, tone: 'error' }
-      : { text: `${list.length.toLocaleString('en-US')} new carriers from ${dayWord(n)}.`, tone: 'info' })
+      : partial
+        ? { text: `${list.length.toLocaleString('en-US')} new carriers from ${dayWord(n)}. FMCSA’s contact file is not answering right now, so emails are missing for ${partial} day(s) — phone and address are shown. Try again later for emails.`, tone: 'error' }
+        : { text: `${list.length.toLocaleString('en-US')} new carriers from ${dayWord(n)}.`, tone: 'info' })
   }, [])
 
   const stop = useCallback(() => {

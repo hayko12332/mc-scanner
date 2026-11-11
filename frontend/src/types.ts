@@ -116,6 +116,8 @@ export interface LeadsDay {
   date: string
   granted: number
   carriers: ScannedCarrier[]
+  /** FMCSA's contact file did not answer: phone and address only, no email. */
+  partial?: boolean
 }
 
 /** A company found by individual lookup: may have no MC, no authority record, or be a broker. */

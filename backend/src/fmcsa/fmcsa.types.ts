@@ -64,6 +64,8 @@ export interface LeadsDay {
   /** Property-carrier grants that day before contact / authority filtering. */
   granted: number;
   carriers: Carrier[];
+  /** True when FMCSA's contact file (Company Census) did not answer: phone and address only, no email. */
+  partial?: boolean;
 }
 
 /** A company found by individual lookup: may have no MC, no authority record, or be a broker. */

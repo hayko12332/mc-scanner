@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { buildAuthority, LEGACY_FIELDS, MOTUS_FIELDS, summarizeMotus, type AuthorityMode } from './authority.mapper.js';
 import { CENSUS_FIELDS, censusCompany, censusToCarriers } from './census.mapper.js';
 import type { Authority, Carrier, LeadsDay, ScanResult } from './fmcsa.types.js';
-import { docketToMc, docketVariants, legacyDocket } from './normalize.js';
+import { docketToMc, docketVariants, joinAddress, legacyDocket } from './normalize.js';
 import { LeadsStore } from './leads.store.js';
 import { DATASETS, inList, SocrataClient } from './socrata.client.js';
 
@@ -17,6 +17,8 @@ export class CarriersService {
   private readonly leadsCache = new Map<string, { at: number; result: Promise<LeadsDay> }>();
 
   private readonly leadsStore = new LeadsStore();
+  /** While the Company Census file is failing, skip it (and its slow retries) until this time. */
+  private censusDownUntil = 0;
 
   constructor(private readonly socrata: SocrataClient) {}
 
@@ -32,7 +34,10 @@ export class CarriersService {
     if (hit && Date.now() - hit.at < ttl) return hit.result;
     const result = this.loadDay(date, ttl, hit?.result);
     this.leadsCache.set(date, { at: Date.now(), result });
-    result.catch(() => this.leadsCache.delete(date));
+    result.then((d) => {
+      // Retry a partial day (contact file was down) after 10 minutes instead of waiting for the full TTL.
+      if (d.partial) this.leadsCache.set(date, { at: Date.now() - ttl + 10 * 60_000, result });
+    }, () => this.leadsCache.delete(date));
     if (this.leadsCache.size > 200) this.leadsCache.delete(this.leadsCache.keys().next().value!);
     return result;
   }
@@ -46,6 +51,8 @@ export class CarriersService {
     if (saved && Date.now() - saved.fetchedAt < ttl) return saved.data;
     try {
       const fresh = await this.fetchNewOn(date);
+      // A partial day (no emails) never replaces a full saved copy, and is not saved itself.
+      if (fresh.partial) return saved && !saved.data.partial ? saved.data : fresh;
       void this.leadsStore.put(date, fresh);
       return fresh;
     } catch (e) {
@@ -70,16 +77,27 @@ export class CarriersService {
       if (Number.isFinite(mc) && dot !== 'NaN') mcByDot.set(dot, mc);
     }
 
-    const census = (await Promise.all(chunks([...mcByDot.keys()]).map((dots) => this.socrata.query(DATASETS.census, {
-      $select: CENSUS_FIELDS.join(','),
-      $where: `dot_number in (${inList(dots)}) AND carship like '%C%'`,
-      $limit: '5000',
-    })))).flat();
-    const candidates = census.flatMap((rec) => {
-      const company = censusCompany(rec);
-      const mc = mcByDot.get(String(parseInt(company.dot, 10)));
-      return mc && (company.phone || company.email) ? [{ mc, ...company }] : [];
-    });
+    // Phone and email come from the Company Census file. When FMCSA throttles or drops it (HTTP 429 for everyone
+    // without an app token happens), fall back to the Motus registration file: name, phone and address, no email.
+    let candidates: (Omit<Carrier, 'authority'>)[];
+    let partial = false;
+    try {
+      if (Date.now() < this.censusDownUntil) throw new Error('Company Census is down');
+      const census = (await Promise.all(chunks([...mcByDot.keys()]).map((dots) => this.socrata.query(DATASETS.census, {
+        $select: CENSUS_FIELDS.join(','),
+        $where: `dot_number in (${inList(dots)}) AND carship like '%C%'`,
+        $limit: '5000',
+      })))).flat();
+      candidates = census.flatMap((rec) => {
+        const company = censusCompany(rec);
+        const mc = mcByDot.get(String(parseInt(company.dot, 10)));
+        return mc && (company.phone || company.email) ? [{ mc, ...company }] : [];
+      });
+    } catch {
+      if (Date.now() >= this.censusDownUntil) this.censusDownUntil = Date.now() + 10 * 60_000;
+      partial = true;
+      candidates = (await this.motusContacts([...mcByDot.values()])).filter((c) => c.phone);
+    }
 
     const authority = new Map<number, Authority>();
     for (const part of chunks(candidates.map((c) => c.mc))) {
@@ -90,7 +108,31 @@ export class CarriersService {
       return a ? [{ ...c, authority: a, grantedOn: date }] : [];
     });
     carriers.sort((a, b) => a.legalName.localeCompare(b.legalName));
-    return { date, granted: grants.length, carriers };
+    return { date, granted: grants.length, carriers, ...(partial ? { partial } : {}) };
+  }
+
+  /** Name, phone and address of property carriers from the Motus registration file (it has no email). */
+  private async motusContacts(mcs: number[]): Promise<Omit<Carrier, 'authority'>[]> {
+    const rows = (await Promise.all(chunks(mcs).map((part) => this.socrata.query(DATASETS.motusCarrier, {
+      $select: 'docket_number,usdot_number,legal_name,bus_telno,bus_street_po,bus_city,bus_state_code,bus_zip_code,mail_street_po,mail_city,mail_state_code,mail_zip_code',
+      $where: `docket_number in (${inList(docketVariants(part))}) AND op_auth_type like 'Motor Carrier of Property%'`,
+      $limit: '5000',
+    })))).flat();
+    const seen = new Set<number>();
+    return rows.flatMap((r) => {
+      const mc = docketToMc(r.docket_number ?? '');
+      if (!Number.isFinite(mc) || seen.has(mc)) return [];
+      seen.add(mc);
+      const digits = (r.bus_telno ?? '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+      return [{
+        mc, dot: String(parseInt(r.usdot_number ?? '', 10) || ''), legalName: r.legal_name ?? '', dbaName: '',
+        phone: digits, cellPhone: '', fax: '', email: '', usdotStatus: '', entityTypes: 'C', operation: '',
+        state: r.bus_state_code ?? '', powerUnits: null, trucks: null, drivers: null, cdlDrivers: null, addedOn: null, officers: [],
+        physicalAddress: joinAddress(r.bus_street_po, r.bus_city, r.bus_state_code, r.bus_zip_code),
+        mailingAddress: joinAddress(r.mail_street_po, r.mail_city, r.mail_state_code, r.mail_zip_code),
+        mcs150Date: null, mileage: null, mileageYear: '', safetyRating: 'Not rated', safetyRatingDate: null, hazmat: false, cargo: [],
+      }];
+    });
   }
 
   /** Authorized carriers with an email among MC from..to (inclusive). */
