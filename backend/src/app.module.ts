@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { fileURLToPath } from 'node:url';
 import { AnalyticsModule } from './analytics/analytics.module.js';
+import { CrmController } from './crm/crm.controller.js';
 import { ExportController } from './export/export.controller.js';
 import { FmcsaModule } from './fmcsa/fmcsa.module.js';
 import { HealthController } from './health.controller.js';
@@ -23,7 +24,7 @@ import { TelegramModule } from './telegram/telegram.module.js';
     AnalyticsModule,
     TelegramModule,
   ],
-  controllers: [HealthController, ExportController],
+  controllers: [HealthController, ExportController, CrmController],
   providers: [KeepAliveService],
 })
 export class AppModule {}

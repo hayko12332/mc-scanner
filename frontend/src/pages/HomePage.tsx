@@ -11,9 +11,9 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
       <section className="hero-band">
         <div className="hero wrap">
           <div className="hero-text">
-            <a className="announce" href="#/feedback">
+            <a className="announce" href="#/crm">
               <span className="announce-tag">New</span>
-              Dispatcher CRM is coming — tell us what you need
+              Dispatch board: loads, weekly gross &amp; dispatcher pay — free beta
               <Icon name="arrow" size={14} />
             </a>
             <h1>New MC leads <span className="hl">with phone &amp; email</span> every day</h1>

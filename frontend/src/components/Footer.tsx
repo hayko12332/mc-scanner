@@ -14,7 +14,7 @@ export function Footer({ telegram, lastLookup, backendOk }: { telegram: Links; l
         { label: 'New MC leads', href: '#/leads', tag: 'New' },
         { label: 'MC scanner', href: '#/scan' },
         { label: 'Company lookup', href: lastLookup },
-        { label: 'Dispatcher CRM', href: '#/feedback', tag: 'Soon' },
+        { label: 'Dispatch board', href: '#/crm', tag: 'Beta' },
       ],
     },
     {
@@ -63,7 +63,7 @@ export function Footer({ telegram, lastLookup, backendOk }: { telegram: Links; l
               {c.items.map((i) => (
                 <a key={i.label} href={i.href} {...(i.external ? { target: '_blank', rel: 'noopener' } : {})}>
                   {i.label}
-                  {i.tag && <span className={`footer-tag ${i.tag === 'Soon' ? 'soon' : ''}`}>{i.tag}</span>}
+                  {i.tag && <span className={`footer-tag ${i.tag === 'New' ? '' : 'soon'}`}>{i.tag}</span>}
                   {i.external && <Icon name="arrow" size={12} className="ext" />}
                 </a>
               ))}

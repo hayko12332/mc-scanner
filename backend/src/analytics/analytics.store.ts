@@ -60,6 +60,8 @@ export class PostgresStore implements AnalyticsStore {
     // Hosted Postgres (Neon, Render, Supabase) requires TLS; local servers usually don't offer it.
     const local = /@(localhost|127\.0\.0\.1)[:/]/.test(url);
     this.pool = new pg.Pool({ connectionString: url, max: 3, ssl: local ? undefined : { rejectUnauthorized: false } });
+    // An idle connection dropped by the network or by Neon must not crash the server.
+    this.pool.on('error', (e) => new Logger('Analytics').warn(`Database connection dropped: ${e.message}`));
     this.ready = this.pool.query(SCHEMA);
   }
 

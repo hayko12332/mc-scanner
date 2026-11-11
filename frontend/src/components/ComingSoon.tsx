@@ -1,13 +1,13 @@
-/** Announcement of the upcoming dispatcher CRM, with a link to leave suggestions. */
+/** Banner for the dispatch board (beta), with a link to try it. */
 export function ComingSoon() {
   return (
     <aside className="coming-soon">
       <div>
-        <span className="badge">Coming soon</span>
-        <h3>CRM for dispatchers</h3>
-        <p>Keep your carriers, calls, notes and follow-ups in one place, right next to the scanner.</p>
+        <span className="badge">New · beta</span>
+        <h3>Dispatch board for dispatchers</h3>
+        <p>Log your loads, see weekly gross per carrier and what each dispatcher earned. Import your Google Sheet in one paste.</p>
       </div>
-      <a className="btn big" href="#/feedback">Tell us what it should do →</a>
+      <a className="btn big" href="#/crm">Try it free →</a>
     </aside>
   )
 }

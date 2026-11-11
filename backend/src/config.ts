@@ -23,6 +23,10 @@ export const config = {
   ownerTelegramId: Number(env('OWNER_TELEGRAM_ID')) || 0,
   // The owner's own browser visitor ids (comma-separated), so their visits are not reported.
   ownerVisitorIds: env('OWNER_VISITOR_IDS').split(',').map((s) => s.trim()).filter(Boolean),
+  // Google OAuth client id (public): "Sign in with Google" for the dispatcher CRM, and Google Sheets export.
+  googleClientId: env('GOOGLE_CLIENT_ID'),
+  // Local development only: lets /api/crm/auth/dev log in without Google. Never set on the server.
+  crmDevLogin: env('CRM_DEV_LOGIN') === '1' && env('RENDER') !== 'true',
   // Public https address of the site; Render sets RENDER_EXTERNAL_URL automatically.
   publicUrl: (env('PUBLIC_URL') || env('RENDER_EXTERNAL_URL')).replace(/\/+$/, ''),
   // Render's free plan puts the service to sleep after 15 idle minutes and the next visitor (or Telegram

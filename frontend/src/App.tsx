@@ -9,6 +9,7 @@ import { FeedbackPage } from './pages/FeedbackPage'
 import { LookupPage } from './pages/LookupPage'
 import { HomePage } from './pages/HomePage'
 import { ScannerPage } from './pages/ScannerPage'
+import { CrmPage } from './pages/CrmPage'
 
 const isLookup = (hash: string) => hash.startsWith('#/lookup')
 
@@ -33,6 +34,7 @@ export default function App() {
   const { hash, navKey, lastLookup } = useHash()
   const page = isLookup(hash) ? 'lookup'
     : hash.startsWith('#/feedback') ? 'feedback'
+    : hash.startsWith('#/crm') ? 'crm'
     : hash.startsWith('#/leads') ? 'leads'
     : hash.startsWith('#/scan') ? 'scan'
     : 'home'
@@ -64,6 +66,7 @@ export default function App() {
 
   return (
     <>
+      {page !== 'crm' && (
       <header className="nav">
         <div className="wrap nav-inner">
           <a href="#/" className="brand">
@@ -77,7 +80,8 @@ export default function App() {
             <a href="#/leads" className={page === 'leads' ? 'active' : ''}><Icon name="zap" size={16} /><span><span className="hide-sm">New </span>Leads</span></a>
             <a href="#/scan" className={page === 'scan' ? 'active' : ''}><Icon name="scan" size={16} />Scanner</a>
             <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}><Icon name="search" size={16} />Lookup</a>
-            <a href="#/feedback" className={page === 'feedback' ? 'active' : ''}><Icon name="bulb" size={16} />Ideas</a>
+            <a href="#/crm"><Icon name="file" size={16} />Dispatch</a>
+            <a href="#/feedback" className={`hide-sm ${page === 'feedback' ? 'active' : ''}`}><Icon name="bulb" size={16} />Ideas</a>
           </nav>
           <div className="nav-cta">
             {telegram.support && (
@@ -96,8 +100,10 @@ export default function App() {
           </div>
         </div>
       </header>
+      )}
 
-      <main className="wrap">
+      {page === 'crm' && <CrmPage toast={toast.show} />}
+      <main className="wrap" hidden={page === 'crm'}>
         {page === 'home' && <HomePage backendOk={backendOk} />}
         {/* The tools and Lookup stay mounted so a running scan keeps going while you look something up. */}
         <div hidden={!isTool}>
@@ -114,10 +120,10 @@ export default function App() {
           <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
         </div>
         {page === 'feedback' && <FeedbackPage groupUrl={telegram.group} supportUrl={telegram.support} />}
-        {page !== 'feedback' && <ComingSoon />}
+        {page !== 'feedback' && page !== 'crm' && <ComingSoon />}
       </main>
 
-      <Footer telegram={telegram} lastLookup={lastLookup} backendOk={backendOk} />
+      {page !== 'crm' && <Footer telegram={telegram} lastLookup={lastLookup} backendOk={backendOk} />}
       <div className={`toast ${toast.message ? 'show' : ''}`}>{toast.message}</div>
     </>
   )

@@ -28,7 +28,7 @@ function baseName(carriers: ScannedCarrier[]) {
   return `fmcsa_MC${Math.min(...mcs)}-${Math.max(...mcs)}`
 }
 
-function save(blob: Blob, name: string) {
+export function saveFile(blob: Blob, name: string) {
   if (telegramApp()) return void saveInTelegram(blob, name)
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
@@ -64,12 +64,12 @@ const csvCell = (v: Cell) => {
 
 export function downloadCsv(carriers: ScannedCarrier[]) {
   const lines = [HEADER, ...carriers.map(rowOf)].map((r) => r.map(csvCell).join(','))
-  save(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }), `${baseName(carriers)}.csv`)
+  saveFile(new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }), `${baseName(carriers)}.csv`)
 }
 
 export function downloadXlsx(carriers: ScannedCarrier[]) {
   const rows = carriers.map((c) => rowOf(c).map((v, i) => (HEADER[i] === 'Power Units' || HEADER[i] === 'Drivers' ? (v ?? null) : v)))
-  save(buildXlsx(carriers.some((c) => c.grantedOn) ? 'New MC leads' : 'Carriers', HEADER, rows), `${baseName(carriers)}.xlsx`)
+  saveFile(buildXlsx(carriers.some((c) => c.grantedOn) ? 'New MC leads' : 'Carriers', HEADER, rows), `${baseName(carriers)}.xlsx`)
 }
 
 /** Copies the table as tab-separated text, which pastes into Google Sheets or Excel as columns. */
@@ -94,7 +94,7 @@ export function downloadVcf(carriers: ScannedCarrier[]) {
     'CATEGORIES:LeadHaul',
     'END:VCARD',
   ].filter(Boolean).join('\r\n'))
-  save(new Blob([cards.join('\r\n')], { type: 'text/vcard;charset=utf-8' }), `${baseName(carriers)}.vcf`)
+  saveFile(new Blob([cards.join('\r\n')], { type: 'text/vcard;charset=utf-8' }), `${baseName(carriers)}.vcf`)
 }
 
 /** Printable call sheet (the browser's print dialog can also save it as PDF). */
