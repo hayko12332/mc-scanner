@@ -5,11 +5,15 @@ import { SignIn } from '../components/crm/SignIn'
 import { Icon } from '../components/Icon'
 import { track } from '../lib/analytics'
 import { crm, CrmError, type CrmConfig, type CrmState, type CrmUser } from '../lib/crm'
+import { crmDemo } from '../lib/crmDemo'
 
 type Tab = 'loads' | 'carriers' | 'dispatchers'
 type Theme = 'light' | 'dark'
 
 const THEME_KEY = 'leadhaul.work.theme'
+const DEMO_KEY = 'leadhaul.dispatchDemo.on'
+const readDemo = () => { try { return localStorage.getItem(DEMO_KEY) === '1' } catch { return false } }
+const writeDemo = (on: boolean) => { try { if (on) localStorage.setItem(DEMO_KEY, '1'); else localStorage.removeItem(DEMO_KEY) } catch { /* not remembered */ } }
 const readTheme = (): Theme => {
   try {
     return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light'
@@ -19,8 +23,8 @@ const readTheme = (): Theme => {
 }
 
 /** Full-screen work layout: its own slim top bar instead of the site header, light theme by default. */
-function Shell({ theme, setTheme, children, nav, user }: {
-  theme: Theme; setTheme: (t: Theme) => void; children: ReactNode; nav?: ReactNode; user?: ReactNode
+function Shell({ theme, setTheme, children, nav, user, banner }: {
+  theme: Theme; setTheme: (t: Theme) => void; children: ReactNode; nav?: ReactNode; user?: ReactNode; banner?: ReactNode
 }) {
   return (
     <div className={`work theme-${theme}`}>
@@ -40,6 +44,7 @@ function Shell({ theme, setTheme, children, nav, user }: {
           {user}
         </div>
       </header>
+      {banner}
       <div className="w-body">{children}</div>
     </div>
   )
@@ -53,15 +58,18 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   const [tab, setTab] = useState<Tab>('loads')
   const [error, setError] = useState('')
   const [theme, setThemeState] = useState<Theme>(readTheme)
+  const [demo, setDemoState] = useState(readDemo)
+  const api = demo ? crmDemo : crm
+  const setDemo = (on: boolean) => { writeDemo(on); setDemoState(on); setState(null) }
   const setTheme = (t: Theme) => {
     setThemeState(t)
     try { localStorage.setItem(THEME_KEY, t) } catch { /* the choice just isn't remembered */ }
   }
 
-  const reload = useCallback(() => crm.state().then((s) => { setState(s); setSignedOut(false) }, (e: CrmError) => {
+  const reload = useCallback(() => (demo ? crmDemo : crm).state().then((s) => { setState(s); setSignedOut(false) }, (e: CrmError) => {
     if (e.status === 401) setSignedOut(true)
     else setError(e.message)
-  }), [])
+  }), [demo])
 
   useEffect(() => {
     crm.config().then(setConfig, (e: Error) => setError(e.message))
@@ -86,14 +94,22 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
     }
   }, [reload, toast])
 
+  const banner = demo && state ? (
+    <div className="w-demo">
+      <b>Demo</b> Sample data, saved only in this browser. Try anything — add loads, change statuses, import your sheet.
+      <button className="w-link" onClick={() => { crmDemo.reset(); void reload() }}>Reset demo</button>
+      <button className="primary" onClick={() => setDemo(false)}>Sign in to use it for real</button>
+    </div>
+  ) : null
   const shell = (children: ReactNode, nav?: ReactNode, user?: ReactNode) => (
-    <Shell theme={theme} setTheme={setTheme} nav={nav} user={user}>{children}</Shell>
+    <Shell theme={theme} setTheme={setTheme} nav={nav} user={user} banner={banner}>{children}</Shell>
   )
 
   if (error && !state) return shell(<p className="w-msg error">{error}</p>)
   if (!config || (!state && !signedOut)) return shell(<p className="w-msg">Loading…</p>)
   if (!config.enabled) return shell(<p className="w-msg">The dispatch board is not available right now.</p>)
-  if (signedOut || !state) return shell(<SignIn config={config} onSignedIn={onSignedIn} />)
+  if (!demo && (signedOut || !state)) return shell(<SignIn config={config} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />)
+  if (!state) return shell(<p className="w-msg">Loading…</p>)
 
   const TABS: [Tab, string, number][] = [
     ['loads', 'Loads', state.loads.length],
@@ -111,7 +127,7 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
     <div className="w-user" title={state.user.email}>
       {state.user.picture ? <img src={state.user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{state.user.name.slice(0, 1)}</span>}
       <span>{state.user.name}</span>
-      <button className="w-link" onClick={() => crm.logout().then(() => { setState(null); setSignedOut(true) })}>Sign out</button>
+      <button className="w-link" onClick={() => (demo ? Promise.resolve(setDemo(false)) : crm.logout().then(() => { setState(null); setSignedOut(true) }))}>{demo ? 'Exit demo' : 'Sign out'}</button>
     </div>
   )
 
@@ -120,26 +136,26 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
       {tab === 'loads' && (
         <LoadsTable
           state={state}
-          addLoad={(l) => act(() => crm.addLoad(l))}
-          updateLoad={(id, l) => act(() => crm.updateLoad(id, l))}
-          updateMany={(loads, patch) => act(() => Promise.all(loads.map((l) => crm.updateLoad(l.id, { ...l, ...patch }))), `Updated ${loads.length} loads`)}
-          removeMany={(ids) => act(() => Promise.all(ids.map((id) => crm.removeLoad(id))), `Deleted ${ids.length} loads`)}
+          addLoad={(l) => act(() => api.addLoad(l))}
+          updateLoad={(id, l) => act(() => api.updateLoad(id, l))}
+          updateMany={(loads, patch) => act(() => Promise.all(loads.map((l) => api.updateLoad(l.id, { ...l, ...patch }))), `Updated ${loads.length} loads`)}
+          removeMany={(ids) => act(() => Promise.all(ids.map((id) => api.removeLoad(id))), `Deleted ${ids.length} loads`)}
           importLoads={(rows) => act(async () => {
-            const r = await crm.importLoads(rows)
+            const r = await api.importLoads(rows)
             track('crm_import', { rows: r.imported })
             toast(`Imported ${r.imported} loads`)
           })}
         />
       )}
       {tab === 'carriers' && (
-        <CarriersView state={state} add={(c) => act(() => crm.addCarrier(c), 'Carrier added')} remove={(id) => act(() => crm.removeCarrier(id))} />
+        <CarriersView state={state} add={(c) => act(() => api.addCarrier(c), 'Carrier added')} remove={(id) => act(() => api.removeCarrier(id))} />
       )}
       {tab === 'dispatchers' && (
         <DispatchersView
           state={state}
-          add={(d) => act(() => crm.addDispatcher(d), 'Dispatcher added')}
-          save={(d) => act(() => crm.updateDispatcher(d), 'Saved')}
-          remove={(id) => act(() => crm.removeDispatcher(id))}
+          add={(d) => act(() => api.addDispatcher(d), 'Dispatcher added')}
+          save={(d) => act(() => api.updateDispatcher(d), 'Saved')}
+          remove={(id) => act(() => api.removeDispatcher(id))}
         />
       )}
     </>,

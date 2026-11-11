@@ -32,7 +32,7 @@ const POINTS: [string, string][] = [
 ]
 
 /** Sign-in card for the CRM: "Sign in with Google" (and a local-only test login in development). */
-export function SignIn({ config, onSignedIn }: { config: CrmConfig; onSignedIn: (u: CrmUser) => void }) {
+export function SignIn({ config, onSignedIn, onDemo }: { config: CrmConfig; onSignedIn: (u: CrmUser) => void; onDemo: () => void }) {
   const button = useRef<HTMLDivElement>(null)
   const [error, setError] = useState('')
   const inTelegram = document.documentElement.classList.contains('in-telegram')
@@ -64,8 +64,11 @@ export function SignIn({ config, onSignedIn }: { config: CrmConfig; onSignedIn: 
       ) : config.googleClientId ? (
         <div ref={button} className="crm-google" />
       ) : (
-        <p className="crm-note">Google sign-in is being set up — check back soon.</p>
+        <p className="crm-note">Google sign-in is being set up — meanwhile try the demo below.</p>
       )}
+      <div className="crm-or"><span>or</span></div>
+      <button className="crm-demo-btn" onClick={onDemo}><Icon name="zap" size={15} />Try the demo — no sign-up</button>
+      <p className="crm-demo-note">Sample loads you can edit. Everything stays in your browser.</p>
       {config.devLogin && (
         <button className="crm-dev" onClick={() => crm.devLogin('Test dispatcher').then((r) => onSignedIn(r.user), (e: Error) => setError(e.message))}>
           Test login (local only)

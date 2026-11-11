@@ -1516,3 +1516,15 @@ button.linkish:hover { text-decoration: underline; }
 /* Weekly gross and total gross in green, like the friend's spreadsheet */
 .work .lt-week .wk-gross, .work tfoot .wk-gross { color: var(--ok); }
 .work .lt-week.current .wk-gross { color: var(--ok); }
+/* Dispatch demo */
+.w-demo {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px 16px; font-size: 13px;
+  color: var(--text); background: color-mix(in srgb, #f59e0b 14%, var(--surface)); border-bottom: 1px solid color-mix(in srgb, #f59e0b 35%, var(--border));
+}
+.w-demo b { padding: 1px 8px; border-radius: 99px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #fff; background: #d97706; }
+.w-demo .w-link { margin-left: auto; }
+.w-demo .primary { padding: 5px 12px; }
+.crm-or { display: flex; align-items: center; gap: 10px; margin: 16px 0 10px; color: var(--muted); font-size: 12px; }
+.crm-or::before, .crm-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.crm-demo-btn { width: 280px; max-width: 100%; justify-content: center; padding: 10px 16px !important; font-weight: 600; }
+.crm-demo-note { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
