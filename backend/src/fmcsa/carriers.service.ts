@@ -3,6 +3,7 @@ import { buildAuthority, LEGACY_FIELDS, MOTUS_FIELDS, summarizeMotus, type Autho
 import { CENSUS_FIELDS, censusCompany, censusToCarriers } from './census.mapper.js';
 import type { Authority, Carrier, LeadsDay, ScanResult } from './fmcsa.types.js';
 import { docketToMc, docketVariants, legacyDocket } from './normalize.js';
+import { LeadsStore } from './leads.store.js';
 import { DATASETS, inList, SocrataClient } from './socrata.client.js';
 
 /** Keeps Socrata URLs short: IN lists are split into chunks of this many values. */
@@ -14,6 +15,8 @@ const chunks = <T>(items: T[], size = CHUNK) =>
 export class CarriersService {
   /** New-carrier days are fetched once per window and reused (the FMCSA files update daily). */
   private readonly leadsCache = new Map<string, { at: number; result: Promise<LeadsDay> }>();
+
+  private readonly leadsStore = new LeadsStore();
 
   constructor(private readonly socrata: SocrataClient) {}
 
@@ -27,11 +30,29 @@ export class CarriersService {
     const ttl = recent ? 30 * 60_000 : 6 * 3_600_000;
     const hit = this.leadsCache.get(date);
     if (hit && Date.now() - hit.at < ttl) return hit.result;
-    const result = this.fetchNewOn(date);
+    const result = this.loadDay(date, ttl, hit?.result);
     this.leadsCache.set(date, { at: Date.now(), result });
     result.catch(() => this.leadsCache.delete(date));
     if (this.leadsCache.size > 200) this.leadsCache.delete(this.leadsCache.keys().next().value!);
     return result;
+  }
+
+  /**
+   * Fresh data from FMCSA when the saved copy is older than `ttl`; when FMCSA fails (outage, HTTP 429 rate limit)
+   * the last good copy — in memory or in the database — is served instead of an error.
+   */
+  private async loadDay(date: string, ttl: number, previous?: Promise<LeadsDay>): Promise<LeadsDay> {
+    const saved = await this.leadsStore.get(date);
+    if (saved && Date.now() - saved.fetchedAt < ttl) return saved.data;
+    try {
+      const fresh = await this.fetchNewOn(date);
+      void this.leadsStore.put(date, fresh);
+      return fresh;
+    } catch (e) {
+      const stale = saved?.data ?? (previous ? await previous.catch(() => null) : null);
+      if (stale) return stale;
+      throw e;
+    }
   }
 
   private async fetchNewOn(date: string): Promise<LeadsDay> {
