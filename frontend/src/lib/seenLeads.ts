@@ -12,14 +12,18 @@ export interface SeenLeads {
   from: string
 }
 
-export function loadSeen(): SeenLeads {
+export function loadSeen(previous: ScannedCarrier[] = []): SeenLeads {
   try {
     const s = JSON.parse(localStorage.getItem(KEY) ?? 'null') as SeenLeads | null
     if (s && typeof s.mcs === 'object' && typeof s.from === 'string') return s
   } catch {
     // unreadable or blocked storage: start over
   }
-  return { mcs: {}, from: '' }
+  // No history yet: the leads already on screen from an earlier load count as seen.
+  const mcs: Record<string, string> = {}
+  for (const c of previous) if (c.grantedOn) mcs[c.mc] = c.grantedOn
+  const dates = Object.values(mcs).sort()
+  return { mcs, from: dates[0] ?? '' }
 }
 
 /** True when the carrier showed up since this browser's previous load (never on a first visit). */

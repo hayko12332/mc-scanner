@@ -1111,3 +1111,10 @@ button.linkish:hover { text-decoration: underline; }
 .fresh-actions button { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; }
 @media (prefers-color-scheme: dark) { .fresh-head .day-count { color: #fdba74; } }
 @media (max-width: 720px) { .fresh-actions { margin-left: 0; width: 100%; } .fresh-actions button { flex: 1; } }
+/* Carriers new since this browser's last load */
+.carrier.is-new { position: relative; background: linear-gradient(90deg, rgba(249, 115, 22, 0.07), transparent 45%); }
+.carrier.is-new::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(180deg, #fb923c, #ea580c); }
+.new-tag {
+  display: inline-block; margin-right: 8px; padding: 1px 7px; border-radius: 6px; vertical-align: 2px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; color: #fff; background: linear-gradient(135deg, #fb923c, #ea580c);
+}

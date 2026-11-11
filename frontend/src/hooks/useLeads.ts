@@ -67,7 +67,7 @@ export function useLeads() {
     const dates = Array.from({ length: n }, (_, i) => isoDay(i))
     const found = new Map<number, ScannedCarrier>()
     // What this browser had already loaded before; anything else that falls in that date range is new to the user.
-    const seen = loadSeen()
+    const seen = loadSeen(load().rows)
     const freshNow = new Set<number>()
     const add = (carriers: ScannedCarrier[]) => {
       for (const c of carriers) {

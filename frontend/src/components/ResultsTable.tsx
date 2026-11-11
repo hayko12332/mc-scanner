@@ -68,17 +68,17 @@ function AuthorityCell({ c }: { c: ScannedCarrier }) {
   )
 }
 
-function CarrierRow({ carrier: c, index, onCopy }: { carrier: ScannedCarrier; index: number; onCopy: (text: string) => void }) {
+function CarrierRow({ carrier: c, index, isNew, onCopy }: { carrier: ScannedCarrier; index: number; isNew?: boolean; onCopy: (text: string) => void }) {
   const [open, setOpen] = useState(false)
   const year = c.addedOn ? new Date(c.addedOn).getFullYear() : null
   const trucks = c.powerUnits ?? 0
   return (
-    <div className={`carrier ${open ? 'open' : ''}`}>
+    <div className={`carrier ${open ? 'open' : ''} ${isNew ? 'is-new' : ''}`}>
       <div className="carrier-row">
         <div className="cell carrier-main">
           <span className="row-num">{index + 1}</span>
           <div className="carrier-name">
-            <b title={c.dbaName ? `DBA: ${c.dbaName}` : c.legalName}>{c.legalName}</b>
+            <b title={c.dbaName ? `DBA: ${c.dbaName}` : c.legalName}>{isNew && <span className="new-tag">NEW</span>}{c.legalName}</b>
             <div className="id-chips">
               <span className="id-chip">MC-{c.mc}</span>
               <span className="id-chip">USDOT {c.dot}</span>
@@ -197,7 +197,7 @@ export function ResultsTable({ carriers, running, noun = 'carrier', fresh, onCop
             {!isFresh && c.grantedOn && (!prev || prevFresh || c.grantedOn !== prev.grantedOn) && (
               <DayHead iso={c.grantedOn} count={perDay.get(c.grantedOn) ?? 0} />
             )}
-            <CarrierRow carrier={c} index={i} onCopy={onCopy} />
+            <CarrierRow carrier={c} index={i} isNew={isFresh} onCopy={onCopy} />
           </Fragment>
           )
         })}
