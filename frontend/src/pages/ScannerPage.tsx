@@ -12,6 +12,10 @@ import { passesFilters, type Filters } from '../lib/carrier'
 import { copyForSheets, downloadCsv, downloadVcf, downloadXlsx, onExportNotice, printCallSheet } from '../lib/export'
 import { formatPhone } from '../lib/format'
 import { loadState, saveState } from '../lib/storage'
+import { KIND_NOUN, type LeadKind } from '../types'
+
+const KIND_KEY = 'leadhaul.leadKind'
+const readKind = (): LeadKind => { try { return localStorage.getItem(KIND_KEY) === 'broker' ? 'broker' : 'carrier' } catch { return 'carrier' } }
 
 interface SavedState extends ScanProgress {
   settings: ScanSettings
@@ -47,7 +51,16 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
   const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, ...saved.filters })
   const onAdvance = useCallback((mc: number) => setSettings((s) => ({ ...s, startMc: String(mc) })), [])
   const scanner = useScanner(saved, onAdvance)
-  const leads = useLeads()
+  // New leads keep a list per kind, so switching between carriers and brokers is instant and both keep loading.
+  const [leadKind, setLeadKindState] = useState<LeadKind>(readKind)
+  const setLeadKind = (k: LeadKind) => {
+    setLeadKindState(k)
+    try { localStorage.setItem(KIND_KEY, k) } catch { /* not remembered */ }
+    track('leads_kind', { kind: k })
+  }
+  const carrierLeads = useLeads('carrier')
+  const brokerLeads = useLeads('broker')
+  const leads = leadKind === 'broker' ? brokerLeads : carrierLeads
   // The period of the leads on screen (kept across reloads), else one day.
   const [period, setPeriod] = useState(leads.days || 1)
   /** Google Sheets dialog: rows copied, or null when closed. */
@@ -59,14 +72,19 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
     saveState<SavedState>({ settings, filters, rows, checked, saferRejected, nextMc })
   }, [settings, filters, rows, checked, saferRejected, nextMc])
 
-  const visible = useMemo(() => rows.filter((c) => passesFilters(c, filters)), [rows, filters])
-  const leadsVisible = useMemo(() => leads.rows.filter((c) => passesFilters(c, filters)), [leads.rows, filters])
+  // Broker lists keep brokers that also haul freight: "skip carrier + broker" applies to carrier lists only.
+  const scanKind: LeadKind = settings.kind ?? 'carrier'
+  const scanFilters = useMemo(() => (scanKind === 'broker' ? { ...filters, skipCarrierBroker: false } : filters), [filters, scanKind])
+  const leadFilters = useMemo(() => (leadKind === 'broker' ? { ...filters, skipCarrierBroker: false } : filters), [filters, leadKind])
+  const visible = useMemo(() => rows.filter((c) => passesFilters(c, scanFilters)), [rows, scanFilters])
+  const leadsVisible = useMemo(() => leads.rows.filter((c) => passesFilters(c, leadFilters)), [leads.rows, leadFilters])
   const isLeads = mode === 'leads'
+  const kindNow = isLeads ? leadKind : scanKind
   const shown = isLeads ? leadsVisible : visible
   const runningNow = isLeads ? leads.running : scanner.running
 
   const startLeads = (days = period) => {
-    track('leads_start', { days })
+    track('leads_start', { days, kind: leadKind })
     void leads.start(days)
   }
 
@@ -87,10 +105,19 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
 
   const start = () => {
     track('scan_start', {
-      from: settings.startMc, to: settings.endMc || null, batch: settings.batchSize, safer: settings.useSafer,
+      from: settings.startMc, to: settings.endMc || null, batch: settings.batchSize, safer: settings.useSafer, kind: scanKind,
     })
     void scanner.start(settings)
   }
+
+  // Switching the scanner between carriers and brokers starts a new result list.
+  const lastScanKind = useRef(scanKind)
+  useEffect(() => {
+    if (lastScanKind.current === scanKind) return
+    lastScanKind.current = scanKind
+    if (rows.length) scanner.clear()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scanKind])
 
   const started = isLeads ? leads.running || leads.rows.length > 0 : scanner.running || checked > 0 || rows.length > 0
 
@@ -128,7 +155,7 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
         <div className="mode-tabs" role="tablist" aria-label="Mode">
           <a href="#/leads" role="tab" aria-selected={isLeads} className={isLeads ? 'on' : ''}>
             <Icon name="zap" size={18} />
-            <span><b>New MC leads <span className="new-tag">NEW</span></b><small>Carriers that just got authority</small></span>
+            <span><b>New MC leads <span className="new-tag">NEW</span></b><small>Carriers and brokers that just got authority</small></span>
           </a>
           <a href="#/scan" role="tab" aria-selected={!isLeads} className={!isLeads ? 'on' : ''}>
             <Icon name="scan" size={18} />
@@ -137,6 +164,8 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
         </div>
         {isLeads ? (
           <LeadsPanel
+            kind={leadKind}
+            onKind={setLeadKind}
             period={period}
             onPeriod={setPeriod}
             filters={filters}
@@ -175,7 +204,8 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
           <ResultsTable
             carriers={shown}
             running={runningNow}
-            noun={isLeads ? 'new carrier' : 'carrier'}
+            noun={isLeads ? `new ${KIND_NOUN[kindNow][0]}` : KIND_NOUN[kindNow][0]}
+            nouns={KIND_NOUN[kindNow]}
             onCopy={(text) => copy(text)}
             onExport={(format) => {
               if (!shown.length) return toast('No data')

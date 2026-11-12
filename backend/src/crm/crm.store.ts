@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type pg from 'pg';
-import type { CrmCarrier, CrmState, CrmUser, Dispatcher, ImportRow, Load, LoadStatus } from './crm.types.js';
+import type { CrmCarrier, CrmState, CrmUser, Dispatcher, FeeType, ImportRow, Load, LoadStatus, Truck } from './crm.types.js';
 
 const SESSION_DAYS = 60;
 
@@ -58,14 +58,54 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS crm_loads_ws_date ON crm_loads (workspace_id, load_date);
   ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'booked';
+  -- Carrier billing: the dispatch fee (percent of gross or flat per week) and their factoring company
+  ALTER TABLE crm_carriers ADD COLUMN IF NOT EXISTS fee_type TEXT NOT NULL DEFAULT 'percent';
+  ALTER TABLE crm_carriers ADD COLUMN IF NOT EXISTS fee NUMERIC(12,2) NOT NULL DEFAULT 0;
+  ALTER TABLE crm_carriers ADD COLUMN IF NOT EXISTS factoring TEXT NOT NULL DEFAULT '';
+  CREATE TABLE IF NOT EXISTS crm_trucks (
+    id            BIGSERIAL PRIMARY KEY,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    carrier_id    BIGINT REFERENCES crm_carriers(id) ON DELETE SET NULL,
+    unit          TEXT NOT NULL DEFAULT '',
+    driver        TEXT NOT NULL DEFAULT '',
+    phone         TEXT NOT NULL DEFAULT '',
+    archived      BOOLEAN NOT NULL DEFAULT false
+  );
+  -- Loads: truck, miles, accessorials, invoice and payment dates
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS truck_id BIGINT REFERENCES crm_trucks(id) ON DELETE SET NULL;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS loaded_miles INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS empty_miles INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS detention NUMERIC(12,2) NOT NULL DEFAULT 0;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS layover NUMERIC(12,2) NOT NULL DEFAULT 0;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS tonu NUMERIC(12,2) NOT NULL DEFAULT 0;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS other NUMERIC(12,2) NOT NULL DEFAULT 0;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS lumper NUMERIC(12,2) NOT NULL DEFAULT 0;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS invoiced_on DATE;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS paid_on DATE;
 `;
+
+const CARRIER_COLS = 'id, name, mc, dot, phone, email, notes, fee_type, fee, factoring';
+const TRUCK_COLS = 'id, carrier_id, unit, driver, phone';
+const LOAD_COLS = `id, to_char(load_date, 'YYYY-MM-DD') AS load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, notes,
+  status, truck_id, loaded_miles, empty_miles, detention, layover, tonu, other, lumper,
+  to_char(invoiced_on, 'YYYY-MM-DD') AS invoiced_on, to_char(paid_on, 'YYYY-MM-DD') AS paid_on`;
+/** Load columns written by insert/update, in the order of loadValues(). */
+const LOAD_WRITE = ['load_date', 'carrier_id', 'dispatcher_id', 'broker', 'pro', 'origin', 'destination', 'rate', 'notes', 'status',
+  'truck_id', 'loaded_miles', 'empty_miles', 'detention', 'layover', 'tonu', 'other', 'lumper', 'invoiced_on', 'paid_on'];
+const loadValues = (l: LoadInput) => [l.date, l.carrierId, l.dispatcherId, l.broker, l.pro, l.origin, l.destination, l.rate, l.notes, l.status,
+  l.truckId, l.loadedMiles, l.emptyMiles, l.detention, l.layover, l.tonu, l.other, l.lumper, l.invoicedOn, l.paidOn];
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
 const toDispatcher = (r: Record<string, unknown>): Dispatcher => ({ id: Number(r.id), name: String(r.name), percent: Number(r.percent) });
 const toCarrier = (r: Record<string, unknown>): CrmCarrier => ({
   id: Number(r.id), name: String(r.name), mc: String(r.mc), dot: String(r.dot), phone: String(r.phone), email: String(r.email), notes: String(r.notes),
+  feeType: (r.fee_type === 'flat' ? 'flat' : 'percent') as FeeType, fee: Number(r.fee ?? 0), factoring: String(r.factoring ?? ''),
 });
+const toTruck = (r: Record<string, unknown>): Truck => ({
+  id: Number(r.id), carrierId: r.carrier_id == null ? null : Number(r.carrier_id), unit: String(r.unit), driver: String(r.driver), phone: String(r.phone),
+});
+const day = (v: unknown) => (v == null ? null : String(v).slice(0, 10));
 const toLoad = (r: Record<string, unknown>): Load => ({
   id: Number(r.id),
   date: r.load_date instanceof Date ? r.load_date.toISOString().slice(0, 10) : String(r.load_date).slice(0, 10),
@@ -73,10 +113,15 @@ const toLoad = (r: Record<string, unknown>): Load => ({
   dispatcherId: r.dispatcher_id == null ? null : Number(r.dispatcher_id),
   broker: String(r.broker), pro: String(r.pro), origin: String(r.origin), destination: String(r.destination),
   rate: Number(r.rate), notes: String(r.notes), status: String(r.status) as LoadStatus,
+  truckId: r.truck_id == null ? null : Number(r.truck_id),
+  loadedMiles: Number(r.loaded_miles ?? 0), emptyMiles: Number(r.empty_miles ?? 0),
+  detention: Number(r.detention ?? 0), layover: Number(r.layover ?? 0), tonu: Number(r.tonu ?? 0), other: Number(r.other ?? 0), lumper: Number(r.lumper ?? 0),
+  invoicedOn: day(r.invoiced_on), paidOn: day(r.paid_on),
 });
 
 export type LoadInput = Omit<Load, 'id'>;
 export type CarrierInput = Omit<CrmCarrier, 'id'>;
+export type TruckInput = Omit<Truck, 'id'>;
 
 /** Every query is scoped to one workspace, so a user can only ever touch their own rows. */
 export class CrmStore {
@@ -128,16 +173,14 @@ export class CrmStore {
   }
 
   async state(ws: number, user: CrmUser): Promise<CrmState> {
-    const [d, c, l] = await Promise.all([
+    await this.ready;
+    const [d, c, t, l] = await Promise.all([
       this.pool.query('SELECT id, name, percent FROM crm_dispatchers WHERE workspace_id = $1 AND NOT archived ORDER BY name', [ws]),
-      this.pool.query('SELECT id, name, mc, dot, phone, email, notes FROM crm_carriers WHERE workspace_id = $1 AND NOT archived ORDER BY name', [ws]),
-      this.pool.query(
-        `SELECT id, to_char(load_date, 'YYYY-MM-DD') AS load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, notes, status
-           FROM crm_loads WHERE workspace_id = $1 ORDER BY load_date DESC, id DESC`,
-        [ws],
-      ),
+      this.pool.query(`SELECT ${CARRIER_COLS} FROM crm_carriers WHERE workspace_id = $1 AND NOT archived ORDER BY name`, [ws]),
+      this.pool.query(`SELECT ${TRUCK_COLS} FROM crm_trucks WHERE workspace_id = $1 AND NOT archived ORDER BY unit, driver`, [ws]),
+      this.pool.query(`SELECT ${LOAD_COLS} FROM crm_loads WHERE workspace_id = $1 ORDER BY load_date DESC, id DESC`, [ws]),
     ]);
-    return { user, dispatchers: d.rows.map(toDispatcher), carriers: c.rows.map(toCarrier), loads: l.rows.map(toLoad) };
+    return { user, dispatchers: d.rows.map(toDispatcher), carriers: c.rows.map(toCarrier), trucks: t.rows.map(toTruck), loads: l.rows.map(toLoad) };
   }
 
   // Dispatchers
@@ -163,18 +206,18 @@ export class CrmStore {
 
   async addCarrier(ws: number, c: CarrierInput): Promise<CrmCarrier> {
     const { rows } = await this.pool.query(
-      `INSERT INTO crm_carriers (workspace_id, name, mc, dot, phone, email, notes) VALUES ($1,$2,$3,$4,$5,$6,$7)
-       RETURNING id, name, mc, dot, phone, email, notes`,
-      [ws, c.name, c.mc, c.dot, c.phone, c.email, c.notes],
+      `INSERT INTO crm_carriers (workspace_id, name, mc, dot, phone, email, notes, fee_type, fee, factoring) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING ${CARRIER_COLS}`,
+      [ws, c.name, c.mc, c.dot, c.phone, c.email, c.notes, c.feeType, c.fee, c.factoring],
     );
     return toCarrier(rows[0]);
   }
 
   async updateCarrier(ws: number, id: number, c: CarrierInput): Promise<CrmCarrier | null> {
     const { rows } = await this.pool.query(
-      `UPDATE crm_carriers SET name = $3, mc = $4, dot = $5, phone = $6, email = $7, notes = $8 WHERE workspace_id = $1 AND id = $2
-       RETURNING id, name, mc, dot, phone, email, notes`,
-      [ws, id, c.name, c.mc, c.dot, c.phone, c.email, c.notes],
+      `UPDATE crm_carriers SET name = $3, mc = $4, dot = $5, phone = $6, email = $7, notes = $8, fee_type = $9, fee = $10, factoring = $11
+        WHERE workspace_id = $1 AND id = $2 RETURNING ${CARRIER_COLS}`,
+      [ws, id, c.name, c.mc, c.dot, c.phone, c.email, c.notes, c.feeType, c.fee, c.factoring],
     );
     return rows[0] ? toCarrier(rows[0]) : null;
   }
@@ -183,25 +226,54 @@ export class CrmStore {
     await this.pool.query('UPDATE crm_carriers SET archived = true WHERE workspace_id = $1 AND id = $2', [ws, id]);
   }
 
+  // Trucks
+
+  private async ownCarrier(ws: number, carrierId: number | null) {
+    if (carrierId == null) return null;
+    const { rows } = await this.pool.query('SELECT id FROM crm_carriers WHERE workspace_id = $1 AND id = $2', [ws, carrierId]);
+    return rows[0] ? Number(rows[0].id) : null;
+  }
+
+  async addTruck(ws: number, t: TruckInput): Promise<Truck> {
+    const { rows } = await this.pool.query(
+      `INSERT INTO crm_trucks (workspace_id, carrier_id, unit, driver, phone) VALUES ($1,$2,$3,$4,$5) RETURNING ${TRUCK_COLS}`,
+      [ws, await this.ownCarrier(ws, t.carrierId), t.unit, t.driver, t.phone],
+    );
+    return toTruck(rows[0]);
+  }
+
+  async updateTruck(ws: number, id: number, t: TruckInput): Promise<Truck | null> {
+    const { rows } = await this.pool.query(
+      `UPDATE crm_trucks SET carrier_id = $3, unit = $4, driver = $5, phone = $6 WHERE workspace_id = $1 AND id = $2 RETURNING ${TRUCK_COLS}`,
+      [ws, id, await this.ownCarrier(ws, t.carrierId), t.unit, t.driver, t.phone],
+    );
+    return rows[0] ? toTruck(rows[0]) : null;
+  }
+
+  async archiveTruck(ws: number, id: number) {
+    await this.pool.query('UPDATE crm_trucks SET archived = true WHERE workspace_id = $1 AND id = $2', [ws, id]);
+  }
+
   // Loads
 
-  /** Carrier and dispatcher ids must belong to the workspace; anything else is dropped to null. */
+  /** Carrier, dispatcher and truck ids must belong to the workspace; anything else is dropped to null. */
   private async owned(ws: number, l: LoadInput): Promise<LoadInput> {
     const { rows } = await this.pool.query(
       `SELECT (SELECT id FROM crm_carriers WHERE workspace_id = $1 AND id = $2) AS carrier,
-              (SELECT id FROM crm_dispatchers WHERE workspace_id = $1 AND id = $3) AS dispatcher`,
-      [ws, l.carrierId, l.dispatcherId],
+              (SELECT id FROM crm_dispatchers WHERE workspace_id = $1 AND id = $3) AS dispatcher,
+              (SELECT id FROM crm_trucks WHERE workspace_id = $1 AND id = $4) AS truck`,
+      [ws, l.carrierId, l.dispatcherId, l.truckId],
     );
-    return { ...l, carrierId: rows[0].carrier == null ? null : Number(rows[0].carrier), dispatcherId: rows[0].dispatcher == null ? null : Number(rows[0].dispatcher) };
+    const n = (v: unknown) => (v == null ? null : Number(v));
+    return { ...l, carrierId: n(rows[0].carrier), dispatcherId: n(rows[0].dispatcher), truckId: n(rows[0].truck) };
   }
 
   async addLoad(ws: number, input: LoadInput): Promise<Load> {
     const l = await this.owned(ws, input);
     const { rows } = await this.pool.query(
-      `INSERT INTO crm_loads (workspace_id, load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, notes, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       RETURNING id, to_char(load_date, 'YYYY-MM-DD') AS load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, notes, status`,
-      [ws, l.date, l.carrierId, l.dispatcherId, l.broker, l.pro, l.origin, l.destination, l.rate, l.notes, l.status],
+      `INSERT INTO crm_loads (workspace_id, ${LOAD_WRITE.join(', ')})
+       VALUES ($1, ${LOAD_WRITE.map((_, i) => `$${i + 2}`).join(', ')}) RETURNING ${LOAD_COLS}`,
+      [ws, ...loadValues(l)],
     );
     return toLoad(rows[0]);
   }
@@ -209,11 +281,9 @@ export class CrmStore {
   async updateLoad(ws: number, id: number, input: LoadInput): Promise<Load | null> {
     const l = await this.owned(ws, input);
     const { rows } = await this.pool.query(
-      `UPDATE crm_loads SET load_date = $3, carrier_id = $4, dispatcher_id = $5, broker = $6, pro = $7, origin = $8,
-              destination = $9, rate = $10, notes = $11, status = $12
-        WHERE workspace_id = $1 AND id = $2
-       RETURNING id, to_char(load_date, 'YYYY-MM-DD') AS load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, notes, status`,
-      [ws, id, l.date, l.carrierId, l.dispatcherId, l.broker, l.pro, l.origin, l.destination, l.rate, l.notes, l.status],
+      `UPDATE crm_loads SET ${LOAD_WRITE.map((c, i) => `${c} = $${i + 3}`).join(', ')}
+        WHERE workspace_id = $1 AND id = $2 RETURNING ${LOAD_COLS}`,
+      [ws, id, ...loadValues(l)],
     );
     return rows[0] ? toLoad(rows[0]) : null;
   }
@@ -242,10 +312,10 @@ export class CrmStore {
       const carriers = new Map<string, number>();
       for (const r of rows) {
         await client.query(
-          `INSERT INTO crm_loads (workspace_id, load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          `INSERT INTO crm_loads (workspace_id, load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, loaded_miles)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
           [ws, r.date, await byName('crm_carriers', r.carrier, carriers), await byName('crm_dispatchers', r.dispatcher, dispatchers),
-            r.broker, r.pro, r.origin, r.destination, r.rate],
+            r.broker, r.pro, r.origin, r.destination, r.rate, r.loadedMiles],
         );
       }
       await client.query('COMMIT');

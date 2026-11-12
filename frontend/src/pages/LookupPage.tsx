@@ -53,10 +53,10 @@ function Contact({ value, display, onCopy }: { value: string; display: string; o
   return (
     <span className="contact">
       <a href={lookupHref(value)} title="Find every company with this contact">{display}</a>
-      <button className="small icon" title="Copy" onClick={() => {
+      <button className="copy-btn" title="Copy" aria-label={`Copy ${display}`} onClick={() => {
         onCopy(display)
         track('copy', { what: value.includes('@') ? 'email' : 'phone', from: 'lookup' })
-      }}>⧉</button>
+      }}><Icon name="copy" size={13} /></button>
     </span>
   )
 }
@@ -82,14 +82,14 @@ function ProfileCard({ p, expanded, onCopy }: { p: CarrierProfile; expanded: boo
           </div>
           <div className="profile-contacts">
             <Contact value={p.phone} display={formatPhone(p.phone)} onCopy={onCopy} />
-            <Contact value={p.cellPhone} display={formatPhone(p.cellPhone)} onCopy={onCopy} />
+            {formatPhone(p.cellPhone) !== formatPhone(p.phone) && <Contact value={p.cellPhone} display={formatPhone(p.cellPhone)} onCopy={onCopy} />}
             <Contact value={p.email} display={p.email} onCopy={onCopy} />
           </div>
         </div>
-        <button className="small" onClick={() => {
+        <button className={`details-btn profile-toggle ${open ? 'on' : ''}`} aria-expanded={open} onClick={() => {
           if (!open) track('details_open', { mc: p.mc, dot: p.dot, from: 'lookup' })
           setOpen(!open)
-        }}>{open ? 'Hide ▴' : 'Details ▾'}</button>
+        }}>Details<Icon name="chevron" size={14} /></button>
       </div>
       {open && (
         <>

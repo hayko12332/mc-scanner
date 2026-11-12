@@ -4,6 +4,9 @@ export type AuthorityCode = 'A' | 'I' | 'P' | 'N'
 export type YesNo = 'Y' | 'N' | ''
 export type AuthoritySource = 'L&I' | 'Motus'
 export type AuthorityMode = 'strict' | 'lenient'
+/** Who a lead list or scan finds: motor carriers (trucking companies) or freight brokers. */
+export type LeadKind = 'carrier' | 'broker'
+export const KIND_NOUN: Record<LeadKind, [string, string]> = { carrier: ['carrier', 'carriers'], broker: ['broker', 'brokers'] }
 
 export interface Authority {
   sources: AuthoritySource[]

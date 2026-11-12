@@ -1,14 +1,16 @@
 import {
-  Body, Controller, Delete, ForbiddenException, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Patch, Post, Req, Res,
-  ServiceUnavailableException, UnauthorizedException,
+  BadRequestException, Body, Controller, Delete, ForbiddenException, Get, HttpCode, HttpException, NotFoundException, Param, ParseIntPipe, Patch,
+  Post, Query, Req, Res, ServiceUnavailableException, UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { RateLimiter } from '../analytics/rate-limiter.js';
 import { config } from '../config.js';
 import { db } from '../db.js';
-import { carrierInput, dispatcherInput, importRows, loadInput } from './crm.input.js';
+import { carrierInput, dispatcherInput, importRows, loadInput, truckInput } from './crm.input.js';
 import { CrmStore } from './crm.store.js';
 import type { CrmUser } from './crm.types.js';
 import { verifyGoogleIdToken } from './google-auth.js';
+import { MilesService } from './miles.js';
 
 const COOKIE = 'lh_crm';
 const COOKIE_MAX_AGE_MS = 60 * 24 * 3600_000;
@@ -25,6 +27,9 @@ function readCookie(req: Request, name: string): string {
 @Controller('crm')
 export class CrmController {
   private readonly store: CrmStore | null;
+  private readonly milesService = new MilesService();
+  /** Miles are public (the demo uses them too), so each visitor gets a fair share of the free map services. */
+  private readonly milesLimiter = new RateLimiter(150, 10 * 60_000);
 
   constructor() {
     const pool = db();
@@ -112,6 +117,43 @@ export class CrmController {
     const { ws } = await this.auth(req);
     await this.store!.archiveCarrier(ws, id);
     return { ok: true };
+  }
+
+  // Trucks
+
+  @Post('trucks')
+  async addTruck(@Req() req: Request, @Body() body: Record<string, unknown>) {
+    const { ws } = await this.auth(req);
+    return this.store!.addTruck(ws, truckInput(body));
+  }
+
+  @Patch('trucks/:id')
+  async updateTruck(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() body: Record<string, unknown>) {
+    const { ws } = await this.auth(req);
+    return found(await this.store!.updateTruck(ws, id, truckInput(body)));
+  }
+
+  @Delete('trucks/:id')
+  async archiveTruck(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
+    const { ws } = await this.auth(req);
+    await this.store!.archiveTruck(ws, id);
+    return { ok: true };
+  }
+
+  /** Driving miles between two places, e.g. ?from=Dallas, TX&to=Atlanta, GA. */
+  @Get('miles')
+  async miles(@Req() req: Request, @Query('from') from = '', @Query('to') to = '') {
+    if (!from.trim() || !to.trim() || from.length > 200 || to.length > 200) throw new BadRequestException('Enter both places');
+    const ip = String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() || req.socket.remoteAddress || '';
+    if (!this.milesLimiter.take(ip)) throw new HttpException('Too many mileage lookups, try again in a few minutes', 429);
+    let r;
+    try {
+      r = await this.milesService.miles(from, to);
+    } catch {
+      throw new ServiceUnavailableException('Maps are not answering right now, try again in a minute');
+    }
+    if (!r) throw new NotFoundException(`Could not find "${from}" or "${to}" on the map`);
+    return r;
   }
 
   // Loads

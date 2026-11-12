@@ -59,6 +59,10 @@ export interface Carrier {
 }
 
 /** Carriers whose operating authority was granted on one day. */
+/** Who a lead list or scan is for: motor carriers (trucking companies) or freight brokers. */
+export type LeadKind = 'carrier' | 'broker';
+export const LEAD_KINDS: readonly LeadKind[] = ['carrier', 'broker'];
+
 export interface LeadsDay {
   date: string;
   /** Property-carrier grants that day before contact / authority filtering. */

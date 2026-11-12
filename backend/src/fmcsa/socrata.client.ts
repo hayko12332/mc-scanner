@@ -32,6 +32,19 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export class SocrataClient {
   private readonly logger = new Logger(SocrataClient.name);
 
+  /** When the dataset's rows last changed (ms), from its metadata; null when the portal doesn't say. */
+  async updatedAt(dataset: string, host = FMCSA_HOST): Promise<number | null> {
+    const headers: Record<string, string> = config.socrataAppToken ? { 'X-App-Token': config.socrataAppToken } : {};
+    try {
+      const res = await fetch(`https://${host}/api/views/${dataset}.json`, { headers, signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) return null;
+      const meta = (await res.json()) as { rowsUpdatedAt?: number };
+      return typeof meta.rowsUpdatedAt === 'number' ? meta.rowsUpdatedAt * 1000 : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Query a dataset; `host` defaults to FMCSA's portal (several state open-data portals run Socrata too). */
   async query<T = Row>(dataset: string, params: Record<string, string>, host = FMCSA_HOST): Promise<T[]> {
     const url = `https://${host}/resource/${dataset}.json?${new URLSearchParams(params)}`;

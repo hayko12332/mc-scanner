@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, memo, useEffect, useMemo, useState } from 'react'
 import { track } from '../lib/analytics'
 import { authorityLabel, carrierKey } from '../lib/carrier'
 import { formatDate, formatNumber, formatPhone } from '../lib/format'
@@ -68,7 +68,7 @@ function AuthorityCell({ c }: { c: ScannedCarrier }) {
   )
 }
 
-function CarrierRow({ carrier: c, index, isNew, onCopy }: { carrier: ScannedCarrier; index: number; isNew?: boolean; onCopy: (text: string) => void }) {
+const CarrierRow = memo(function CarrierRow({ carrier: c, index, isNew, onCopy }: { carrier: ScannedCarrier; index: number; isNew?: boolean; onCopy: (text: string) => void }) {
   const [open, setOpen] = useState(false)
   const year = c.addedOn ? new Date(c.addedOn).getFullYear() : null
   const trucks = c.powerUnits ?? 0
@@ -95,43 +95,49 @@ function CarrierRow({ carrier: c, index, isNew, onCopy }: { carrier: ScannedCarr
         <AuthorityCell c={c} />
         <div className="cell carrier-fleet">
           {c.state && <span className="fleet-item"><Icon name="pin" size={14} />{c.state}</span>}
-          <span className="fleet-item"><Icon name="truck" size={14} />{formatNumber(trucks)} {trucks === 1 ? 'truck' : 'trucks'}</span>
+          {/* A broker without trucks has no fleet to show. */}
+          {(trucks > 0 || c.entityTypes.includes('C')) && <span className="fleet-item"><Icon name="truck" size={14} />{formatNumber(trucks)} {trucks === 1 ? 'truck' : 'trucks'}</span>}
           {year && <span className="fleet-item muted"><Icon name="calendar" size={14} />Since {year}</span>}
         </div>
         <div className="cell carrier-act">
-          <button className={`details-btn ${open ? 'on' : ''}`} onClick={() => {
+          <button className={`details-btn ${open ? 'on' : ''}`} aria-expanded={open} onClick={() => {
             if (!open) track('details_open', { mc: c.mc, from: 'scanner' })
             setOpen(!open)
           }}>
-            {open ? 'Hide' : 'Details'}<Icon name="chevron" size={14} />
+            Details<Icon name="chevron" size={14} />
           </button>
         </div>
       </div>
       {open && <div className="carrier-details"><CarrierDetails carrier={c} /></div>}
     </div>
   )
-}
+})
 
 /** Divider above each grant day in New MC leads, so the newest day is clearly on top. */
-function DayHead({ iso, count }: { iso: string; count: number }) {
+function DayHead({ iso, count, nouns }: { iso: string; count: number; nouns: [string, string] }) {
   const f = freshness(iso)
   const long = new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })
   return (
     <div className={`day-head fresh-${f.level}`}>
       <span className="day-dot" />
       <b>{f.ago === 'Today' || f.ago === 'Yesterday' ? `${f.ago} · ${long}` : long}</b>
-      <span className="day-count">{count.toLocaleString('en-US')} new {count === 1 ? 'carrier' : 'carriers'}</span>
+      {f.ago === 'Today' && (
+        <span className="day-note" title="FMCSA posts most of a day's new authorities the next morning, so today's list keeps growing.">
+          FMCSA adds most of today’s grants tomorrow — this list will grow
+        </span>
+      )}
+      <span className="day-count">{count.toLocaleString('en-US')} new {count === 1 ? nouns[0] : nouns[1]}</span>
     </div>
   )
 }
 
 /** Header of the block of carriers this browser hasn't loaded before. */
-function FreshHead({ count, onCopy }: { count: number; onCopy: (kind: 'emails' | 'phones') => void }) {
+function FreshHead({ count, onCopy, nouns }: { count: number; onCopy: (kind: 'emails' | 'phones') => void; nouns: [string, string] }) {
   return (
     <div className="day-head fresh-head">
       <span className="fresh-badge"><Icon name="zap" size={13} />NEW FOR YOU</span>
       <b>Since your last load</b>
-      <span className="day-count">{count.toLocaleString('en-US')} {count === 1 ? 'carrier' : 'carriers'}</span>
+      <span className="day-count">{count.toLocaleString('en-US')} {count === 1 ? nouns[0] : nouns[1]}</span>
       <span className="fresh-actions">
         <button onClick={() => onCopy('emails')}><Icon name="mail" size={13} />Copy emails</button>
         <button onClick={() => onCopy('phones')}><Icon name="phone" size={13} />Copy phones</button>
@@ -143,6 +149,8 @@ function FreshHead({ count, onCopy }: { count: number; onCopy: (kind: 'emails' |
 interface Props {
   carriers: ScannedCarrier[]
   running: boolean
+  /** Singular and plural for the day headers: carriers or brokers. */
+  nouns?: [string, string]
   /** Singular noun for the count, e.g. "new carrier". */
   noun?: string
   /** New MC leads: carriers that are new since this browser's previous load, shown first. */
@@ -156,8 +164,14 @@ interface Props {
   onClear: () => void
 }
 
-export function ResultsTable({ carriers, running, noun = 'carrier', fresh, onCopy, onCopyList, ...actions }: Props) {
+/** Rows drawn at first; the rest come with "Show more", so a month of leads opens instantly. */
+const PAGE = 300
+
+export function ResultsTable({ carriers, running, noun = 'carrier', nouns = ['carrier', 'carriers'], fresh, onCopy, onCopyList, ...actions }: Props) {
   const n = carriers.length
+  const [limit, setLimit] = useState(PAGE)
+  useEffect(() => { if (!n) setLimit(PAGE) }, [n])
+  const shown = n > limit ? carriers.slice(0, limit) : carriers
   // Per-day counts exclude the carriers shown in the "new since your last load" block.
   const freshList = useMemo(() => carriers.filter((c) => fresh?.has(c.mc)), [carriers, fresh])
   const perDay = useMemo(() => {
@@ -184,27 +198,34 @@ export function ResultsTable({ carriers, running, noun = 'carrier', fresh, onCop
       <div className="panel registry">
         {n > 0 && (
           <div className="registry-head" aria-hidden="true">
-            <span>Carrier</span><span>Contact</span><span>Authority</span><span>Location &amp; fleet</span><span />
+            <span>Company</span><span>Contact</span><span>Authority</span><span>Location &amp; fleet</span><span />
           </div>
         )}
-        {carriers.map((c, i) => {
+        {shown.map((c, i) => {
           const isFresh = !!fresh?.has(c.mc)
           const prev = carriers[i - 1]
           const prevFresh = !!prev && !!fresh?.has(prev.mc)
           return (
           <Fragment key={carrierKey(c)}>
-            {isFresh && i === 0 && <FreshHead count={freshList.length} onCopy={(kind) => onCopyList?.(kind, freshList)} />}
+            {isFresh && i === 0 && <FreshHead count={freshList.length} nouns={nouns} onCopy={(kind) => onCopyList?.(kind, freshList)} />}
             {!isFresh && c.grantedOn && (!prev || prevFresh || c.grantedOn !== prev.grantedOn) && (
-              <DayHead iso={c.grantedOn} count={perDay.get(c.grantedOn) ?? 0} />
+              <DayHead iso={c.grantedOn} count={perDay.get(c.grantedOn) ?? 0} nouns={nouns} />
             )}
             <CarrierRow carrier={c} index={i} isNew={isFresh} onCopy={onCopy} />
           </Fragment>
           )
         })}
+        {n > limit && (
+          <div className="show-more">
+            <span>Showing {limit.toLocaleString('en-US')} of {n.toLocaleString('en-US')} — export and copy buttons include all of them.</span>
+            <button onClick={() => setLimit((l) => l + PAGE * 2)}>Show {Math.min(PAGE * 2, n - limit).toLocaleString('en-US')} more</button>
+            <button className="ghost" onClick={() => setLimit(n)}>Show all</button>
+          </div>
+        )}
         {!n && (
           <p className="muted empty">
             {running
-              ? 'Loading… the first carriers usually show up within 10–20 seconds.'
+              ? 'Loading… the first results show up in a few seconds.'
               : 'No carriers matching the filters yet. Press Start to scan further.'}
           </p>
         )}

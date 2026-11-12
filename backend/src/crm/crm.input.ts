@@ -1,12 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
-import type { CarrierInput, LoadInput } from './crm.store.js';
-import { LOAD_STATUSES, type ImportRow, type LoadStatus } from './crm.types.js';
+import type { CarrierInput, LoadInput, TruckInput } from './crm.store.js';
+import { FEE_TYPES, LOAD_STATUSES, type FeeType, type ImportRow, type LoadStatus } from './crm.types.js';
 
 const text = (v: unknown, max = 200) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 const money = (v: unknown) => {
   const n = typeof v === 'number' ? v : Number(String(v ?? '').replace(/[$,\s]/g, ''));
   return Number.isFinite(n) && Math.abs(n) < 1e9 ? Math.round(n * 100) / 100 : 0;
 };
+/** Non-negative money amount. */
+const amount = (v: unknown) => Math.max(0, money(v));
+const miles = (v: unknown) => Math.min(20000, Math.max(0, Math.round(money(v))));
 const id = (v: unknown) => (Number.isInteger(v) && (v as number) > 0 ? (v as number) : null);
 
 export function isoDate(v: unknown): string | null {
@@ -36,13 +39,40 @@ export function loadInput(b: Record<string, unknown> = {}): LoadInput {
     rate: money(b.rate),
     notes: text(b.notes, 1000),
     status: loadStatus(b.status),
+    truckId: id(b.truckId),
+    loadedMiles: miles(b.loadedMiles),
+    emptyMiles: miles(b.emptyMiles),
+    detention: amount(b.detention),
+    layover: amount(b.layover),
+    tonu: amount(b.tonu),
+    other: amount(b.other),
+    lumper: amount(b.lumper),
+    invoicedOn: isoDate(b.invoicedOn),
+    paidOn: isoDate(b.paidOn),
   };
+}
+
+function feeType(v: unknown): FeeType {
+  return (FEE_TYPES as readonly unknown[]).includes(v) ? (v as FeeType) : 'percent';
 }
 
 export function carrierInput(b: Record<string, unknown> = {}): CarrierInput {
   const name = text(b.name);
   if (!name) throw new BadRequestException('Carrier name is required');
-  return { name, mc: text(b.mc, 20), dot: text(b.dot, 20), phone: text(b.phone, 40), email: text(b.email, 120), notes: text(b.notes, 1000) };
+  const type = feeType(b.feeType);
+  const fee = amount(b.fee);
+  if (type === 'percent' && fee > 100) throw new BadRequestException('Fee percent must be between 0 and 100');
+  return {
+    name, mc: text(b.mc, 20), dot: text(b.dot, 20), phone: text(b.phone, 40), email: text(b.email, 120), notes: text(b.notes, 1000),
+    feeType: type, fee, factoring: text(b.factoring, 120),
+  };
+}
+
+export function truckInput(b: Record<string, unknown> = {}): TruckInput {
+  const unit = text(b.unit, 40);
+  const driver = text(b.driver, 80);
+  if (!unit && !driver) throw new BadRequestException('Enter a truck number or a driver');
+  return { carrierId: id(b.carrierId), unit, driver, phone: text(b.phone, 40) };
 }
 
 export function dispatcherInput(b: Record<string, unknown> = {}): { name: string; percent: number } {
@@ -64,7 +94,7 @@ export function importRows(b: unknown): ImportRow[] {
     if (!date) throw new BadRequestException(`Row ${i + 1}: date must be YYYY-MM-DD`);
     return {
       date, broker: text(r.broker), pro: text(r.pro, 60), origin: text(r.origin), destination: text(r.destination),
-      rate: money(r.rate), dispatcher: text(r.dispatcher, 80), carrier: text(r.carrier),
+      rate: money(r.rate), dispatcher: text(r.dispatcher, 80), carrier: text(r.carrier), loadedMiles: miles(r.loadedMiles),
     };
   });
 }

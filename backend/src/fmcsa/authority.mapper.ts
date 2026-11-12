@@ -1,4 +1,4 @@
-import type { Authority, AuthorityCode } from './fmcsa.types.js';
+import type { Authority, AuthorityCode, LeadKind } from './fmcsa.types.js';
 import { docketToMc, dollars, legacyDollars, yesNo } from './normalize.js';
 import type { Row } from './socrata.client.js';
 
@@ -26,6 +26,8 @@ interface MotusSummary {
   authorities: string[];
   /** Row of the best carrier authority, which carries the insurance-on-file values. */
   carrierRow: Row | null;
+  /** Row of the best broker authority (its bond / trust fund on file). */
+  brokerRow: Row | null;
 }
 
 const code = (v: string | undefined): AuthorityCode => (v === 'A' || v === 'I' || v === 'P' ? v : 'N');
@@ -37,12 +39,15 @@ export function summarizeMotus(rows: Row[]): Map<number, MotusSummary> {
   const byMc = new Map<number, MotusSummary>();
   for (const row of rows) {
     const mc = docketToMc(row.docket_number ?? '');
-    const s = byMc.get(mc) ?? { carrier: null, broker: null, authorities: [], carrierRow: null };
+    const s = byMc.get(mc) ?? { carrier: null, broker: null, authorities: [], carrierRow: null, brokerRow: null };
     const status = motusCode(row.op_auth_status);
     const type = row.op_auth_type ?? '';
     s.authorities.push(`${type} — ${row.op_auth_status}`);
     if (/Broker|Freight Forwarder/i.test(type)) {
-      if (/Broker/i.test(type) && rank(status) > rank(s.broker)) s.broker = status;
+      if (/Broker/i.test(type) && rank(status) > rank(s.broker)) {
+        s.broker = status;
+        s.brokerRow = row;
+      }
     } else if (/Motor Carrier/i.test(type) && rank(status) > rank(s.carrier)) {
       s.carrier = status;
       s.carrierRow = row;
@@ -52,10 +57,16 @@ export function summarizeMotus(rows: Row[]): Map<number, MotusSummary> {
   return byMc;
 }
 
-/** Combine the legacy L&I and Motus records for one MC; null if the carrier is not authorized. */
-export function buildAuthority(legacy: Row | undefined, motus: MotusSummary | undefined, mode: AuthorityMode): Authority | null {
-  const legacyOk = legacy ? legacy.common_stat === 'A' || legacy.contract_stat === 'A' : null;
-  const motusOk = motus?.carrier ? motus.carrier === 'A' : null;
+/**
+ * Combine the legacy L&I and Motus records for one MC; null if it is not authorized. For brokers the broker
+ * authority decides instead of the carrier (common / contract) authority.
+ */
+export function buildAuthority(legacy: Row | undefined, motus: MotusSummary | undefined, mode: AuthorityMode, kind: LeadKind = 'carrier'): Authority | null {
+  const legacyOk = legacy
+    ? kind === 'broker' ? legacy.broker_stat === 'A' : legacy.common_stat === 'A' || legacy.contract_stat === 'A'
+    : null;
+  const motusStatus = kind === 'broker' ? motus?.broker : motus?.carrier;
+  const motusOk = motusStatus ? motusStatus === 'A' : null;
   const keep =
     mode === 'any'
       ? !!(legacy || motus)
@@ -67,13 +78,14 @@ export function buildAuthority(legacy: Row | undefined, motus: MotusSummary | un
   const pending = (suffix: 'app_pend' | 'rev_pend') =>
     legacy ? (['common', 'contract', 'broker'] as const).filter((k) => legacy[`${k}_${suffix}`] === 'Y') : [];
   // Motus is the current system, so its insurance-on-file values win when present.
-  const motusRow = motus?.carrierRow;
+  const motusRow = (kind === 'broker' ? motus?.brokerRow : motus?.carrierRow) ?? motus?.carrierRow ?? motus?.brokerRow;
   const onFile = motusRow ?? legacy ?? {};
   const legacyBroker = legacy ? code(legacy.broker_stat) : null;
 
   return {
     sources: [legacy && ('L&I' as const), motus && ('Motus' as const)].filter((s): s is 'L&I' | 'Motus' => !!s),
-    common: legacy ? code(legacy.common_stat) : 'A',
+    // Without an L&I record the carrier authority comes from Motus (a broker may hold none).
+    common: legacy ? code(legacy.common_stat) : kind === 'broker' ? (motus?.carrier ?? 'N') : 'A',
     contract: legacy ? code(legacy.contract_stat) : 'N',
     broker: legacyBroker === 'A' || motus?.broker === 'A' ? 'A' : (legacyBroker ?? motus?.broker ?? 'N'),
     motusCarrier: motus?.carrier ?? null,

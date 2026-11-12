@@ -1,6 +1,8 @@
-import type { ScannedCarrier } from '../types'
+import type { LeadKind, ScannedCarrier } from '../types'
 
 const KEY = 'leadhaul.seen.v1'
+/** Carriers keep the original key; brokers get their own history. */
+const keyFor = (kind: LeadKind) => (kind === 'carrier' ? KEY : `leadhaul.seen.${kind}.v1`)
 /** Carriers granted longer ago than this are forgotten. */
 const KEEP_DAYS = 45
 
@@ -12,9 +14,9 @@ export interface SeenLeads {
   from: string
 }
 
-export function loadSeen(previous: ScannedCarrier[] = []): SeenLeads {
+export function loadSeen(previous: ScannedCarrier[] = [], kind: LeadKind = 'carrier'): SeenLeads {
   try {
-    const s = JSON.parse(localStorage.getItem(KEY) ?? 'null') as SeenLeads | null
+    const s = JSON.parse(localStorage.getItem(keyFor(kind)) ?? 'null') as SeenLeads | null
     if (s && typeof s.mcs === 'object' && typeof s.from === 'string') return s
   } catch {
     // unreadable or blocked storage: start over
@@ -32,14 +34,14 @@ export function isNewSince(seen: SeenLeads, c: ScannedCarrier): boolean {
 }
 
 /** Remembers the carriers of a finished load that covered grant dates from `from` on. */
-export function rememberSeen(seen: SeenLeads, carriers: ScannedCarrier[], from: string) {
+export function rememberSeen(seen: SeenLeads, carriers: ScannedCarrier[], from: string, kind: LeadKind = 'carrier') {
   const cutoff = new Date(Date.now() - KEEP_DAYS * 86_400_000).toISOString().slice(0, 10)
   const mcs: Record<string, string> = {}
   for (const [mc, granted] of Object.entries(seen.mcs)) if (granted >= cutoff) mcs[mc] = granted
   for (const c of carriers) if (c.grantedOn) mcs[c.mc] = c.grantedOn
   const earliest = seen.from && seen.from < from ? seen.from : from
   try {
-    localStorage.setItem(KEY, JSON.stringify({ mcs, from: earliest < cutoff ? cutoff : earliest }))
+    localStorage.setItem(keyFor(kind), JSON.stringify({ mcs, from: earliest < cutoff ? cutoff : earliest }))
   } catch {
     // storage full or blocked: everything simply looks new next time
   }

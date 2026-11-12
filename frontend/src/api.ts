@@ -1,5 +1,5 @@
 import type {
-  AuthorityMode, Insurance, LeadsDay, LookupResult, LookupType, RegistryResult, SaferSnapshot, ScanResult,
+  AuthorityMode, Insurance, LeadKind, LeadsDay, LookupResult, LookupType, RegistryResult, SaferSnapshot, ScanResult,
 } from './types'
 
 export class ApiError extends Error {
@@ -30,11 +30,11 @@ async function get<T>(path: string, signal?: AbortSignal, init?: RequestInit): P
 
 export const api = {
   health: () => get<{ ok: boolean }>('/health'),
-  scan: (from: number, to: number, mode: AuthorityMode, signal?: AbortSignal) =>
-    get<ScanResult>(`/carriers?from=${from}&to=${to}&mode=${mode}`, signal),
+  scan: (from: number, to: number, mode: AuthorityMode, kind: LeadKind, signal?: AbortSignal) =>
+    get<ScanResult>(`/carriers?from=${from}&to=${to}&mode=${mode}&kind=${kind}`, signal),
   safer: (mc: number, signal?: AbortSignal) => get<SaferSnapshot>(`/safer/${mc}`, signal),
   insurance: (mc: number) => get<Insurance>(`/carriers/${mc}/insurance`),
-  newLeads: (date: string, signal?: AbortSignal) => get<LeadsDay>(`/carriers/new?date=${date}`, signal),
+  newLeads: (date: string, kind: LeadKind, signal?: AbortSignal) => get<LeadsDay>(`/carriers/new?date=${date}&kind=${kind}`, signal),
   saferPageUrl: (dot: string) => `/api/safer/page/${encodeURIComponent(dot)}`,
   lookup: (q: string, type: LookupType, signal?: AbortSignal) =>
     get<LookupResult>(`/lookup?${new URLSearchParams({ q, type })}`, signal),

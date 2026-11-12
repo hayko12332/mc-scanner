@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { CarriersView, DispatchersView } from '../components/crm/PeopleViews'
+import { LoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { SignIn } from '../components/crm/SignIn'
 import { Icon } from '../components/Icon'
 import { track } from '../lib/analytics'
-import { crm, CrmError, type CrmConfig, type CrmState, type CrmUser } from '../lib/crm'
+import { crm, CrmError, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
 import { crmDemo } from '../lib/crmDemo'
 
 type Tab = 'loads' | 'carriers' | 'dispatchers'
@@ -56,6 +57,8 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   const [state, setState] = useState<CrmState | null>(null)
   const [signedOut, setSignedOut] = useState(false)
   const [tab, setTab] = useState<Tab>('loads')
+  /** Load open in the side panel. */
+  const [openId, setOpenId] = useState<number | null>(null)
   const [error, setError] = useState('')
   const [theme, setThemeState] = useState<Theme>(readTheme)
   const [demo, setDemoState] = useState(readDemo)
@@ -94,6 +97,32 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
     }
   }, [reload, toast])
 
+  /**
+   * Instant edits: the table and totals change right away, the server is told in the background.
+   * If the server refuses, the error shows and the board reloads the real data.
+   */
+  const optimistic = useCallback(async (local: (s: CrmState) => CrmState, remote: () => Promise<unknown>, done?: string) => {
+    setState((s) => (s ? local(s) : s))
+    if (done) toast(done)
+    try {
+      return await remote()
+    } catch (e) {
+      toast((e as Error).message)
+      await reload()
+      throw e
+    }
+  }, [reload, toast])
+
+  const patchLoads = (ids: Set<number>, patch: (l: Load) => Load) => (s: CrmState) => ({ ...s, loads: s.loads.map((l) => (ids.has(l.id) ? patch(l) : l)) })
+  const updateLoad = (id: number, l: LoadInput) => optimistic(patchLoads(new Set([id]), () => ({ ...l, id })), () => api.updateLoad(id, l))
+  const addLoad = async (l: LoadInput) => {
+    const tempId = -Date.now()
+    const saved = await optimistic((s) => ({ ...s, loads: [{ ...l, id: tempId }, ...s.loads] }), () => api.addLoad(l)) as Load
+    setState((s) => (s ? { ...s, loads: s.loads.map((x) => (x.id === tempId ? saved : x)) } : s))
+  }
+
+  const closeLoad = useCallback(() => setOpenId(null), [])
+
   const banner = demo && state ? (
     <div className="w-demo">
       <b>Demo</b> Sample data, saved only in this browser. Try anything — add loads, change statuses, import your sheet.
@@ -106,10 +135,12 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   )
 
   if (error && !state) return shell(<p className="w-msg error">{error}</p>)
-  if (!config || (!state && !signedOut)) return shell(<p className="w-msg">Loading…</p>)
-  if (!config.enabled) return shell(<p className="w-msg">The dispatch board is not available right now.</p>)
-  if (!demo && (signedOut || !state)) return shell(<SignIn config={config} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />)
+  if (!demo && (!config || (!state && !signedOut))) return shell(<p className="w-msg">Loading…</p>)
+  if (!demo && config && !config.enabled) return shell(<p className="w-msg">The dispatch board is not available right now.</p>)
+  if (!demo && config && (signedOut || !state)) return shell(<SignIn config={config} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />)
   if (!state) return shell(<p className="w-msg">Loading…</p>)
+
+  const openLoad = openId == null ? null : state.loads.find((l) => l.id === openId) ?? null
 
   const TABS: [Tab, string, number][] = [
     ['loads', 'Loads', state.loads.length],
@@ -136,10 +167,19 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
       {tab === 'loads' && (
         <LoadsTable
           state={state}
-          addLoad={(l) => act(() => api.addLoad(l))}
-          updateLoad={(id, l) => act(() => api.updateLoad(id, l))}
-          updateMany={(loads, patch) => act(() => Promise.all(loads.map((l) => api.updateLoad(l.id, { ...l, ...patch }))), `Updated ${loads.length} loads`)}
-          removeMany={(ids) => act(() => Promise.all(ids.map((id) => api.removeLoad(id))), `Deleted ${ids.length} loads`)}
+          addLoad={addLoad}
+          updateLoad={updateLoad}
+          openLoad={setOpenId}
+          updateMany={(loads, patch) => optimistic(
+            patchLoads(new Set(loads.map((l) => l.id)), (l) => ({ ...l, ...patch(l) })),
+            () => Promise.all(loads.map((l) => api.updateLoad(l.id, { ...l, ...patch(l) }))),
+            `Updated ${loads.length} loads`,
+          )}
+          removeMany={(ids) => optimistic(
+            (s) => ({ ...s, loads: s.loads.filter((l) => !ids.includes(l.id)) }),
+            () => Promise.all(ids.map((id) => api.removeLoad(id))),
+            `Deleted ${ids.length} loads`,
+          )}
           importLoads={(rows) => act(async () => {
             const r = await api.importLoads(rows)
             track('crm_import', { rows: r.imported })
@@ -147,14 +187,30 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
           })}
         />
       )}
+      {openLoad && (
+        <LoadDrawer
+          key={openLoad.id}
+          load={openLoad}
+          state={state}
+          save={(l) => { updateLoad(openLoad.id, l).catch(() => undefined) }}
+          remove={() => { setOpenId(null); optimistic((s) => ({ ...s, loads: s.loads.filter((x) => x.id !== openLoad.id) }), () => api.removeLoad(openLoad.id), 'Load deleted').catch(() => undefined) }}
+          close={closeLoad}
+          miles={api.miles}
+        />
+      )}
       {tab === 'carriers' && (
-        <CarriersView state={state} add={(c) => act(() => api.addCarrier(c), 'Carrier added')} remove={(id) => act(() => api.removeCarrier(id))} />
+        <CarriersView
+          state={state}
+          add={(c) => act(() => api.addCarrier(c), 'Carrier added')}
+          update={(c) => optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c))}
+          remove={(id) => act(() => api.removeCarrier(id))}
+        />
       )}
       {tab === 'dispatchers' && (
         <DispatchersView
           state={state}
           add={(d) => act(() => api.addDispatcher(d), 'Dispatcher added')}
-          save={(d) => act(() => api.updateDispatcher(d), 'Saved')}
+          save={(d) => optimistic((s) => ({ ...s, dispatchers: s.dispatchers.map((x) => (x.id === d.id ? d : x)) }), () => api.updateDispatcher(d))}
           remove={(id) => act(() => api.removeDispatcher(id))}
         />
       )}

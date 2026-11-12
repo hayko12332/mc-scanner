@@ -14,6 +14,10 @@ export interface Dispatcher {
   percent: number;
 }
 
+/** How a dispatch service charges a carrier: a percent of each load's gross, or a flat amount per week. */
+export const FEE_TYPES = ['percent', 'flat'] as const;
+export type FeeType = (typeof FEE_TYPES)[number];
+
 export interface CrmCarrier {
   id: number;
   name: string;
@@ -22,6 +26,21 @@ export interface CrmCarrier {
   phone: string;
   email: string;
   notes: string;
+  feeType: FeeType;
+  /** Percent (e.g. 8 = 8% of gross) or dollars per week, depending on feeType. */
+  fee: number;
+  /** Factoring company the carrier uses, if any. */
+  factoring: string;
+}
+
+/** A truck (and its driver) of a carrier. */
+export interface Truck {
+  id: number;
+  carrierId: number | null;
+  /** Unit / truck number. */
+  unit: string;
+  driver: string;
+  phone: string;
 }
 
 /** Where a load is: booked → in transit → delivered → invoiced → paid. */
@@ -39,15 +58,31 @@ export interface Load {
   pro: string;
   origin: string;
   destination: string;
+  /** Linehaul rate from the rate confirmation. */
   rate: number;
   notes: string;
   status: LoadStatus;
+  truckId: number | null;
+  loadedMiles: number;
+  /** Deadhead: empty miles to the pickup. */
+  emptyMiles: number;
+  // Accessorials added to the rate. Lumper is a reimbursement and is not part of gross.
+  detention: number;
+  layover: number;
+  tonu: number;
+  other: number;
+  lumper: number;
+  /** YYYY-MM-DD the broker was invoiced; payment terms count from here. */
+  invoicedOn: string | null;
+  /** YYYY-MM-DD the broker paid. */
+  paidOn: string | null;
 }
 
 export interface CrmState {
   user: CrmUser;
   dispatchers: Dispatcher[];
   carriers: CrmCarrier[];
+  trucks: Truck[];
   loads: Load[];
 }
 
@@ -61,4 +96,5 @@ export interface ImportRow {
   rate: number;
   dispatcher: string;
   carrier: string;
+  loadedMiles: number;
 }

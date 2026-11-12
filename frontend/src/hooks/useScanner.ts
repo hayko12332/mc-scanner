@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from 'react'
-import { api } from '../api'
+import { api, ApiError } from '../api'
 import { carrierKey } from '../lib/carrier'
 import { sleep } from '../lib/format'
 import { verifyWithSafer } from '../lib/safer'
-import type { ScannedCarrier } from '../types'
+import type { LeadKind, ScannedCarrier } from '../types'
 
 /** Stop after this many consecutive batches without census records: the end of the MC range. */
 const MAX_EMPTY_BATCHES = 50
@@ -15,6 +15,8 @@ export interface ScanSettings {
   delayMs: string
   saferConcurrency: string
   useSafer: boolean
+  /** Carriers or brokers (older saved settings have no kind: carriers). */
+  kind?: LeadKind
 }
 
 export interface ScanProgress {
@@ -34,6 +36,10 @@ const toInt = (value: string, fallback: number, min: number, max: number) => {
   return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback
 }
 const isAbort = (e: unknown) => e instanceof DOMException && e.name === 'AbortError'
+/** Lost connection or a server hiccup (restart, gateway timeout): worth trying again before stopping the scan. */
+const isTransient = (e: unknown) => e instanceof ApiError && (e.status === 0 || e.status === 429 || e.status >= 500)
+/** Waits between retries of one batch; after the last one the scan stops and can be continued. */
+const RETRY_WAITS_MS = [3000, 8000, 20000]
 
 /**
  * Walks MC numbers upward in batches: backend scan (census + FMCSA authority files) -> optional live
@@ -87,7 +93,18 @@ export function useScanner(initial: Partial<ScanProgress>, onAdvance: (nextMc: n
         setCurrent(`MC-${mc} … MC-${to}`)
         say(`Checking MC ${mc} – ${to} in FMCSA records…`)
 
-        const result = await api.scan(mc, to, settings.useSafer ? 'lenient' : 'strict', ctrl.signal)
+        let result
+        for (let attempt = 0; ; attempt++) {
+          try {
+            result = await api.scan(mc, to, settings.useSafer ? 'lenient' : 'strict', settings.kind ?? 'carrier', ctrl.signal)
+            break
+          } catch (e) {
+            if (!isTransient(e) || attempt >= RETRY_WAITS_MS.length) throw e
+            const wait = RETRY_WAITS_MS[attempt]
+            say(`${(e as Error).message} — trying MC ${mc} – ${to} again in ${wait / 1000} s (attempt ${attempt + 2} of ${RETRY_WAITS_MS.length + 1})…`)
+            await sleep(wait, ctrl.signal)
+          }
+        }
         const batchSeen = new Set<string>()
         const fresh = result.carriers.filter((c) => {
           const key = carrierKey(c)

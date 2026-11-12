@@ -3,6 +3,7 @@ import { parseSheet, usd, type CrmCarrier, type ImportRow } from '../../lib/crm'
 
 const FIELD_NAMES: Record<keyof ImportRow, string> = {
   date: 'Date', broker: 'Broker', pro: 'PRO#', origin: 'Origin', destination: 'Destination', rate: 'Rate', dispatcher: 'Dispatcher (BB)', carrier: 'Carrier',
+  loadedMiles: 'Miles',
 }
 
 interface Props {

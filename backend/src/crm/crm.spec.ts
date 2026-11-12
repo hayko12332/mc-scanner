@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { carrierInput, dispatcherInput, importRows, isoDate, loadInput } from './crm.input.js';
+import { carrierInput, dispatcherInput, importRows, isoDate, loadInput, truckInput } from './crm.input.js';
 import { verifyGoogleIdToken } from './google-auth.js';
 
 const tokenInfo = (o: Record<string, string>) =>
@@ -42,5 +42,19 @@ describe('CRM input', () => {
     expect(() => importRows({ rows: [{ date: 'x' }] })).toThrow(/Row 1/);
     expect(importRows({ rows: [{ date: '2026-10-20', rate: '2,000', dispatcher: 'Sergo', carrier: 'BEKU' }] })[0])
       .toMatchObject({ rate: 2000, dispatcher: 'Sergo', carrier: 'BEKU' });
+  });
+  it('keeps miles, accessorials and billing dates of a load', () => {
+    const l = loadInput({
+      date: '2026-11-10', truckId: 3, loadedMiles: '1,240', emptyMiles: -5, detention: '$150', lumper: 85, tonu: 'abc',
+      invoicedOn: '2026-11-12', paidOn: 'soon',
+    });
+    expect(l).toMatchObject({ truckId: 3, loadedMiles: 1240, emptyMiles: 0, detention: 150, lumper: 85, tonu: 0, invoicedOn: '2026-11-12', paidOn: null });
+  });
+  it('cleans carrier fees and trucks', () => {
+    expect(carrierInput({ name: 'BEKU', feeType: 'flat', fee: '250' })).toMatchObject({ feeType: 'flat', fee: 250 });
+    expect(carrierInput({ name: 'BEKU', feeType: 'weird', fee: 8 })).toMatchObject({ feeType: 'percent', fee: 8, factoring: '' });
+    expect(() => carrierInput({ name: 'BEKU', feeType: 'percent', fee: 120 })).toThrow();
+    expect(truckInput({ unit: ' 101 ', driver: 'Arman', carrierId: 2 })).toEqual({ unit: '101', driver: 'Arman', phone: '', carrierId: 2 });
+    expect(() => truckInput({})).toThrow();
   });
 });

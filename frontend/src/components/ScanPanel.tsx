@@ -1,6 +1,8 @@
 import { Icon } from './Icon'
 import type { ScanSettings, Status } from '../hooks/useScanner'
 import type { Filters } from '../lib/carrier'
+import type { LeadKind } from '../types'
+import { KindSwitch } from './LeadsPanel'
 
 interface Props {
   settings: ScanSettings
@@ -35,6 +37,8 @@ const FILTERS: { key: keyof Filters; label: string }[] = [
 ]
 
 export function ScanPanel(p: Props) {
+  const kind: LeadKind = p.settings.kind ?? 'carrier'
+  const broker = kind === 'broker'
   const numberInput = (f: NumberField) => (
     <label key={f.key} className="field">
       {f.label}
@@ -58,11 +62,13 @@ export function ScanPanel(p: Props) {
       <div className="scan-head">
         <div className="tile-icon"><Icon name="scan" /></div>
         <div className="scan-title">
-          <h2>Carrier scanner</h2>
-          <p>Authorized carriers only · phone &amp; email · verified on SAFER</p>
+          <h2>{broker ? 'Broker scanner' : 'Carrier scanner'}</h2>
+          <p>{broker ? 'Authorized freight brokers only' : 'Authorized carriers only'} · phone &amp; email · verified on SAFER</p>
         </div>
         <span className={`state-chip ${state[0]}`}><span className="state-dot" />{state[1]}</span>
       </div>
+
+      <KindSwitch kind={kind} disabled={p.running} onKind={(k) => p.onSettings({ ...p.settings, kind: k })} />
 
       <div className="scan-row">
         <label className="mc-input">
@@ -93,7 +99,7 @@ export function ScanPanel(p: Props) {
           <div className="live-status">{p.status.text}</div>
           <div className="progress"><i /></div>
           <div className="live-counts">
-            <span><b>{p.found.toLocaleString('en-US')}</b> carriers found</span>
+            <span><b>{p.found.toLocaleString('en-US')}</b> {broker ? 'brokers' : 'carriers'} found</span>
             <span><b>{p.checked.toLocaleString('en-US')}</b> MC numbers checked</span>
             {p.found > 0 && <button className="small primary" onClick={p.onViewResults}>View results ↓</button>}
           </div>
@@ -107,7 +113,7 @@ export function ScanPanel(p: Props) {
           disabled={p.running}
           onChange={(v) => p.onSettings({ ...p.settings, useSafer: v })}
         />
-        {FILTERS.map((f) => (
+        {FILTERS.filter((f) => !(broker && f.key === 'skipCarrierBroker')).map((f) => (
           <Switch key={f.key} label={f.label} checked={p.filters[f.key]} onChange={(v) => p.onFilters({ ...p.filters, [f.key]: v })} />
         ))}
       </div>
@@ -116,8 +122,9 @@ export function ScanPanel(p: Props) {
         <summary><Icon name="file" size={14} />Advanced settings</summary>
         <div className="controls">{ADVANCED_FIELDS.map(numberInput)}</div>
         <p className="rules">
-          Always: carriers only (brokers are skipped), email required, AUTHORIZED only. With SAFER verification the
-          authority status comes live from SAFER for every MC; without it, from the FMCSA files (L&amp;I + Motus).
+          Always: {broker ? 'freight brokers with active broker authority' : 'carriers only (brokers are skipped)'}, email required,
+          AUTHORIZED only. With SAFER verification the authority status comes live from SAFER for every MC; without it, from
+          the FMCSA files (L&amp;I + Motus).
         </p>
       </details>
 
