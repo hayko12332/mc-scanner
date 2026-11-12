@@ -1,5 +1,5 @@
 import { api, ApiError } from '../api'
-import type { Carrier, SaferSnapshot, ScannedCarrier } from '../types'
+import type { Carrier, SaferSnapshot, ScannedCarrier, LeadKind } from '../types'
 import { sleep } from './format'
 
 const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname)
@@ -36,6 +36,7 @@ export async function verifyWithSafer(
   concurrency: number,
   signal: AbortSignal,
   onStatus: (text: string) => void,
+  kind: LeadKind = 'carrier',
 ): Promise<{ verified: ScannedCarrier[]; rejected: number }> {
   const mcs = [...new Set(candidates.map((c) => c.mc))]
   const results = new Map<number, SaferSnapshot>()
@@ -63,7 +64,9 @@ export async function verifyWithSafer(
   const verified: ScannedCarrier[] = []
   for (const c of candidates) {
     const s = results.get(c.mc)
-    if (s?.found && s.authorized && (!s.dot || Number(s.dot) === Number(c.dot))) {
+    // SAFER's "authorized" is carrier authority; a broker needs "AUTHORIZED FOR Broker" and an in-service USDOT.
+    const ok = s?.found && (kind === 'broker' ? s.broker && !s.usdotStatus.includes('OUT-OF-SERVICE') : s.authorized)
+    if (s?.found && ok && (!s.dot || Number(s.dot) === Number(c.dot))) {
       verified.push({ ...c, safer: { ...s, checkedAt } })
     }
   }

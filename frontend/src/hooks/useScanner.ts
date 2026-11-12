@@ -114,7 +114,7 @@ export function useScanner(initial: Partial<ScanProgress>, onAdvance: (nextMc: n
         })
         let kept: ScannedCarrier[] = fresh
         if (settings.useSafer && fresh.length) {
-          const { verified, rejected } = await verifyWithSafer(fresh, concurrency, ctrl.signal, say)
+          const { verified, rejected } = await verifyWithSafer(fresh, concurrency, ctrl.signal, say, settings.kind ?? 'carrier')
           kept = verified
           setSaferRejected((n) => n + rejected)
         }
