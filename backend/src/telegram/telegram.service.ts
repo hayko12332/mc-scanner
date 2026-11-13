@@ -47,10 +47,25 @@ const FEATURES = [
   '🏢 <b>Company lookup</b>',
   'Check any company by MC, USDOT, email or phone: authority, insurance history, fleet, cargo, related companies, state registration, liens and courts.',
   '',
+  '🤝 <b>New brokers</b>',
+  'Freight brokers that just got their broker authority — switch Carriers / Brokers in New MC leads and the scanner.',
+  '',
+  '🚚 <b>Dispatch board</b>',
+  'Loads by week with weekly gross, trucks, miles &amp; RPM, dispatcher pay and weekly statements for your carriers.',
+  '',
   '📥 <b>Export</b>',
   'Excel, Google Sheets, CSV, phone contacts (.vcf) or a printable call sheet.',
   '',
-  '🚧 <i>Coming soon: CRM for dispatchers.</i> Tell us what you need — tap “💡 Suggest a feature”.',
+  'Missing something? Tap “💡 Suggest a feature”.',
+].join('\n');
+
+/** Sent after the welcome: the group is where every update is announced first. */
+const GROUP_INVITE = [
+  '💬 <b>Join the LeadHaul group</b>',
+  '',
+  'Every LeadHaul update is posted there first: new features, fixes and tips for finding carriers and brokers. Ask questions and share ideas too.',
+  '',
+  '🇷🇺 Вступайте в нашу группу — там мы первыми пишем обо всех обновлениях LeadHaul.',
 ].join('\n');
 
 /** Welcome caption under the banner (HTML, fits Telegram's 1024-character caption limit). */
@@ -62,6 +77,7 @@ const WELCOME = [
   '🆕 <b>150+</b> new authorized carriers a day',
   '📅 Granted today, yesterday, last 7 / 30 days',
   '📞 Phone + email for every carrier',
+  '🤝 New freight brokers too',
   '🔎 Check any MC or USDOT in one tap',
   '📥 Export to Excel, Google Sheets, CSV or contacts',
   '',
@@ -341,6 +357,11 @@ export class TelegramService implements OnApplicationBootstrap {
       // The banner is a nice-to-have: fall back to text if Telegram cannot fetch it.
       this.logger.warn(`Welcome photo failed: ${(e as Error).message}`);
       await this.send(chatId, WELCOME, keyboard);
+    }
+    // Everyone who opens the bot is invited to the group, where updates are announced.
+    if (config.telegramGroupUrl) {
+      await this.send(chatId, GROUP_INVITE, { inline_keyboard: [[{ text: '💬 Join the LeadHaul group', url: config.telegramGroupUrl }]] })
+        .catch((e: Error) => this.logger.warn(`Group invite failed: ${e.message}`));
     }
     await this.send(chatId, 'The menu below is always here 👇', this.mainKeyboard());
   }
