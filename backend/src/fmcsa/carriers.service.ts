@@ -28,7 +28,21 @@ export function easternDay(back = 0, now = Date.now()): string {
   return new Date(now - back * DAY_MS).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
 }
 
-interface SavedDay { fetchedAt: number; data: LeadsDay }
+interface SavedDay {
+  fetchedAt: number
+  data: LeadsDay
+  /** A day that looked incomplete (emails missing, or most grants not matched yet) is fetched again after this time. */
+  retryAt?: number
+}
+
+/** FMCSA files a lead day is built from; it is current only once all of them published their daily update. */
+const LEAD_SOURCES = [DATASETS.motusAuthHistory, DATASETS.motusCarrier, DATASETS.census] as const;
+
+/**
+ * True when most of a day's grants could not be matched to an authorized company with contacts — e.g. the
+ * authority-history file already has today's grants but the registration file hasn't caught up yet.
+ */
+export const looksIncomplete = (d: LeadsDay) => d.granted >= 10 && d.carriers.length < d.granted * 0.5;
 
 @Injectable()
 export class CarriersService implements OnModuleInit, OnModuleDestroy {
@@ -95,18 +109,24 @@ export class CarriersService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async isCurrent(d: SavedDay): Promise<boolean> {
+    if (d.retryAt && Date.now() >= d.retryAt) return false;
     if (d.data.partial && Date.now() - d.fetchedAt > PARTIAL_RETRY) return false;
     const version = await this.dataVersion();
     return version ? d.fetchedAt >= version : Date.now() - d.fetchedAt < FALLBACK_TTL;
   }
 
-  /** When FMCSA's authority history file last changed (checked at most every 5 minutes); 0 if unknown. */
+  /**
+   * When the newest of FMCSA's source files last changed (checked at most every 5 minutes); 0 if unknown.
+   * The files update minutes apart (authority history about 10:10 UTC, registrations a few minutes later), so a
+   * day fetched between them is refreshed again once the last one lands.
+   */
   private async dataVersion(): Promise<number> {
     if (Date.now() - this.version.checkedAt < 5 * 60_000) return this.version.at;
     this.version.checkedAt = Date.now();
     try {
-      const at = await this.socrata.updatedAt(DATASETS.motusAuthHistory);
-      if (at) this.version.at = at;
+      const times = await Promise.all(LEAD_SOURCES.map((id) => this.socrata.updatedAt(id).catch(() => null)));
+      const at = Math.max(0, ...times.filter((t): t is number => typeof t === 'number'));
+      if (at) this.version.at = Math.max(this.version.at, at);
     } catch {
       // keep the last known version
     }
@@ -131,8 +151,11 @@ export class CarriersService implements OnModuleInit, OnModuleDestroy {
         const known = new Map(prev.carriers.map((c) => [c.mc, c]));
         data = { ...data, carriers: data.carriers.map((c) => known.get(c.mc) ?? c) };
       }
-      this.remember(key, { fetchedAt: Date.now(), data });
-      if (!data.partial) void this.leadsStore.put(key, data);
+      const incomplete = looksIncomplete(data);
+      if (incomplete) this.logger.warn(`${key}: only ${data.carriers.length} of ${data.granted} grants matched — trying again in 10 minutes`);
+      this.remember(key, { fetchedAt: Date.now(), data, ...(incomplete ? { retryAt: Date.now() + PARTIAL_RETRY } : {}) });
+      // Only complete days are saved: an incomplete one must not outlive a restart as if it were current.
+      if (!data.partial && !incomplete) void this.leadsStore.put(key, data);
       return data;
     })().finally(() => this.inflight.delete(key));
     this.inflight.set(key, p);
@@ -193,6 +216,10 @@ export class CarriersService implements OnModuleInit, OnModuleDestroy {
         const mc = mcByDot.get(String(parseInt(company.dot, 10)));
         return mc && (company.phone || company.email) ? [{ mc, ...company }] : [];
       });
+      // Companies too new for the Census file: phone and address from the Motus registration file for now.
+      const inCensus = new Set(census.map((rec) => String(parseInt(String(rec.dot_number ?? ''), 10))));
+      const missing = [...mcByDot].filter(([dot]) => !inCensus.has(dot)).map(([, mc]) => mc);
+      if (missing.length) candidates.push(...(await this.motusContacts(missing, kind)).filter((c) => c.phone));
     } catch {
       if (Date.now() >= this.censusDownUntil) this.censusDownUntil = Date.now() + 10 * 60_000;
       partial = true;
