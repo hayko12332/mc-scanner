@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { CarriersView, DispatchersView } from '../components/crm/PeopleViews'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { CarriersView, DispatchersView, TrucksView } from '../components/crm/PeopleViews'
+import { StatementsView } from '../components/crm/StatementsView'
 import { LoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { SignIn } from '../components/crm/SignIn'
@@ -8,7 +9,7 @@ import { track } from '../lib/analytics'
 import { crm, CrmError, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
 import { crmDemo } from '../lib/crmDemo'
 
-type Tab = 'loads' | 'carriers' | 'dispatchers'
+type Tab = 'loads' | 'statements' | 'carriers' | 'trucks' | 'dispatchers'
 type Theme = 'light' | 'dark'
 
 const THEME_KEY = 'leadhaul.work.theme'
@@ -123,6 +124,37 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
 
   const closeLoad = useCallback(() => setOpenId(null), [])
 
+  // Loaded miles fill themselves in: every load with a lane and no miles is looked up on the map in the background,
+  // one at a time (each lane once; the server remembers lanes, so repeats are instant).
+  const latest = useRef(state)
+  latest.current = state
+  const triedMiles = useRef(new Set<string>())
+  useEffect(() => {
+    const todo = (state?.loads ?? []).filter((l) => l.id > 0 && l.origin && l.destination && !l.loadedMiles
+      && !triedMiles.current.has(`${l.id}|${l.origin}|${l.destination}`))
+    if (!todo.length) return
+    let cancelled = false
+    void (async () => {
+      for (const l of todo.slice(0, 30)) {
+        if (cancelled) return
+        const key = `${l.id}|${l.origin}|${l.destination}`
+        if (triedMiles.current.has(key)) continue
+        triedMiles.current.add(key)
+        try {
+          const r = await api.miles(l.origin, l.destination)
+          const cur = latest.current?.loads.find((x) => x.id === l.id)
+          if (!r.miles || !cur || cur.loadedMiles || cur.origin !== l.origin || cur.destination !== l.destination) continue
+          const { id, ...rest } = cur
+          await updateLoad(id, { ...rest, loadedMiles: r.miles }).catch(() => undefined)
+        } catch {
+          // Place not on the map or maps busy: the load panel's Calculate button is still there.
+        }
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.loads, demo])
+
   const banner = demo && state ? (
     <div className="w-demo">
       <b>Demo</b> Sample data, saved only in this browser. Try anything — add loads, change statuses, import your sheet.
@@ -144,7 +176,9 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
 
   const TABS: [Tab, string, number][] = [
     ['loads', 'Loads', state.loads.length],
+    ['statements', 'Statements', state.carriers.filter((c) => c.fee > 0).length],
     ['carriers', 'Carriers', state.carriers.length],
+    ['trucks', 'Trucks', state.trucks.length],
     ['dispatchers', 'Dispatchers', state.dispatchers.length],
   ]
   const nav = (
@@ -204,6 +238,15 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
           add={(c) => act(() => api.addCarrier(c), 'Carrier added')}
           update={(c) => optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c))}
           remove={(id) => act(() => api.removeCarrier(id))}
+        />
+      )}
+      {tab === 'statements' && <StatementsView state={state} toast={toast} />}
+      {tab === 'trucks' && (
+        <TrucksView
+          state={state}
+          add={(t) => act(() => api.addTruck(t), 'Truck added')}
+          update={(t) => optimistic((s) => ({ ...s, trucks: s.trucks.map((x) => (x.id === t.id ? t : x)) }), () => api.updateTruck(t.id, t))}
+          remove={(id) => act(() => api.removeTruck(id))}
         />
       )}
       {tab === 'dispatchers' && (

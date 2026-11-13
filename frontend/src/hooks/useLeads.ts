@@ -37,6 +37,8 @@ export const isoDay = (daysAgo: number) =>
   new Date(Date.now() - daysAgo * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
 const dayWord = (n: number) => (n === 1 ? 'today and yesterday' : `the last ${n} days`)
+/** "Latest" keeps going back a day while it has fewer than this (FMCSA posts most grants the next morning). */
+const LATEST_MIN: Record<LeadKind, number> = { carrier: 50, broker: 5 }
 
 const byNewest = (a: ScannedCarrier, b: ScannedCarrier) =>
   (b.grantedOn ?? '').localeCompare(a.grantedOn ?? '') || a.legalName.localeCompare(b.legalName)
@@ -113,8 +115,11 @@ export function useLeads(kind: LeadKind = 'carrier') {
     }
     await Promise.all(Array.from({ length: PARALLEL }, worker))
     flush()
-    // "1 day" early in the morning: FMCSA may not have today's grants yet, so show the latest day that has them.
-    for (let back = 2; n === 1 && !found.size && !failed && back <= 4 && !ctrl.signal.aborted; back++) {
+    // "Latest" early in the morning: FMCSA has few or none of today's and yesterday's grants yet, so it also shows
+    // the days before, until the list is worth calling (at most 4 days back).
+    let extraDays = 0
+    for (let back = 2; n === 1 && found.size < LATEST_MIN[kind] && !failed && back <= 4 && !ctrl.signal.aborted; back++) {
+      extraDays++
       try {
         add((await api.newLeads(isoDay(back), kind, ctrl.signal)).carriers)
       } catch {
@@ -129,12 +134,13 @@ export function useLeads(kind: LeadKind = 'carrier') {
     const at = new Date().toISOString()
     setFetchedAt(at)
     save(kind, { rows: list, fresh: [...freshNow], days: n, fetchedAt: at })
-    if (!failed) rememberSeen(seen, list, dates[dates.length - 1], kind)
+    const span = extraDays ? `the last ${2 + extraDays} days` : dayWord(n)
+    if (!failed) rememberSeen(seen, list, extraDays ? isoDay(1 + extraDays) : dates[dates.length - 1], kind)
     setStatus(failed
       ? { text: `Loaded with ${failed} day(s) missing — FMCSA did not answer. Press the button again to retry.`, tone: 'error' }
       : partial
-        ? { text: `${list.length.toLocaleString('en-US')} new ${list.length === 1 ? one : many} from ${dayWord(n)}. FMCSA’s contact file is not answering right now, so emails are missing for ${partial} day(s) — phone and address are shown. Try again later for emails.`, tone: 'error' }
-        : { text: `${list.length.toLocaleString('en-US')} new ${list.length === 1 ? one : many} from ${dayWord(n)}.`, tone: 'info' })
+        ? { text: `${list.length.toLocaleString('en-US')} new ${list.length === 1 ? one : many} from ${span}. FMCSA’s contact file is not answering right now, so emails are missing for ${partial} day(s) — phone and address are shown. Try again later for emails.`, tone: 'error' }
+        : { text: `${list.length.toLocaleString('en-US')} new ${list.length === 1 ? one : many} from ${span}.${extraDays ? ' FMCSA hasn’t posted most of today’s and yesterday’s grants yet, so earlier days are included.' : ''}`, tone: 'info' })
   }, [kind, one, many])
 
   const stop = useCallback(() => {
