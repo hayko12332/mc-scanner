@@ -6,6 +6,7 @@ import { Icon, type IconName } from '../components/Icon'
 import { Pill, StatusPill } from '../components/ui'
 import { track } from '../lib/analytics'
 import { entityLabel } from '../lib/carrier'
+import posthog, { isPostHogConfigured } from '../lib/posthog'
 import { formatPhone } from '../lib/format'
 import { checkSafer } from '../lib/safer'
 import type { CarrierProfile, LookupResult, LookupType, SaferChecked } from '../types'
@@ -131,10 +132,19 @@ export function LookupPage({ hash, copy }: { hash: string; copy: (text: string) 
       .then((r) => {
         setResult(r)
         track('lookup', { q, type, kinds: r.kinds.join('+'), results: r.profiles.length })
+        if (isPostHogConfigured()) {
+          posthog.capture('lookup_completed', {
+            lookup_type: type,
+            matched_types: r.kinds.join('+'),
+            result_count: r.profiles.length,
+            results_truncated: r.truncated,
+          })
+        }
       }, (e: Error) => {
         if (ctrl.signal.aborted) return
         setError(e.message)
         track('lookup_error', { q, type, error: e.message.slice(0, 120) })
+        if (isPostHogConfigured()) posthog.capture('lookup_failed', { lookup_type: type })
       })
       .finally(() => !ctrl.signal.aborted && setLoading(false))
     return () => ctrl.abort()

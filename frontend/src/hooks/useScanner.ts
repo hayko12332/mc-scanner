@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { api, ApiError } from '../api'
 import { carrierKey } from '../lib/carrier'
 import { sleep } from '../lib/format'
+import posthog, { isPostHogConfigured } from '../lib/posthog'
 import { verifyWithSafer } from '../lib/safer'
 import type { LeadKind, ScannedCarrier } from '../types'
 
@@ -80,6 +81,9 @@ export function useScanner(initial: Partial<ScanProgress>, onAdvance: (nextMc: n
     let mc = first
     let emptyStreak = 0
     let checkedThisRun = 0
+    let foundThisRun = 0
+    let rejectedThisRun = 0
+    let outcome: 'completed' | 'paused' | 'failed' = 'completed'
     const startedAt = performance.now()
     let final: Status
 
@@ -116,10 +120,12 @@ export function useScanner(initial: Partial<ScanProgress>, onAdvance: (nextMc: n
         if (settings.useSafer && fresh.length) {
           const { verified, rejected } = await verifyWithSafer(fresh, concurrency, ctrl.signal, say, settings.kind ?? 'carrier')
           kept = verified
+          rejectedThisRun += rejected
           setSaferRejected((n) => n + rejected)
         }
 
         kept.forEach((c) => seen.current.add(carrierKey(c)))
+        foundThisRun += kept.length
         setRows((prev) => [...prev, ...kept])
         const count = to - mc + 1
         setChecked((n) => n + count)
@@ -141,6 +147,7 @@ export function useScanner(initial: Partial<ScanProgress>, onAdvance: (nextMc: n
         if (delay) await sleep(delay, ctrl.signal)
       }
     } catch (e) {
+      outcome = isAbort(e) ? 'paused' : 'failed'
       final = isAbort(e)
         ? { text: `Paused. Next MC: ${mc}.`, tone: 'info' }
         : { text: `Stopped at MC ${mc}: ${(e as Error).message}. Press Start to continue.`, tone: 'error' }
@@ -149,6 +156,23 @@ export function useScanner(initial: Partial<ScanProgress>, onAdvance: (nextMc: n
       setRunning(false)
     }
     setStatus(final)
+    if (isPostHogConfigured()) {
+      const logAttributes = {
+        outcome,
+        kind: settings.kind ?? 'carrier',
+        checked_count: checkedThisRun,
+        result_count: foundThisRun,
+        safer_enabled: settings.useSafer,
+        safer_rejected_count: rejectedThisRun,
+        duration_seconds: Math.round((performance.now() - startedAt) / 1000),
+      }
+      posthog.capture('scan_completed', logAttributes)
+      if (outcome === 'failed') {
+        posthog.logger.warn('scan_completed', logAttributes)
+      } else {
+        posthog.logger.info('scan_completed', logAttributes)
+      }
+    }
   }, [onAdvance])
 
   const stop = useCallback(() => abort.current?.abort(), [])

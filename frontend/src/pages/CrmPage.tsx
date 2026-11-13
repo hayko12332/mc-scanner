@@ -6,6 +6,7 @@ import { LoadsTable } from '../components/crm/LoadsTable'
 import { SignIn } from '../components/crm/SignIn'
 import { Icon } from '../components/Icon'
 import { track } from '../lib/analytics'
+import posthog, { isPostHogConfigured } from '../lib/posthog'
 import { crm, CrmError, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
 import { crmDemo } from '../lib/crmDemo'
 
@@ -65,14 +66,32 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   const [error, setError] = useState('')
   const [theme, setThemeState] = useState<Theme>(readTheme)
   const [demo, setDemoState] = useState(readDemo)
+  const identifiedUserId = useRef<string | null>(null)
   const api = demo ? crmDemo : crm
-  const setDemo = (on: boolean) => { writeDemo(on); setDemoState(on); setState(null) }
+  const setDemo = (on: boolean) => {
+    if (on && identifiedUserId.current && isPostHogConfigured()) {
+      posthog.reset()
+      identifiedUserId.current = null
+    }
+    writeDemo(on)
+    setDemoState(on)
+    setState(null)
+  }
   const setTheme = (t: Theme) => {
     setThemeState(t)
     try { localStorage.setItem(THEME_KEY, t) } catch { /* the choice just isn't remembered */ }
   }
 
-  const reload = useCallback(() => (demo ? crmDemo : crm).state().then((s) => { setState(s); setSignedOut(false) }, (e: CrmError) => {
+  const reload = useCallback(() => (demo ? crmDemo : crm).state().then((s) => {
+    const userId = String(s.user.id)
+    if (!demo && isPostHogConfigured() && identifiedUserId.current !== userId) {
+      if (identifiedUserId.current) posthog.reset()
+      posthog.identify(userId, { email: s.user.email, name: s.user.name })
+      identifiedUserId.current = userId
+    }
+    setState(s)
+    setSignedOut(false)
+  }, (e: CrmError) => {
     if (e.status === 401) setSignedOut(true)
     else setError(e.message)
   }), [demo])
@@ -122,6 +141,15 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
     const tempId = -Date.now()
     const saved = await optimistic((s) => ({ ...s, loads: [{ ...l, id: tempId }, ...s.loads] }), () => api.addLoad(l)) as Load
     setState((s) => (s ? { ...s, loads: s.loads.map((x) => (x.id === tempId ? saved : x)) } : s))
+    if (isPostHogConfigured()) {
+      posthog.capture('crm_load_created', {
+        has_carrier: l.carrierId != null,
+        has_truck: l.truckId != null,
+        has_dispatcher: l.dispatcherId != null,
+        has_lane: Boolean(l.origin && l.destination),
+        has_rate: l.rate > 0,
+      })
+    }
   }
 
   const closeLoad = useCallback(() => setOpenId(null), [])
@@ -196,7 +224,12 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
     <div className="w-user" title={state.user.email}>
       {state.user.picture ? <img src={state.user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{state.user.name.slice(0, 1)}</span>}
       <span>{state.user.name}</span>
-      <button className="w-link" onClick={() => (demo ? Promise.resolve(setDemo(false)) : crm.logout().then(() => { setState(null); setSignedOut(true) }))}>{demo ? 'Exit demo' : 'Sign out'}</button>
+      <button className="w-link" onClick={() => (demo ? Promise.resolve(setDemo(false)) : crm.logout().then(() => {
+        if (isPostHogConfigured()) posthog.reset()
+        identifiedUserId.current = null
+        setState(null)
+        setSignedOut(true)
+      }))}>{demo ? 'Exit demo' : 'Sign out'}</button>
     </div>
   )
 
@@ -221,6 +254,7 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
           importLoads={(rows) => act(async () => {
             const r = await api.importLoads(rows)
             track('crm_import', { rows: r.imported })
+            if (isPostHogConfigured()) posthog.capture('crm_loads_imported', { imported_count: r.imported })
             toast(`Imported ${r.imported} loads`)
           })}
         />
@@ -243,7 +277,9 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
       {tab === 'carriers' && (
         <CarriersView
           state={state}
-          add={(c) => act(() => api.addCarrier(c), 'Carrier added')}
+          add={(c) => act(() => api.addCarrier(c), 'Carrier added').then(() => {
+            if (isPostHogConfigured()) posthog.capture('crm_carrier_added', { has_mc: Boolean(c.mc), has_dot: Boolean(c.dot) })
+          })}
           update={(c) => optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c))}
           remove={(id) => act(() => api.removeCarrier(id))}
         />
@@ -252,7 +288,9 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
       {tab === 'trucks' && (
         <TrucksView
           state={state}
-          add={(t) => act(() => api.addTruck(t), 'Truck added')}
+          add={(t) => act(() => api.addTruck(t), 'Truck added').then(() => {
+            if (isPostHogConfigured()) posthog.capture('crm_truck_added', { has_carrier: t.carrierId != null, has_driver: Boolean(t.driver) })
+          })}
           update={(t) => optimistic((s) => ({ ...s, trucks: s.trucks.map((x) => (x.id === t.id ? t : x)) }), () => api.updateTruck(t.id, t))}
           remove={(id) => act(() => api.removeTruck(id))}
         />
@@ -260,7 +298,9 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
       {tab === 'dispatchers' && (
         <DispatchersView
           state={state}
-          add={(d) => act(() => api.addDispatcher(d), 'Dispatcher added')}
+          add={(d) => act(() => api.addDispatcher(d), 'Dispatcher added').then(() => {
+            if (isPostHogConfigured()) posthog.capture('crm_dispatcher_added', { has_commission: d.percent > 0 })
+          })}
           save={(d) => optimistic((s) => ({ ...s, dispatchers: s.dispatchers.map((x) => (x.id === d.id ? d : x)) }), () => api.updateDispatcher(d))}
           remove={(id) => act(() => api.removeDispatcher(id))}
         />
