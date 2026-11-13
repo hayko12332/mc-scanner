@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import { api } from '../api'
 import { isNewSince, loadSeen, rememberSeen } from '../lib/seenLeads'
+import posthog, { isPostHogConfigured } from '../lib/posthog'
 import { KIND_NOUN, type LeadKind, type ScannedCarrier } from '../types'
 import type { Status } from './useScanner'
 
@@ -136,6 +137,23 @@ export function useLeads(kind: LeadKind = 'carrier') {
     save(kind, { rows: list, fresh: [...freshNow], days: n, fetchedAt: at })
     const span = extraDays ? `the last ${2 + extraDays} days` : dayWord(n)
     if (!failed) rememberSeen(seen, list, extraDays ? isoDay(1 + extraDays) : dates[dates.length - 1], kind)
+    if (isPostHogConfigured()) {
+      const logAttributes = {
+        kind,
+        requested_days: n,
+        extra_days: extraDays,
+        result_count: list.length,
+        new_result_count: freshNow.size,
+        failed_day_count: failed,
+        partial_day_count: partial,
+      }
+      posthog.capture('lead_search_completed', logAttributes)
+      if (failed || partial) {
+        posthog.logger.warn('lead_search_completed', logAttributes)
+      } else {
+        posthog.logger.info('lead_search_completed', logAttributes)
+      }
+    }
     setStatus(failed
       ? { text: `Loaded with ${failed} day(s) missing — FMCSA did not answer. Press the button again to retry.`, tone: 'error' }
       : partial

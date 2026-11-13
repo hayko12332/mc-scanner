@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api } from '../api'
 import { Icon } from '../components/Icon'
 import { currentVisitorId } from '../lib/analytics'
+import posthog, { isPostHogConfigured } from '../lib/posthog'
 import { telegramInitData } from '../lib/telegram'
 
 const MAX = 3000
@@ -40,6 +41,7 @@ export function FeedbackPage({ groupUrl, supportUrl }: { groupUrl: string; suppo
         visitorId: currentVisitorId(),
         tgInitData: telegramInitData(),
       })
+      if (isPostHogConfigured()) posthog.capture('feedback_submitted')
       setStatus('sent')
       setMessage('')
     } catch (err) {

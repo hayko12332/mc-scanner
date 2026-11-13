@@ -3,8 +3,10 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { initAnalytics } from './lib/analytics'
+import { initPostHog } from './lib/posthog'
 import { initTelegram } from './lib/telegram'
 
+initPostHog()
 initTelegram()
 // Deep links from the Telegram bot: ?view=leads opens New MC leads (and starts loading), ?view=lookup the lookup.
 const view = new URLSearchParams(location.search).get('view')
