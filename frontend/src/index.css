@@ -1755,18 +1755,13 @@ button.linkish:hover { text-decoration: underline; }
 .work.theme-dark .pill.st-paid { background: rgba(34, 197, 94, 0.16); color: #86efac; }
 .pill select option { color: #0f172a; background: #fff; }
 
-/* Week subtotal rows and the total */
-.lb-week td { padding: 7px 10px; background: var(--surface-2); font-size: 12.5px; white-space: nowrap; }
-.lb-week td:first-child, .lb tfoot td:first-child { padding-left: 14px; }
-.lb-week td > b, .lb tfoot td > b { display: inline; margin-right: 12px; font-weight: 700; }
-.lb-week td > span, .lb tfoot td > span { margin-right: 12px; color: var(--muted); }
-.lb-week.current td:first-child > b:first-child { color: var(--accent); }
+/* Subtotal rows (each week, and the total): two lines like the loads, numbers in their own columns */
+.lb-sum td { padding: 8px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.lb-sum td > b { font-weight: 700; }
+.lb-sum.current td:nth-child(2) > b { color: var(--accent); }
 .lb .wk-gross { color: var(--ok); font-weight: 700; font-variant-numeric: tabular-nums; }
-.lb-pay { margin-left: 6px; padding-left: 14px; border-left: 1px solid var(--border); color: var(--muted); }
-.lb-pay span { margin-right: 10px; }
-.lb-week td:first-child, .lb tfoot td:first-child { text-overflow: ellipsis; }
-.lb-pay b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
-.lb tfoot td { position: sticky; bottom: 0; padding: 9px 10px; background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 0; font-size: 12.5px; white-space: nowrap; }
+.lb-sum .lb-disp { cursor: help; }
+.lb tfoot .lb-sum td { position: sticky; bottom: 0; z-index: 1; border-top: 1px solid var(--border); border-bottom: 0; }
 .lb .lt-empty td { padding: 32px; text-align: center; color: var(--muted); white-space: normal; }
 .lb .lt-empty button { margin-left: 8px; }
 
@@ -1793,11 +1788,11 @@ button.linkish:hover { text-decoration: underline; }
   .lb .lb-disp { display: none; }
   .lb-route { flex-wrap: wrap; row-gap: 0 !important; }
   .lb-route span { white-space: normal !important; }
-  .lb-week, .lb tfoot tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 9px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
-  .lb-week td, .lb tfoot td { display: block; padding: 0 !important; border: 0; background: none; white-space: normal; position: static; }
-  .lb-week td:first-child, .lb tfoot td:first-child { flex: 1 1 100%; }
-  .lb-week td:empty, .lb tfoot td:empty { display: none; }
-  .lb-pay { display: block; margin: 4px 0 0; padding: 0; border: 0; }
+  .lb-sum { display: flex; align-items: flex-start; gap: 14px; padding: 9px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .lb-sum td { display: block; padding: 0 !important; border: 0 !important; background: none; position: static !important; }
+  .lb-sum td:empty, .lb-sum .lb-check { display: none; }
+  .lb-sum td:nth-child(2) { flex: 1; min-width: 0; }
+  .lb-sum .lb-disp { display: block !important; text-align: right; }
   .lb .lt-empty { display: block; } .lb .lt-empty td { display: block; }
 }
 

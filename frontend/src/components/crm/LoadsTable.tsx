@@ -228,6 +228,25 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
 
   const COLS = 8
 
+  /** Subtotal row (a week, or everything shown): each number sits in its own column, two lines like the loads. */
+  const sumRow = (cls: string, label: string, t: { count: number; miles: number; milesGross: number; gross: number; pay: Map<number, number> }) => {
+    const payTotal = [...t.pay.values()].reduce((a, b) => a + b, 0)
+    const payBy = [...t.pay].sort((a, b) => b[1] - a[1]).map(([id, p]) => `${dispatcherName.get(id) ?? '—'} ${usd(Math.round(p))}`).join(' · ')
+    return (
+      <tr className={cls}>
+        <td className="lb-check" />
+        <td colSpan={2}><b>{label}</b><small>{t.count} {t.count === 1 ? 'load' : 'loads'}</small></td>
+        <td><b>{t.miles ? `${fmtMiles(t.miles)} mi` : ''}</b><small>{t.miles ? 'loaded' : ''}</small></td>
+        <td />
+        <td className="lb-num lb-rate"><b className="wk-gross">{usd(t.gross)}</b><small>{t.miles ? `${fmtRpm(rpm(t.milesGross, t.miles))}/mi` : ''}</small></td>
+        <td className="lb-disp" title={payBy ? `Dispatcher pay: ${payBy}` : undefined}>
+          {payTotal > 0 && <><b>{usd(Math.round(payTotal))}</b><small>dispatcher pay</small></>}
+        </td>
+        <td />
+      </tr>
+    )
+  }
+
   return (
     <div className="lt">
       <div className="lt-top">
@@ -332,20 +351,8 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
               return (
                 <Fragment key={l.id}>
                   {newWeek && sub && (
-                    <tr className={`lb-week ${w === thisWeek ? 'current' : ''}`}>
-                      <td colSpan={5}>
-                        <b>{w === thisWeek ? 'This week · ' : 'Week of '}{shortDate(w)} – {shortDate(addDays(w, 6))}</b>
-                        <span>{sub.count} {sub.count === 1 ? 'load' : 'loads'}</span>
-                        {sub.miles > 0 && <span>{fmtMiles(sub.miles)} mi · {fmtRpm(rpm(sub.milesGross, sub.miles))}/mi</span>}
-                        {sub.pay.size > 0 && (
-                          <span className="lb-pay" title="Dispatcher pay this week">
-                            {[...sub.pay].map(([id, p]) => <span key={id}>{dispatcherName.get(id)} <b>{usd(Math.round(p))}</b></span>)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="lb-num"><b className="wk-gross">{usd(sub.gross)}</b></td>
-                      <td colSpan={2} />
-                    </tr>
+                    sumRow(`lb-sum ${w === thisWeek ? 'current' : ''}`,
+                      `${w === thisWeek ? 'This week · ' : 'Week of '}${shortDate(w)} – ${shortDate(addDays(w, 6))}`, sub)
                   )}
                   <tr className={`lb-row ${selected.has(l.id) ? 'sel' : ''}`} onClick={(e) => onRowClick(e, l.id)}>
                     <td className="lb-check"><input type="checkbox" aria-label="Select load" checked={selected.has(l.id)} onChange={() => toggle(l.id)} /></td>
@@ -390,14 +397,10 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
           </tbody>
           {rows.length > 0 && (
             <tfoot>
-              <tr>
-                <td colSpan={5}>
-                  <b>{rows.length} {rows.length === 1 ? 'load' : 'loads'}</b>
-                  {loaded > 0 && <span>{fmtMiles(loaded)} mi · {fmtRpm(avgRpm)}/mi</span>}
-                </td>
-                <td className="lb-num"><b className="wk-gross">{usd(total)}</b></td>
-                <td colSpan={2} className="lb-pay">{dispatchers.length > 0 && <span>Dispatcher pay <b>{usd(Math.round(totalPay))}</b></span>}</td>
-              </tr>
+              {sumRow('lb-sum total', period === 'all' ? 'All loads' : PERIODS.find(([id]) => id === period)![1], {
+                count: rows.length, miles: loaded, milesGross, gross: total,
+                pay: new Map([...weeks.values()].flatMap((x) => [...x.pay]).reduce((m, [id, p]) => m.set(id, (m.get(id) ?? 0) + p), new Map<number, number>())),
+              })}
             </tfoot>
           )}
         </table>
