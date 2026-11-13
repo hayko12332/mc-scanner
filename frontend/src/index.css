@@ -1598,7 +1598,7 @@ button.linkish:hover { text-decoration: underline; }
 
 /* ---------- Loads table: truck, miles, RPM, overdue, open ---------- */
 .work .lt-kpis.five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
-@media (max-width: 1100px) { .work .lt-kpis.five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 900px) { .work .lt-kpis.five { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .work .lt-kpis.five { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .work .lt-table.loads { min-width: 1180px; }
 .lt-table th.c-num, .lt-table td.c-num { text-align: right; }
@@ -1701,3 +1701,119 @@ button.linkish:hover { text-decoration: underline; }
   background-repeat: no-repeat; background-position: right 8px center; background-size: 12px; }
 .pv-table td .cell-select { color: var(--text); }
 .pv-sub th.pv-group { text-align: center !important; } .pv-sub th.pv-group::before, .pv-sub th.pv-group::after { content: ''; display: inline-block; width: 30%; height: 1px; margin: 0 10px; vertical-align: middle; background: var(--border); }
+
+/* Load board (lb): one row per load, two-line cells, row opens the load panel — the layout common TMS load lists use */
+.lb { width: 100%; min-width: 860px; table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.lb-w-check { width: 40px; } .lb-w-date { width: 76px; } .lb-w-load { width: 21%; } .lb-w-lane { width: auto; }
+.lb-w-carrier { width: 17%; } .lb-w-rate { width: 104px; } .lb-w-disp { width: 112px; } .lb-w-status { width: 128px; }
+.lb th {
+  position: sticky; top: 0; z-index: 2; height: 34px; padding: 0 10px; text-align: left; white-space: nowrap;
+  font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--border);
+}
+.lb th .th-sort { display: inline-flex; align-items: center; height: 34px; }
+.lb th .th-sort + .th-sort { margin-left: 6px; }
+.lb th .th-plain { margin-right: 6px; }
+.lb th.lb-num { text-align: right; }
+.lb td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; overflow: hidden; }
+.lb td > b, .lb td > small, .lb td > em { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lb td > b { font-weight: 600; color: var(--text); line-height: 1.35; }
+.lb td > small { margin-top: 2px; font-size: 12px; color: var(--muted); line-height: 1.3; font-variant-numeric: tabular-nums; }
+.lb td em { font-style: normal; color: var(--muted); font-weight: 400; }
+.lb .lb-check, .lb th.lb-check { width: 40px; padding: 0 0 0 14px; }
+.lb .lb-num { text-align: right; }
+.lb-row { cursor: pointer; }
+.lb-row:hover td { background: var(--row-hover); }
+.lb-row.sel td { background: var(--accent-soft) !important; }
+.lb-date b { font-variant-numeric: tabular-nums; }
+.lb-lane .lb-route { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-weight: 500; line-height: 1.35; }
+.lb-route span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lb-route i { flex: none; font-style: normal; color: var(--muted); font-size: 12px; }
+.lb-rate b { font-size: 13.5px; }
+.lb-rate .plus { margin-left: 2px; font-style: normal; font-size: 11px; font-weight: 700; color: var(--ok); vertical-align: 1px; }
+.lb-disp .cell-select { width: 100%; height: 28px; margin-left: -8px; color: var(--text); }
+.lb-status { padding-right: 14px !important; }
+.lb-status .late { margin-top: 3px; color: var(--bad); font-weight: 600; }
+
+/* Status pill: the colored chip itself is the menu */
+.pill { position: relative; display: inline-flex; align-items: center; max-width: 100%; height: 24px; padding: 0 9px 0 22px; border-radius: 999px;
+  font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--text); cursor: pointer; }
+.pill::before { content: ''; position: absolute; left: 9px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: currentColor; }
+.pill select { appearance: none; -webkit-appearance: none; max-width: 100%; height: 24px; padding: 0 14px 0 0 !important; border: 0; background: none !important;
+  color: inherit; font: inherit; cursor: pointer; outline: none; }
+.pill::after { content: ''; position: absolute; right: 8px; top: 50%; width: 5px; height: 5px; margin-top: -4px; border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor; transform: rotate(45deg); opacity: 0.55; pointer-events: none; }
+.pill:focus-within { box-shadow: 0 0 0 2px var(--accent); }
+.pill.st-booked { background: #dbeafe; color: #1d4ed8; }
+.pill.st-in_transit { background: #fef3c7; color: #a16207; }
+.pill.st-delivered { background: #ede9fe; color: #6d28d9; }
+.pill.st-invoiced { background: #ffedd5; color: #c2410c; }
+.pill.st-paid { background: #dcfce7; color: #15803d; }
+.work.theme-dark .pill.st-booked { background: rgba(59, 130, 246, 0.18); color: #93c5fd; }
+.work.theme-dark .pill.st-in_transit { background: rgba(234, 179, 8, 0.16); color: #fde047; }
+.work.theme-dark .pill.st-delivered { background: rgba(139, 92, 246, 0.2); color: #c4b5fd; }
+.work.theme-dark .pill.st-invoiced { background: rgba(249, 115, 22, 0.18); color: #fdba74; }
+.work.theme-dark .pill.st-paid { background: rgba(34, 197, 94, 0.16); color: #86efac; }
+.pill select option { color: #0f172a; background: #fff; }
+
+/* Week subtotal rows and the total */
+.lb-week td { padding: 7px 10px; background: var(--surface-2); font-size: 12.5px; white-space: nowrap; }
+.lb-week td:first-child, .lb tfoot td:first-child { padding-left: 14px; }
+.lb-week td > b, .lb tfoot td > b { display: inline; margin-right: 12px; font-weight: 700; }
+.lb-week td > span, .lb tfoot td > span { margin-right: 12px; color: var(--muted); }
+.lb-week.current td:first-child > b:first-child { color: var(--accent); }
+.lb .wk-gross { color: var(--ok); font-weight: 700; font-variant-numeric: tabular-nums; }
+.lb-pay { margin-left: 6px; padding-left: 14px; border-left: 1px solid var(--border); color: var(--muted); }
+.lb-pay span { margin-right: 10px; }
+.lb-week td:first-child, .lb tfoot td:first-child { text-overflow: ellipsis; }
+.lb-pay b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.lb tfoot td { position: sticky; bottom: 0; padding: 9px 10px; background: var(--surface-2); border-top: 1px solid var(--border); border-bottom: 0; font-size: 12.5px; white-space: nowrap; }
+.lb .lt-empty td { padding: 32px; text-align: center; color: var(--muted); white-space: normal; }
+.lb .lt-empty button { margin-left: 8px; }
+
+@media (max-width: 1100px) {
+  .lb-w-disp { width: 0; }
+  .lb .lb-disp { padding: 0 !important; border-left: 0; }
+  .lb .lb-disp > * { display: none; }
+  .lb-w-load { width: 23%; } .lb-w-carrier { width: 19%; }
+}
+/* Phones: each load is a card — broker and rate on top, lane and status, carrier and pickup date */
+@media (max-width: 700px) {
+  .lb, .lb tbody, .lb tfoot { display: block; min-width: 0; width: 100%; }
+  .lb colgroup, .lb thead { display: none; }
+  .lb-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; column-gap: 10px; row-gap: 6px; padding: 11px 12px;
+    grid-template-areas: "chk load rate" "chk lane status" "chk carrier date"; border-bottom: 1px solid var(--border); }
+  .lb-row td { padding: 0 !important; border: 0; min-width: 0; }
+  .lb-row:hover td { background: none; }
+  .lb-row.sel { background: var(--accent-soft); }
+  .lb .lb-check { grid-area: chk; padding-top: 2px !important; }
+  .lb-load { grid-area: load; } .lb-rate { grid-area: rate; } .lb-lane { grid-area: lane; } .lb-carrier { grid-area: carrier; }
+  .lb-status { grid-area: status; text-align: right; } .lb-status .late { text-align: right; }
+  .lb-date { grid-area: date; text-align: right; align-self: end; }
+  .lb-date b, .lb-date small { display: inline !important; margin: 0 0 0 4px; font-size: 12px; font-weight: 500; color: var(--muted); }
+  .lb .lb-disp { display: none; }
+  .lb-route { flex-wrap: wrap; row-gap: 0 !important; }
+  .lb-route span { white-space: normal !important; }
+  .lb-week, .lb tfoot tr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 9px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .lb-week td, .lb tfoot td { display: block; padding: 0 !important; border: 0; background: none; white-space: normal; position: static; }
+  .lb-week td:first-child, .lb tfoot td:first-child { flex: 1 1 100%; }
+  .lb-week td:empty, .lb tfoot td:empty { display: none; }
+  .lb-pay { display: block; margin: 4px 0 0; padding: 0; border: 0; }
+  .lb .lt-empty { display: block; } .lb .lt-empty td { display: block; }
+}
+
+/* New-load form extras */
+.ld-added { margin-top: 6px !important; font-size: 12.5px !important; color: var(--ok) !important; font-weight: 600; }
+.ld-note.bad { color: var(--bad); font-weight: 600; }
+.ld-foot-r { display: flex; gap: 8px; }
+.ld-foot .ghost { padding: 7px 14px !important; }
+.ld-input input[list]::-webkit-calendar-picker-indicator { display: none !important; }
+
+.w-link { white-space: nowrap; }
+@media (max-width: 1180px) { .w-user > span:not(.avatar) { display: none; } }
+@media (max-width: 1100px) { .work .lt-kpis.five > div { padding: 12px 14px; } .work .lt-kpis.five b { font-size: 18px; } .work .lt-kpis.five small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; } }
+@media (max-width: 1180px) { .w-right a.w-link { font-size: 0 !important; gap: 0 !important; padding: 6px 8px !important; } }
+/* The section tabs scroll sideways on phones instead of widening the page */
+.w-tabs { min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.w-tabs::-webkit-scrollbar { display: none; }
+.w-tabs button { flex: none; white-space: nowrap; }
+.work { max-width: 100vw; overflow-x: clip; }

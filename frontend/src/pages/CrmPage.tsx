@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { CarriersView, DispatchersView, TrucksView } from '../components/crm/PeopleViews'
 import { StatementsView } from '../components/crm/StatementsView'
-import { LoadDrawer } from '../components/crm/LoadDrawer'
+import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { SignIn } from '../components/crm/SignIn'
 import { Icon } from '../components/Icon'
@@ -60,6 +60,8 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   const [tab, setTab] = useState<Tab>('loads')
   /** Load open in the side panel. */
   const [openId, setOpenId] = useState<number | null>(null)
+  /** New-load form open, with the carrier/dispatcher it starts from. */
+  const [creating, setCreating] = useState<{ carrierId: string; dispatcherId: string } | null>(null)
   const [error, setError] = useState('')
   const [theme, setThemeState] = useState<Theme>(readTheme)
   const [demo, setDemoState] = useState(readDemo)
@@ -123,6 +125,8 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   }
 
   const closeLoad = useCallback(() => setOpenId(null), [])
+  const closeNew = useCallback(() => setCreating(null), [])
+  const newLoad = useCallback((d: { carrierId: string; dispatcherId: string }) => setCreating(d), [])
 
   // Loaded miles fill themselves in: every load with a lane and no miles is looked up on the map in the background,
   // one at a time (each lane once; the server remembers lanes, so repeats are instant).
@@ -201,9 +205,9 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
       {tab === 'loads' && (
         <LoadsTable
           state={state}
-          addLoad={addLoad}
           updateLoad={updateLoad}
           openLoad={setOpenId}
+          newLoad={newLoad}
           updateMany={(loads, patch) => optimistic(
             patchLoads(new Set(loads.map((l) => l.id)), (l) => ({ ...l, ...patch(l) })),
             () => Promise.all(loads.map((l) => api.updateLoad(l.id, { ...l, ...patch(l) }))),
@@ -231,6 +235,10 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
           close={closeLoad}
           miles={api.miles}
         />
+      )}
+      {creating && (
+        <NewLoadDrawer state={state} defaults={creating} close={closeNew} miles={api.miles}
+          add={(l) => addLoad(l).then(() => track('crm_add_load'))} />
       )}
       {tab === 'carriers' && (
         <CarriersView

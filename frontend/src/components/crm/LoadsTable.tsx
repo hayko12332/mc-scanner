@@ -1,7 +1,7 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { saveFile } from '../../lib/export'
 import {
-  addDays, carrierFee, extras, fmtMiles, fmtRpm, gross, LOAD_EXTRAS, overdueDays, rpm, shortDate, STATUSES, today, usd, weekStart,
+  addDays, carrierFee, extras, fmtMiles, fmtRpm, gross, overdueDays, rpm, shortDate, STATUSES, today, usd, weekStart,
   withStatusDates, type CrmState, type ImportRow, type Load, type LoadInput, type LoadStatus,
 } from '../../lib/crm'
 import { buildXlsx } from '../../lib/xlsx'
@@ -14,8 +14,7 @@ type Tab = LoadStatus | 'all' | 'overdue'
 
 const PERIODS: [Period, string][] = [['week', 'This week'], ['last', 'Last week'], ['month', 'This month'], ['all', 'All time']]
 const statusLabel = (s: LoadStatus) => STATUSES.find((x) => x.id === s)?.label ?? s
-const money = (s: string) => Number(s.replace(/[$,\s]/g, '')) || 0
-const whole = (s: string) => Math.max(0, Math.round(Number(s.replace(/[,\s]/g, '')) || 0))
+const weekday = (d: string) => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })
 
 /** "SHOW LOW, AZ 85901" → "Show Low, AZ 85901"; text typed in mixed case is left alone. */
 export function place(s: string) {
@@ -76,17 +75,22 @@ export function EditSelect({ value, options, onSave, label }: { value: string; o
 
 interface Props {
   state: CrmState
-  addLoad: (l: LoadInput) => Promise<unknown>
   updateLoad: (id: number, l: LoadInput) => Promise<unknown>
   /** Applies a change to several loads; the change can depend on each load (e.g. keep its own invoice date). */
   updateMany: (loads: Load[], patch: (l: Load) => Partial<LoadInput>) => Promise<unknown>
   removeMany: (ids: number[]) => Promise<unknown>
   importLoads: (rows: ImportRow[]) => Promise<unknown>
   openLoad: (id: number) => void
+  /** Opens the new-load form; the current carrier/dispatcher filters become its defaults. */
+  newLoad: (defaults: { carrierId: string; dispatcherId: string }) => void
 }
 
-/** The load journal: status tabs, filters, KPIs, an editable table with weekly subtotals, bulk actions. */
-export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany, importLoads, openLoad }: Props) {
+/**
+ * The load board, laid out like the load lists of common TMSs: one row per load with two-line cells
+ * (broker over load #, lane over miles, carrier over truck/driver, rate over RPM), status changed right in the row,
+ * everything else in the load panel that opens on a click. Weekly subtotals, KPIs, bulk actions.
+ */
+export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLoads, openLoad, newLoad }: Props) {
   const { carriers, dispatchers, trucks } = state
   const [tab, setTab] = useState<Tab>('all')
   const [period, setPeriod] = useState<Period>('all')
@@ -95,7 +99,6 @@ export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany,
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'date', desc: true })
   const [importing, setImporting] = useState(false)
-  const [adding, setAdding] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
   const carrierById = useMemo(() => new Map(carriers.map((c) => [c.id, c])), [carriers])
@@ -107,19 +110,21 @@ export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany,
     const t = id == null ? null : truckById.get(id)
     return t ? (t.unit ? `#${t.unit}` : t.driver) : ''
   }
+  const add = () => newLoad({ carrierId, dispatcherId })
 
-  // "N" opens the new-load row, unless you are typing somewhere.
+  // "N" opens the new-load form, unless you are typing somewhere or a panel is open.
   useEffect(() => {
     const onKey = (e: globalThis.KeyboardEvent) => {
       const t = e.target as HTMLElement
-      if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey && !/INPUT|SELECT|TEXTAREA/.test(t.tagName)) {
+      if (e.key.toLowerCase() === 'n' && !e.metaKey && !e.ctrlKey && !e.altKey && !/INPUT|SELECT|TEXTAREA/.test(t.tagName)
+        && !document.querySelector('.ld-backdrop')) {
         e.preventDefault()
-        setAdding(true)
+        newLoad({ carrierId, dispatcherId })
       }
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
-  }, [])
+  }, [newLoad, carrierId, dispatcherId])
 
   const r = range(period)
   const filtersOk = (l: Load) => {
@@ -192,15 +197,11 @@ export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany,
   // Changes show at once; a failed save is reported by the page and the data reloads, so nothing to do here.
   const quiet = (p: Promise<unknown>) => { p.catch(() => undefined) }
   const save = (l: Load, patch: Partial<LoadInput>) => quiet(updateLoad(l.id, { ...l, ...patch }))
-  // A new lane needs new miles: they are calculated again automatically.
-  const saveLane = (l: Load, patch: Partial<LoadInput>) => save(l, { ...patch, loadedMiles: 0 })
   const sortBy = (k: SortKey) => setSort((s) => ({ key: k, desc: s.key === k ? !s.desc : ['date', 'rate', 'miles', 'rpm'].includes(k) }))
-  const th = (k: SortKey, label: string, cls = '') => (
-    <th className={cls}>
-      <button type="button" className={`th-sort ${sort.key === k ? 'on' : ''}`} onClick={() => sortBy(k)}>
-        {label}<span className="arrow">{sort.key === k ? (sort.desc ? '↓' : '↑') : ''}</span>
-      </button>
-    </th>
+  const sortBtn = (k: SortKey, label: string) => (
+    <button type="button" className={`th-sort ${sort.key === k ? 'on' : ''}`} onClick={() => sortBy(k)}>
+      {label}<span className="arrow">{sort.key === k ? (sort.desc ? '↓' : '↑') : ''}</span>
+    </button>
   )
 
   const exportXlsx = () => {
@@ -218,13 +219,14 @@ export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany,
     ], data), `loads_${today()}.xlsx`)
   }
 
-  const truckOptions = (l: Load): [string, string][] => [
-    ['', '—'],
-    ...trucks.filter((t) => l.carrierId == null || t.carrierId === l.carrierId || t.id === l.truckId)
-      .map((t): [string, string] => [String(t.id), t.unit ? `#${t.unit}` : t.driver]),
-  ]
+  /** A click anywhere on a row opens the load, except on its checkbox and in-row menus. */
+  const onRowClick = (e: MouseEvent, id: number) => {
+    if ((e.target as HTMLElement).closest('input, select, button, a, label')) return
+    if (getSelection()?.toString()) return
+    openLoad(id)
+  }
 
-  const COLS = 13
+  const COLS = 8
 
   return (
     <div className="lt">
@@ -245,12 +247,12 @@ export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany,
         <div className="lt-actions">
           <button className="ghost" onClick={() => setImporting(true)}><Icon name="database" size={14} />Import</button>
           <button className="ghost" onClick={exportXlsx} disabled={!rows.length}><Icon name="download" size={14} />Export</button>
-          <button className="primary" onClick={() => setAdding(true)} title="New load (N)">+ New load</button>
+          <button className="primary" onClick={add} title="New load (N)">+ New load</button>
         </div>
       </div>
 
       <div className="lt-filters">
-        <label className="lt-search"><Icon name="search" size={14} /><input placeholder="Search broker, PRO#, city, truck…" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        <label className="lt-search"><Icon name="search" size={14} /><input placeholder="Search broker, load #, city, truck, driver…" value={q} onChange={(e) => setQ(e.target.value)} /></label>
         <select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} aria-label="Carrier">
           <option value="">All carriers</option>
           {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -287,40 +289,33 @@ export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany,
       </div>
 
       <div className="lt-scroll">
-        <table className="lt-table loads">
+        <table className="lb">
           <colgroup>
-            <col style={{ width: 44 }} /><col style={{ width: 74 }} /><col style={{ width: '9%' }} /><col style={{ width: '5%' }} />
-            <col style={{ width: '12.5%' }} /><col style={{ width: '7.5%' }} /><col /><col style={{ width: '5.5%' }} /><col style={{ width: '8%' }} />
-            <col style={{ width: '5.5%' }} /><col style={{ width: '7.5%' }} /><col style={{ width: '10%' }} /><col style={{ width: 40 }} />
+            <col className="lb-w-check" /><col className="lb-w-date" /><col className="lb-w-load" /><col className="lb-w-lane" />
+            <col className="lb-w-carrier" /><col className="lb-w-rate" /><col className="lb-w-disp" /><col className="lb-w-status" />
           </colgroup>
           <thead>
             <tr>
-              <th className="c-check">
+              <th className="lb-check">
                 <input type="checkbox" aria-label="Select all" checked={allChosen}
                   onChange={() => setSelected(allChosen ? new Set() : new Set(visibleIds))} />
               </th>
-              {th('date', 'Date', 'c-date')}
-              {th('carrier', 'Carrier', 'c-carrier')}
-              <th className="c-truck">Truck</th>
-              {th('broker', 'Broker', 'c-broker')}
-              <th className="c-pro">PRO#</th>
-              <th className="c-lane">Lane</th>
-              {th('miles', 'Miles', 'c-num')}
-              {th('rate', 'Rate', 'c-rate')}
-              {th('rpm', 'RPM', 'c-num')}
-              {th('dispatcher', 'Dispatcher', 'c-disp')}
-              {th('status', 'Status', 'c-status')}
-              <th />
+              <th>{sortBtn('date', 'Pickup')}</th>
+              <th>{sortBtn('broker', 'Broker · load #')}</th>
+              <th>{sortBtn('miles', 'Lane · miles')}</th>
+              <th>{sortBtn('carrier', 'Carrier · truck')}</th>
+              <th className="lb-num">{sortBtn('rate', 'Rate')}{sortBtn('rpm', 'RPM')}</th>
+              <th className="lb-disp">{sortBtn('dispatcher', 'Dispatcher')}</th>
+              <th>{sortBtn('status', 'Status')}</th>
             </tr>
           </thead>
           <tbody>
-            {adding && <QuickAdd state={state} carrierId={carrierId} dispatcherId={dispatcherId} onAdd={addLoad} onClose={() => setAdding(false)} />}
             {!rows.length && (
               <tr className="lt-empty"><td colSpan={COLS}>
                 {state.loads.length ? 'No loads match these filters.' : (
                   <>
-                    <b>No loads yet.</b> Press <kbd>N</kbd> to add one, or bring your spreadsheet in.
-                    <button className="primary" onClick={() => setImporting(true)}><Icon name="database" size={14} />Import from Google Sheets</button>
+                    <b>No loads yet.</b> Press <kbd>N</kbd> or <button className="primary" onClick={add}>+ New load</button>
+                    <button className="ghost" onClick={() => setImporting(true)}><Icon name="database" size={14} />Import from Google Sheets</button>
                   </>
                 )}
               </td></tr>
@@ -330,79 +325,63 @@ export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany,
               const newWeek = sort.key === 'date' && (i === 0 || weekStart(rows[i - 1].date) !== w)
               const sub = weeks.get(w)
               const late = overdueDays(l)
-              const add = extras(l)
+              const acc = extras(l)
+              const carrier = l.carrierId == null ? undefined : carrierById.get(l.carrierId)
+              const truck = l.truckId == null ? undefined : truckById.get(l.truckId)
+              const v = loadRpm(l)
               return (
                 <Fragment key={l.id}>
                   {newWeek && sub && (
-                    <tr className={`lt-week ${w === thisWeek ? 'current' : ''}`}>
-                      <td className="c-check" />
-                      <td colSpan={6}>
-                        <div className="wk">
-                          <b>{w === thisWeek ? 'This week · ' : 'Week of '}{shortDate(w)} – {shortDate(addDays(w, 6))}</b>
-                          <span>{sub.count} {sub.count === 1 ? 'load' : 'loads'}</span>
-                          {[...sub.pay].map(([id, p]) => <span key={id} className="wk-pay">{dispatcherName.get(id)} {usd(Math.round(p))}</span>)}
-                          <em>Weekly gross</em>
-                        </div>
+                    <tr className={`lb-week ${w === thisWeek ? 'current' : ''}`}>
+                      <td colSpan={5}>
+                        <b>{w === thisWeek ? 'This week · ' : 'Week of '}{shortDate(w)} – {shortDate(addDays(w, 6))}</b>
+                        <span>{sub.count} {sub.count === 1 ? 'load' : 'loads'}</span>
+                        {sub.miles > 0 && <span>{fmtMiles(sub.miles)} mi · {fmtRpm(rpm(sub.milesGross, sub.miles))}/mi</span>}
+                        {sub.pay.size > 0 && (
+                          <span className="lb-pay" title="Dispatcher pay this week">
+                            {[...sub.pay].map(([id, p]) => <span key={id}>{dispatcherName.get(id)} <b>{usd(Math.round(p))}</b></span>)}
+                          </span>
+                        )}
                       </td>
-                      <td className="c-num wk-num">{fmtMiles(sub.miles)}</td>
-                      <td className="c-rate wk-gross">{usd(sub.gross)}</td>
-                      <td className="c-num wk-num">{fmtRpm(rpm(sub.milesGross, sub.miles))}</td>
-                      <td colSpan={3} />
+                      <td className="lb-num"><b className="wk-gross">{usd(sub.gross)}</b></td>
+                      <td colSpan={2} />
                     </tr>
                   )}
-                  <tr className={`lt-row ${selected.has(l.id) ? 'sel' : ''}`} onDoubleClick={(e) => { if ((e.target as HTMLElement).tagName === 'TD') openLoad(l.id) }}>
-                    <td className="c-check"><input type="checkbox" aria-label="Select load" checked={selected.has(l.id)} onChange={() => toggle(l.id)} /></td>
-                    <td className="c-date"><EditText type="date" value={l.date} display={shortDate(l.date)} onSave={(v) => v && save(l, { date: v })} /></td>
-                    <td className="c-carrier">
-                      <EditSelect value={String(l.carrierId ?? '')} label="Carrier"
-                        onSave={(v) => {
-                          const id = v ? Number(v) : null
-                          const truck = l.truckId == null ? null : truckById.get(l.truckId)
-                          save(l, { carrierId: id, truckId: truck && truck.carrierId !== id ? null : l.truckId })
-                        }}
-                        options={[['', '—'], ...carriers.map((c): [string, string] => [String(c.id), c.name])]} />
+                  <tr className={`lb-row ${selected.has(l.id) ? 'sel' : ''}`} onClick={(e) => onRowClick(e, l.id)}>
+                    <td className="lb-check"><input type="checkbox" aria-label="Select load" checked={selected.has(l.id)} onChange={() => toggle(l.id)} /></td>
+                    <td className="lb-date"><b>{shortDate(l.date)}</b><small>{weekday(l.date)}</small></td>
+                    <td className="lb-load">
+                      <b title={l.broker}>{l.broker || <em>No broker</em>}</b>
+                      <small>{l.pro ? `# ${l.pro}` : <em>no load #</em>}</small>
                     </td>
-                    <td className="c-truck">
-                      <EditSelect value={String(l.truckId ?? '')} label="Truck" options={truckOptions(l)}
-                        onSave={(v) => {
-                          const t = v ? truckById.get(Number(v)) : null
-                          save(l, { truckId: t ? t.id : null, carrierId: t?.carrierId ?? l.carrierId })
-                        }} />
-                    </td>
-                    <td className="c-broker"><EditText value={l.broker} onSave={(v) => save(l, { broker: v })} /></td>
-                    <td className="c-pro"><EditText value={l.pro} onSave={(v) => save(l, { pro: v })} /></td>
-                    <td className="c-lane">
-                      <div className="lane">
-                        <EditText value={l.origin} display={place(l.origin) || undefined} onSave={(v) => saveLane(l, { origin: v })} />
-                        <span className="lane-arrow">→</span>
-                        <EditText value={l.destination} display={place(l.destination) || undefined} onSave={(v) => saveLane(l, { destination: v })} />
+                    <td className="lb-lane">
+                      <div className="lb-route" title={`${place(l.origin)} → ${place(l.destination)}`}>
+                        <span>{place(l.origin) || <em>Origin</em>}</span><i>→</i><span>{place(l.destination) || <em>Destination</em>}</span>
                       </div>
+                      <small>
+                        {l.loadedMiles ? `${fmtMiles(l.loadedMiles)} mi` : l.origin && l.destination ? 'miles…' : ''}
+                        {l.emptyMiles > 0 && ` · ${fmtMiles(l.emptyMiles)} empty`}
+                      </small>
                     </td>
-                    <td className="c-num">
-                      <EditText align="right" value={l.loadedMiles ? String(l.loadedMiles) : ''} display={l.loadedMiles ? fmtMiles(l.loadedMiles) : undefined}
-                        onSave={(v) => save(l, { loadedMiles: whole(v) })} />
+                    <td className="lb-carrier">
+                      <b title={carrier?.name}>{carrier?.name ?? <em>No carrier</em>}</b>
+                      <small>{truck ? [truck.unit && `#${truck.unit}`, truck.driver].filter(Boolean).join(' · ') : ''}</small>
                     </td>
-                    <td className="c-rate">
-                      <EditText align="right" value={String(l.rate)}
-                        display={add ? <span title={`Rate ${usd(l.rate)} + accessorials ${usd(add)}`}>{usd(gross(l))}<i className="plus">+</i></span> : usd(l.rate)}
-                        onSave={(v) => save(l, { rate: money(v) })} />
+                    <td className="lb-num lb-rate">
+                      <b title={acc ? `Rate ${usd(l.rate)} + accessorials ${usd(acc)}` : undefined}>{usd(gross(l))}{acc > 0 && <i className="plus">+</i>}</b>
+                      <small>{v == null ? '' : `${fmtRpm(v)}/mi`}</small>
                     </td>
-                    <td className="c-num rpm">{fmtRpm(loadRpm(l))}</td>
-                    <td className="c-disp">
-                      <EditSelect value={String(l.dispatcherId ?? '')} label="Dispatcher" onSave={(v) => save(l, { dispatcherId: v ? Number(v) : null })}
+                    <td className="lb-disp">
+                      <EditSelect value={String(l.dispatcherId ?? '')} label="Dispatcher" onSave={(x) => save(l, { dispatcherId: x ? Number(x) : null })}
                         options={[['', '—'], ...dispatchers.map((d): [string, string] => [String(d.id), d.name])]} />
                     </td>
-                    <td className="c-status">
-                      <span className={`st-dot st-${l.status}`}>
-                        <EditSelect value={l.status} label="Status" onSave={(v) => save(l, withStatusDates(l, v as LoadStatus))}
-                          options={STATUSES.map((s): [string, string] => [s.id, s.label])} />
-                        {late > 0 && <em className="late" title={`Invoiced ${shortDate(l.invoicedOn!)} — ${late} days past 30-day terms`}>{late}d late</em>}
-                      </span>
-                    </td>
-                    <td className="c-open">
-                      <button className="open-btn" title="Open load: miles, accessorials, invoice and payment" aria-label="Open load" onClick={() => openLoad(l.id)}>
-                        <Icon name="arrow" size={14} />
-                      </button>
+                    <td className="lb-status">
+                      <label className={`pill st-${l.status}`}>
+                        <select value={l.status} aria-label="Status" onChange={(e) => save(l, withStatusDates(l, e.target.value as LoadStatus))}>
+                          {STATUSES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+                        </select>
+                      </label>
+                      {late > 0 && <small className="late" title={`Invoiced ${shortDate(l.invoicedOn!)} — ${late} days past 30-day terms`}>{late} days late</small>}
                     </td>
                   </tr>
                 </Fragment>
@@ -412,18 +391,12 @@ export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany,
           {rows.length > 0 && (
             <tfoot>
               <tr>
-                <td className="c-check" />
-                <td colSpan={6}>
-                  <div className="wk">
-                    <b>{rows.length} {rows.length === 1 ? 'load' : 'loads'}</b>
-                    {dispatchers.length > 0 && <span>Dispatcher pay {usd(Math.round(totalPay))}</span>}
-                    <em>Total gross</em>
-                  </div>
+                <td colSpan={5}>
+                  <b>{rows.length} {rows.length === 1 ? 'load' : 'loads'}</b>
+                  {loaded > 0 && <span>{fmtMiles(loaded)} mi · {fmtRpm(avgRpm)}/mi</span>}
                 </td>
-                <td className="c-num wk-num">{fmtMiles(loaded)}</td>
-                <td className="c-rate wk-gross">{usd(total)}</td>
-                <td className="c-num wk-num">{fmtRpm(avgRpm)}</td>
-                <td colSpan={3} />
+                <td className="lb-num"><b className="wk-gross">{usd(total)}</b></td>
+                <td colSpan={2} className="lb-pay">{dispatchers.length > 0 && <span>Dispatcher pay <b>{usd(Math.round(totalPay))}</b></span>}</td>
               </tr>
             </tfoot>
           )}
@@ -452,79 +425,5 @@ export function LoadsTable({ state, addLoad, updateLoad, updateMany, removeMany,
           onImport={async (rows2) => { await importLoads(rows2); setImporting(false) }} />
       )}
     </div>
-  )
-}
-
-/** New-load row: Tab between fields, Enter adds and keeps the row open for the next load, Esc closes. */
-function QuickAdd({ state, carrierId, dispatcherId, onAdd, onClose }: {
-  state: CrmState; carrierId: string; dispatcherId: string; onAdd: (l: LoadInput) => Promise<unknown>; onClose: () => void
-}) {
-  const blank = () => ({
-    date: today(), carrierId: carrierId || (state.carriers.length === 1 ? String(state.carriers[0].id) : ''), truckId: '',
-    dispatcherId: dispatcherId || (state.dispatchers.length === 1 ? String(state.dispatchers[0].id) : ''),
-    broker: '', pro: '', origin: '', destination: '', miles: '', rate: '',
-  })
-  const [v, setV] = useState(blank)
-  const first = useRef<HTMLInputElement>(null)
-  const set = (k: keyof typeof v, value: string) => setV((x) => ({ ...x, [k]: value }))
-  useEffect(() => { first.current?.focus() }, [])
-  const trucks = state.trucks.filter((t) => !v.carrierId || String(t.carrierId) === v.carrierId)
-
-  /** The row appears in the table at once and the form is ready for the next load; on failure the typed values come back. */
-  const submit = () => {
-    if (!v.date || !(v.broker || v.rate)) return
-    const typed = v
-    onAdd({
-      ...LOAD_EXTRAS,
-      date: v.date, carrierId: v.carrierId ? Number(v.carrierId) : null, dispatcherId: v.dispatcherId ? Number(v.dispatcherId) : null,
-      truckId: v.truckId ? Number(v.truckId) : null, loadedMiles: whole(v.miles),
-      broker: v.broker, pro: v.pro, origin: v.origin, destination: v.destination, rate: money(v.rate), notes: '', status: 'booked',
-    }).catch(() => setV(typed))
-    setV((x) => ({ ...blank(), date: x.date, carrierId: x.carrierId, truckId: x.truckId, dispatcherId: x.dispatcherId }))
-    first.current?.focus()
-  }
-  const onKey = (e: KeyboardEvent) => {
-    if (e.key === 'Enter') { e.preventDefault(); submit() }
-    if (e.key === 'Escape') onClose()
-  }
-
-  return (
-    <tr className="lt-add" onKeyDown={onKey}>
-      <td className="c-check"><button className="add-x" aria-label="Close new load" onClick={onClose}>×</button></td>
-      <td className="c-date"><input type="date" value={v.date} onChange={(e) => set('date', e.target.value)} aria-label="Date" /></td>
-      <td className="c-carrier">
-        <select value={v.carrierId} onChange={(e) => setV((x) => ({ ...x, carrierId: e.target.value, truckId: '' }))} aria-label="Carrier">
-          <option value="">Carrier</option>
-          {state.carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
-      </td>
-      <td className="c-truck">
-        <select value={v.truckId} onChange={(e) => set('truckId', e.target.value)} aria-label="Truck">
-          <option value="">#</option>
-          {trucks.map((t) => <option key={t.id} value={t.id}>{t.unit ? `#${t.unit}` : t.driver}</option>)}
-        </select>
-      </td>
-      <td className="c-broker"><input ref={first} placeholder="Broker" value={v.broker} onChange={(e) => set('broker', e.target.value)} aria-label="Broker" /></td>
-      <td className="c-pro"><input placeholder="PRO#" value={v.pro} onChange={(e) => set('pro', e.target.value)} aria-label="PRO number" /></td>
-      <td className="c-lane">
-        <div className="lane">
-          <input placeholder="Origin" value={v.origin} onChange={(e) => set('origin', e.target.value)} aria-label="Origin" />
-          <span className="lane-arrow">→</span>
-          <input placeholder="Destination" value={v.destination} onChange={(e) => set('destination', e.target.value)} aria-label="Destination" />
-        </div>
-      </td>
-      <td className="c-num"><input className="right" inputMode="numeric" placeholder="auto" title="Leave empty: miles are calculated from the lane" value={v.miles} onChange={(e) => set('miles', e.target.value)} aria-label="Loaded miles" /></td>
-      <td className="c-rate"><input className="right" inputMode="decimal" placeholder="$0" value={v.rate} onChange={(e) => set('rate', e.target.value)} aria-label="Rate" /></td>
-      <td className="c-num" />
-      <td className="c-disp">
-        <select value={v.dispatcherId} onChange={(e) => set('dispatcherId', e.target.value)} aria-label="Dispatcher">
-          <option value="">Dispatcher</option>
-          {state.dispatchers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-      </td>
-      <td className="c-status" colSpan={2}>
-        <button className="primary lt-add-btn" disabled={!(v.broker || v.rate)} onClick={submit}>Add <kbd>↵</kbd></button>
-      </td>
-    </tr>
   )
 }
