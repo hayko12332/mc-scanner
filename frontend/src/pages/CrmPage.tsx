@@ -14,6 +14,8 @@ type Theme = 'light' | 'dark'
 
 const THEME_KEY = 'leadhaul.work.theme'
 const DEMO_KEY = 'leadhaul.dispatchDemo.on'
+/** #/crm?demo=1 opens the demo; #/crm?signup and #/crm?login open the account forms (and leave the demo). */
+const hashParams = () => new URLSearchParams(location.hash.split('?')[1] ?? '')
 const readDemo = () => { try { return localStorage.getItem(DEMO_KEY) === '1' } catch { return false } }
 const writeDemo = (on: boolean) => { try { if (on) localStorage.setItem(DEMO_KEY, '1'); else localStorage.removeItem(DEMO_KEY) } catch { /* not remembered */ } }
 const readTheme = (): Theme => {
@@ -31,9 +33,9 @@ function Shell({ theme, setTheme, children, nav, user, banner }: {
   return (
     <div className={`work theme-${theme}`}>
       <header className="w-top">
-        <a href="#/" className="w-brand" title="LeadHaul home">
+        <a href="#/" className="w-brand" title="HaulPanel home">
           <img src="/logo.svg" alt="" width="22" height="22" />
-          <b>LeadHaul</b><span>Dispatch</span>
+          <b>HaulPanel</b>
         </a>
         {nav}
         <div className="w-right">
@@ -64,7 +66,12 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   const [creating, setCreating] = useState<{ carrierId: string; dispatcherId: string } | null>(null)
   const [error, setError] = useState('')
   const [theme, setThemeState] = useState<Theme>(readTheme)
-  const [demo, setDemoState] = useState(readDemo)
+  const [demo, setDemoState] = useState(() => {
+    const p = hashParams()
+    if (p.has('demo')) { writeDemo(true); return true }
+    if (p.has('signup') || p.has('login')) { writeDemo(false); return false }
+    return readDemo()
+  })
   const api = demo ? crmDemo : crm
   const setDemo = (on: boolean) => { writeDemo(on); setDemoState(on); setState(null) }
   const setTheme = (t: Theme) => {
@@ -173,7 +180,7 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   if (error && !state) return shell(<p className="w-msg error">{error}</p>)
   if (!demo && (!config || (!state && !signedOut))) return shell(<p className="w-msg">Loading…</p>)
   if (!demo && config && !config.enabled) return shell(<p className="w-msg">The dispatch board is not available right now.</p>)
-  if (!demo && config && (signedOut || !state)) return shell(<SignIn config={config} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />)
+  if (!demo && config && (signedOut || !state)) return shell(<SignIn config={config} initial={hashParams().has('login') ? 'login' : 'signup'} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />)
   if (!state) return shell(<p className="w-msg">Loading…</p>)
 
   // A Google sign-up hasn't told us about the company yet: ask first, like other TMSs do.

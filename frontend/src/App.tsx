@@ -3,7 +3,6 @@ import { api } from './api'
 import { useToast } from './hooks/useToast'
 import { ComingSoon } from './components/ComingSoon'
 import { Footer } from './components/Footer'
-import { Icon } from './components/Icon'
 import { track } from './lib/analytics'
 import { FeedbackPage } from './pages/FeedbackPage'
 import { LookupPage } from './pages/LookupPage'
@@ -69,34 +68,19 @@ export default function App() {
       {page !== 'crm' && (
       <header className="nav">
         <div className="wrap nav-inner">
-          <a href="#/" className="brand">
-            <img src="/logo.svg" alt="" width="34" height="34" />
-            <span className="brand-text">
-              <span>Lead<em>Haul</em></span>
-              <small>New MC leads every day</small>
-            </span>
+          <a href="#/" className="brand" aria-label="HaulPanel home">
+            <img src="/logo.svg" alt="" width="32" height="32" />
+            <span className="brand-word">Haul<em>Panel</em></span>
           </a>
-          <nav className="tabs">
-            <a href="#/leads" className={page === 'leads' ? 'active' : ''}><Icon name="zap" size={16} /><span><span className="hide-sm">New </span>Leads</span></a>
-            <a href="#/scan" className={page === 'scan' ? 'active' : ''}><Icon name="scan" size={16} />Scanner</a>
-            <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}><Icon name="search" size={16} />Lookup</a>
-            <a href="#/crm"><Icon name="file" size={16} />Dispatch</a>
-            <a href="#/feedback" className={`hide-sm ${page === 'feedback' ? 'active' : ''}`}><Icon name="bulb" size={16} />Ideas</a>
+          <nav className="tabs" aria-label="Product">
+            <a href="#/crm">Dispatch TMS</a>
+            <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}>Company lookup</a>
+            <a href="#/leads" className={page === 'leads' ? 'active' : ''}>New MC leads</a>
+            <a href="#/scan" className={`hide-md ${page === 'scan' ? 'active' : ''}`}>MC scanner</a>
           </nav>
           <div className="nav-cta">
-            {telegram.support && (
-              <a className="nav-link" href={telegram.support} target="_blank" rel="noopener" title="Questions or help? Write to us in Telegram">
-                <Icon name="lifebuoy" size={18} /><span className="hide-sm">Support</span>
-              </a>
-            )}
-            {page !== 'leads' && (
-              <a className="btn nav-leads" href="#/leads?go=1"><Icon name="zap" size={16} /><span>Get <span className="hide-sm">new </span>leads</span></a>
-            )}
-            {telegram.bot && (
-              <a className="btn nav-tg" href={telegram.bot} target="_blank" rel="noopener">
-                <Icon name="send" size={16} />Telegram
-              </a>
-            )}
+            <a className="nav-link hide-sm" href="#/crm?login">Log in</a>
+            <a className="btn primary nav-start" href="#/crm?signup">Start free</a>
           </div>
         </div>
       </header>
@@ -120,7 +104,7 @@ export default function App() {
           <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
         </div>
         {page === 'feedback' && <FeedbackPage groupUrl={telegram.group} supportUrl={telegram.support} />}
-        {page !== 'feedback' && page !== 'crm' && <ComingSoon />}
+        {page !== 'feedback' && page !== 'crm' && page !== 'home' && <ComingSoon />}
       </main>
 
       {page !== 'crm' && <Footer telegram={telegram} lastLookup={lastLookup} backendOk={backendOk} />}

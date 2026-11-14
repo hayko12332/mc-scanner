@@ -91,7 +91,7 @@ export function downloadVcf(carriers: ScannedCarrier[]) {
     c.email && `EMAIL;TYPE=WORK:${c.email}`,
     c.physicalAddress && `ADR;TYPE=WORK:;;${esc(c.physicalAddress)};;;;`,
     `NOTE:${esc(`MC-${c.mc} · USDOT ${c.dot}${c.grantedOn ? ` · authority granted ${c.grantedOn}` : ''} · ${c.state}`)}`,
-    'CATEGORIES:LeadHaul',
+    'CATEGORIES:HaulPanel',
     'END:VCARD',
   ].filter(Boolean).join('\r\n'))
   saveFile(new Blob([cards.join('\r\n')], { type: 'text/vcard;charset=utf-8' }), `${baseName(carriers)}.vcf`)
@@ -110,14 +110,14 @@ export function printCallSheet(carriers: ScannedCarrier[]) {
   if (telegramApp()) return exportNotice('Printing works on the website — open it in a browser')
   const w = window.open('', '_blank')
   if (!w) return exportNotice('Allow pop-ups for this site to print')
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} — LeadHaul</title><style>
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} — HaulPanel</title><style>
     body{font:12px/1.4 -apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;margin:24px}
     h1{font-size:18px;margin:0 0 2px} p{color:#64748b;margin:0 0 14px}
     table{width:100%;border-collapse:collapse} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}
     th{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;border-bottom:2px solid #0f172a}
     span{color:#64748b;font-size:11px} td.note{width:22%} tr{break-inside:avoid} td:nth-child(3){white-space:nowrap}
   </style></head><body><h1>${title} · ${carriers.length} carriers</h1>
-  <p>LeadHaul · ${new Date().toLocaleDateString('en-US', { dateStyle: 'medium' })} · mc-scanner-6nao.onrender.com</p>
+  <p>HaulPanel · ${new Date().toLocaleDateString('en-US', { dateStyle: 'medium' })} · haulpanel.com</p>
   <table><thead><tr><th>#</th><th>Carrier</th><th>Phone</th><th>Email</th><th>State</th><th>Trucks</th><th>Notes</th></tr></thead>
   <tbody>${rows}</tbody></table><script>onload=()=>setTimeout(()=>print(),300)</script></body></html>`)
   w.document.close()

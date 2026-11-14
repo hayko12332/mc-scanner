@@ -1,25 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 64 64">
-  <!-- LeadHaul: a road running to the horizon, with the new lead (orange) waiting there. -->
+  <!-- HaulPanel: an "H" whose crossbar is a lane between two posts — the panel a dispatcher runs freight from. -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#16295a"/>
-      <stop offset="1" stop-color="#070d1c"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d4ed8"/>
+      <stop offset="1" stop-color="#0b1a3f"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.24" r="0.34">
-      <stop offset="0" stop-color="#f97316" stop-opacity="0.28"/>
-      <stop offset="1" stop-color="#f97316" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="lead" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="lane" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#fdba74"/>
-      <stop offset="1" stop-color="#ea580c"/>
+      <stop offset="1" stop-color="#f97316"/>
     </linearGradient>
   </defs>
-  <rect width="64" height="64" fill="url(#bg)"/>
-  <rect width="64" height="64" fill="url(#glow)"/>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
   <!-- Kept inside the central circle that Telegram crops avatars to. -->
-  <g transform="translate(32 33) scale(0.9) translate(-32 -33)">
-    <path d="M14 54 28 22M50 54 36 22" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round"/>
-    <path d="M32 50v-5M32 39v-4M32 30v-2" fill="none" stroke="#60a5fa" stroke-width="3.5" stroke-linecap="round"/>
-    <circle cx="32" cy="15" r="5.5" fill="url(#lead)"/>
+  <g transform="translate(32 32) scale(0.92) translate(-32 -32)">
+    <rect x="15" y="15" width="8.5" height="34" rx="3" fill="#fff"/>
+    <rect x="40.5" y="15" width="8.5" height="34" rx="3" fill="#fff"/>
+    <rect x="23.5" y="28" width="17" height="8" rx="2" fill="url(#lane)"/>
+    <path d="M26.5 32h3M32 32h3" stroke="#fff" stroke-width="1.6" stroke-linecap="round" opacity="0.9"/>
   </g>
 </svg>

@@ -25,6 +25,8 @@ export const config = {
   ownerVisitorIds: env('OWNER_VISITOR_IDS').split(',').map((s) => s.trim()).filter(Boolean),
   // Google OAuth client id (public): "Sign in with Google" for the dispatcher CRM, and Google Sheets export.
   googleClientId: env('GOOGLE_CLIENT_ID'),
+  // The site's own domain: page requests on the old *.onrender.com address are redirected here (empty = no redirect).
+  canonicalHost: env('CANONICAL_HOST'),
   // Product name used in emails.
   brandName: env('BRAND_NAME') || 'HaulPanel',
   // Email (sign-up verification and password reset codes) is sent through Resend (https://resend.com).
