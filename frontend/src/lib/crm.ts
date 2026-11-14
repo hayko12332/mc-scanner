@@ -225,15 +225,15 @@ export function byWeek(loads: Load[], dispatchers: Dispatcher[]): WeekGroup[] {
 // Spreadsheet import (copied from Google Sheets / Excel: tab-separated, with a header row)
 
 const COLUMNS: [keyof ImportRow, RegExp][] = [
-  ['date', /^(date|day|load date|pick ?up date)$/i],
-  ['broker', /^(company( name)?|broker|customer|shipper)$/i],
-  ['pro', /^(pro ?#?|pro number|load ?#?|load number|ref(erence)? ?#?)$/i],
-  ['origin', /^(origin|from|pick ?up|pickup location|shipper city)$/i],
-  ['destination', /^(destination|to|delivery|drop|consignee city)$/i],
-  ['rate', /^(rate|amount|gross|price|pay)$/i],
+  ['date', /^(date|day|load date|pick ?up date|pu date|ship date)$/i],
+  ['broker', /^(company( name)?|broker( name)?|customer( name)?|shipper|bill to)$/i],
+  ['pro', /^(pro ?#?|pro number|load ?(#|id|no\.?)?|load number|order ?(#|id)?|ref(erence)? ?#?|confirmation ?#?)$/i],
+  ['origin', /^(origin( city)?|from( city)?|pick ?up( city| location)?|pu city|shipper city)$/i],
+  ['destination', /^(destination( city)?|dest|to( city)?|delivery( city)?|drop( city)?|del city|consignee city)$/i],
+  ['rate', /^(rate|rate \$|amount|gross|price|pay|linehaul|total( rate)?)$/i],
   ['dispatcher', /^(bb|dispatcher|booked by|disp)$/i],
-  ['carrier', /^(carrier|truck|driver|unit)$/i],
-  ['loadedMiles', /^(miles|loaded miles|mi|mileage|loaded mi)$/i],
+  ['carrier', /^(carrier( name)?|truck|driver|unit)$/i],
+  ['loadedMiles', /^(miles|loaded miles|mi|mileage|loaded mi|loaded)$/i],
 ]
 
 /** "10/20/2026", "10/20/26", "2026-10-20" or "Oct 20, 2026" → YYYY-MM-DD, or null. */

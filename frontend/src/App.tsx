@@ -66,7 +66,7 @@ export default function App() {
   return (
     <>
       {page !== 'crm' && (
-      <header className="nav">
+      <header className={`nav ${page === 'home' ? 'nav-light' : ''}`}>
         <div className="wrap nav-inner">
           <a href="#/" className="brand" aria-label="HaulPanel home">
             <img src="/logo.svg" alt="" width="32" height="32" />

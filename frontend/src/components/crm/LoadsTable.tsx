@@ -7,6 +7,7 @@ import {
 import { buildXlsx } from '../../lib/xlsx'
 import { Icon } from '../Icon'
 import { ImportDialog } from './ImportDialog'
+import { KpiDrawer, type KpiKind } from './KpiDrawer'
 
 type Period = 'week' | 'last' | 'month' | 'all'
 type SortKey = 'date' | 'carrier' | 'broker' | 'rate' | 'miles' | 'rpm' | 'dispatcher' | 'status'
@@ -83,6 +84,8 @@ interface Props {
   openLoad: (id: number) => void
   /** Opens the new-load form; the current carrier/dispatcher filters become its defaults. */
   newLoad: (defaults: { carrierId: string; dispatcherId: string }) => void
+  /** Opens another section of the board (KPI details and the getting-started steps link there). */
+  goTab: (tab: 'statements' | 'carriers' | 'trucks' | 'dispatchers') => void
 }
 
 /**
@@ -90,7 +93,7 @@ interface Props {
  * (broker over load #, lane over miles, carrier over truck/driver, rate over RPM), status changed right in the row,
  * everything else in the load panel that opens on a click. Weekly subtotals, KPIs, bulk actions.
  */
-export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLoads, openLoad, newLoad }: Props) {
+export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLoads, openLoad, newLoad, goTab }: Props) {
   const { carriers, dispatchers, trucks } = state
   const [tab, setTab] = useState<Tab>('all')
   const [period, setPeriod] = useState<Period>('all')
@@ -99,6 +102,7 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'date', desc: true })
   const [importing, setImporting] = useState(false)
+  const [kpi, setKpi] = useState<KpiKind | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
   const carrierById = useMemo(() => new Map(carriers.map((c) => [c.id, c])), [carriers])
@@ -247,6 +251,19 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
     )
   }
 
+  // A brand-new board: a short setup guide instead of empty KPIs and an empty table.
+  if (!state.loads.length) {
+    return (
+      <>
+        <GettingStarted state={state} add={add} importFile={() => setImporting(true)} goTab={goTab} />
+        {importing && (
+          <ImportDialog carriers={carriers} onClose={() => setImporting(false)}
+            onImport={async (rows2) => { await importLoads(rows2); setImporting(false) }} />
+        )}
+      </>
+    )
+  }
+
   return (
     <div className="lt">
       <div className="lt-top">
@@ -287,24 +304,28 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
         </div>
       </div>
 
-      <div className="lt-kpis five">
-        <div>
-          <span>Gross</span><b>{usd(total)}</b>
+      <div className="lt-kpis five kpi-click">
+        <button type="button" onClick={() => setKpi('gross')}>
+          <span>Gross<Icon name="chevron" size={13} /></span><b>{usd(total)}</b>
           {delta != null && <small className={delta >= 0 ? 'up' : 'down'}>{delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}% {r.label}</small>}
           {delta == null && <small>{rows.length} {rows.length === 1 ? 'load' : 'loads'} · avg {usd(rows.length ? Math.round(total / rows.length) : 0)}</small>}
-        </div>
-        <div>
-          <span>Rate per mile</span><b>{fmtRpm(avgRpm)}</b>
+        </button>
+        <button type="button" onClick={() => setKpi('rpm')}>
+          <span>Rate per mile<Icon name="chevron" size={13} /></span><b>{fmtRpm(avgRpm)}</b>
           <small>{fmtMiles(loaded)} loaded mi{empty ? ` · all-in ${fmtRpm(allInRpm)}` : ''}</small>
-        </div>
-        <div><span>Dispatch fees</span><b>{usd(Math.round(fees))}</b><small>owed by carriers · see Statements</small></div>
-        <div><span>Dispatcher pay</span><b>{usd(Math.round(totalPay))}</b><small>by each dispatcher’s %</small></div>
-        <div>
-          <span>Not paid yet</span><b>{usd(unpaid.reduce((s, l) => s + gross(l), 0))}</b>
+        </button>
+        <button type="button" onClick={() => setKpi('fees')}>
+          <span>Dispatch fees<Icon name="chevron" size={13} /></span><b>{usd(Math.round(fees))}</b><small>owed by carriers</small>
+        </button>
+        <button type="button" onClick={() => setKpi('pay')}>
+          <span>Dispatcher pay<Icon name="chevron" size={13} /></span><b>{usd(Math.round(totalPay))}</b><small>by each dispatcher’s %</small>
+        </button>
+        <button type="button" onClick={() => setKpi('unpaid')}>
+          <span>Not paid yet<Icon name="chevron" size={13} /></span><b>{usd(unpaid.reduce((s, l) => s + gross(l), 0))}</b>
           {overdue.length > 0
             ? <small className="down">{overdue.length} overdue · {usd(overdue.reduce((s, l) => s + gross(l), 0))}</small>
             : <small>{unpaid.length} {unpaid.length === 1 ? 'load' : 'loads'} not marked paid</small>}
-        </div>
+        </button>
       </div>
 
       <div className="lt-scroll">
@@ -331,12 +352,7 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
           <tbody>
             {!rows.length && (
               <tr className="lt-empty"><td colSpan={COLS}>
-                {state.loads.length ? 'No loads match these filters.' : (
-                  <>
-                    <b>No loads yet.</b> Press <kbd>N</kbd> or <button className="primary" onClick={add}>+ New load</button>
-                    <button className="ghost" onClick={() => setImporting(true)}><Icon name="database" size={14} />Import from Google Sheets</button>
-                  </>
-                )}
+                <div className="lb-none"><b>No loads match these filters</b><span>Try another period, status or search.</span></div>
               </td></tr>
             )}
             {rows.map((l, i) => {
@@ -423,10 +439,67 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
         </div>
       )}
 
+      {kpi && (
+        <KpiDrawer kind={kpi} rows={rows} state={state} close={() => setKpi(null)} openLoad={openLoad}
+          periodLabel={`${PERIODS.find(([id]) => id === period)![1]}${carrierId ? ` · ${carrierById.get(Number(carrierId))?.name ?? ''}` : ''}${dispatcherId ? ` · ${dispatcherName.get(Number(dispatcherId)) ?? ''}` : ''}`}
+          markPaid={(ls) => quiet(updateMany(ls, (l) => withStatusDates(l, 'paid')))}
+          goStatements={() => goTab('statements')} />
+      )}
+
       {importing && (
         <ImportDialog carriers={carriers} onClose={() => setImporting(false)}
           onImport={async (rows2) => { await importLoads(rows2); setImporting(false) }} />
       )}
+    </div>
+  )
+}
+
+/** First steps for a new account, the way TMS onboarding checklists look: carriers, trucks, first loads. */
+function GettingStarted({ state, add, importFile, goTab }: {
+  state: CrmState; add: () => void; importFile: () => void; goTab: Props['goTab']
+}) {
+  const steps: { done: boolean; title: string; text: string; action: ReactNode }[] = [
+    {
+      done: state.carriers.length > 0, title: 'Add your carriers',
+      text: 'Type an MC number — the name, USDOT and phone fill in from FMCSA. Set each carrier’s dispatch fee.',
+      action: <button className={state.carriers.length ? 'ghost' : 'primary'} onClick={() => goTab('carriers')}>{state.carriers.length ? `${state.carriers.length} added · Manage` : 'Add carriers'}</button>,
+    },
+    {
+      done: state.trucks.length > 0, title: 'Add trucks and drivers',
+      text: 'Optional. Loads get a truck, and deadhead is counted from the truck’s last drop.',
+      action: <button className="ghost" onClick={() => goTab('trucks')}>{state.trucks.length ? `${state.trucks.length} added · Manage` : 'Add trucks'}</button>,
+    },
+    {
+      done: state.dispatchers.length > 0, title: 'Add your dispatchers',
+      text: 'Optional. Each dispatcher’s percent of gross becomes their weekly pay.',
+      action: <button className="ghost" onClick={() => goTab('dispatchers')}>{state.dispatchers.length ? `${state.dispatchers.length} added · Manage` : 'Add dispatchers'}</button>,
+    },
+  ]
+  return (
+    <div className="gs">
+      <div className="gs-head">
+        <h2>Welcome to HaulPanel{state.company?.name ? `, ${state.company.name}` : ''}</h2>
+        <p>Set up your board in a few minutes. You can change everything later.</p>
+      </div>
+      <div className="gs-grid">
+        <ol className="gs-steps">
+          {steps.map((st, i) => (
+            <li key={st.title} className={st.done ? 'done' : ''}>
+              <span className="gs-num">{st.done ? <Icon name="check" size={14} /> : i + 1}</span>
+              <div><b>{st.title}</b><p>{st.text}</p></div>
+              {st.action}
+            </li>
+          ))}
+        </ol>
+        <div className="gs-loads">
+          <span className="gs-icon"><Icon name="file" size={20} /></span>
+          <h3>Add your loads</h3>
+          <p>Enter loads one by one, or bring your whole history from a spreadsheet.</p>
+          <button className="primary" onClick={add}>+ New load</button>
+          <button className="ghost" onClick={importFile}><Icon name="download" size={14} />Import Excel, CSV or Google Sheets</button>
+          <small>Tip: press <kbd>N</kbd> anywhere on the board to add a load.</small>
+        </div>
+      </div>
     </div>
   )
 }

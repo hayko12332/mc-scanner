@@ -16,8 +16,9 @@ const THEME_KEY = 'leadhaul.work.theme'
 const DEMO_KEY = 'leadhaul.dispatchDemo.on'
 /** #/crm?demo=1 opens the demo; #/crm?signup and #/crm?login open the account forms (and leave the demo). */
 const hashParams = () => new URLSearchParams(location.hash.split('?')[1] ?? '')
-const readDemo = () => { try { return localStorage.getItem(DEMO_KEY) === '1' } catch { return false } }
-const writeDemo = (on: boolean) => { try { if (on) localStorage.setItem(DEMO_KEY, '1'); else localStorage.removeItem(DEMO_KEY) } catch { /* not remembered */ } }
+// The demo is only on while the address says so (#/crm?demo=1): "Dispatch TMS" always opens your own account.
+// Older versions remembered the demo in the browser; that flag is cleared.
+try { localStorage.removeItem(DEMO_KEY) } catch { /* nothing stored */ }
 const readTheme = (): Theme => {
   try {
     return localStorage.getItem(THEME_KEY) === 'dark' ? 'dark' : 'light'
@@ -66,14 +67,13 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   const [creating, setCreating] = useState<{ carrierId: string; dispatcherId: string } | null>(null)
   const [error, setError] = useState('')
   const [theme, setThemeState] = useState<Theme>(readTheme)
-  const [demo, setDemoState] = useState(() => {
-    const p = hashParams()
-    if (p.has('demo')) { writeDemo(true); return true }
-    if (p.has('signup') || p.has('login')) { writeDemo(false); return false }
-    return readDemo()
-  })
+  const [demo, setDemoState] = useState(() => hashParams().has('demo'))
   const api = demo ? crmDemo : crm
-  const setDemo = (on: boolean) => { writeDemo(on); setDemoState(on); setState(null) }
+  const setDemo = (on: boolean) => {
+    history.replaceState(null, '', on ? '#/crm?demo=1' : '#/crm')
+    setDemoState(on)
+    setState(null)
+  }
   const setTheme = (t: Theme) => {
     setThemeState(t)
     try { localStorage.setItem(THEME_KEY, t) } catch { /* the choice just isn't remembered */ }
@@ -220,6 +220,7 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
           updateLoad={updateLoad}
           openLoad={setOpenId}
           newLoad={newLoad}
+          goTab={setTab}
           updateMany={(loads, patch) => optimistic(
             patchLoads(new Set(loads.map((l) => l.id)), (l) => ({ ...l, ...patch(l) })),
             () => Promise.all(loads.map((l) => api.updateLoad(l.id, { ...l, ...patch(l) }))),
