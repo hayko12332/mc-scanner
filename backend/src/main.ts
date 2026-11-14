@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { config } from './config.js';
+import { indexHtml, SEO_PAGES, seoHtml } from './seo.js';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -19,6 +20,13 @@ async function bootstrap() {
       next();
     });
   }
+  // Search pages (/new-mc-leads, /mc-number-lookup, /mc-scanner): the app with their own title and text.
+  app.use((req: { method: string; path: string }, res: { type: (t: string) => { send: (b: string) => void } }, next: () => void) => {
+    const page = (req.method === 'GET' || req.method === 'HEAD') ? SEO_PAGES[req.path.replace(/\/+$/, '')] : undefined;
+    const html = page ? indexHtml() : null;
+    if (!page || !html) return next();
+    res.type('html').send(seoHtml(html, req.path.replace(/\/+$/, ''), page));
+  });
   app.enableShutdownHooks();
   await app.listen(config.port);
   Logger.log(`HaulPanel on http://localhost:${config.port}`, 'Bootstrap');

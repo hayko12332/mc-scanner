@@ -8,8 +8,12 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <title>HaulPanel — TMS for dispatch companies, MC/DOT lookup &amp; new MC leads</title>
-    <meta name="description" content="HaulPanel is the TMS for truck dispatch companies: loads, trucks and drivers, rate per mile, carrier fees and weekly statements, invoices and payments. Check any carrier or broker by MC, USDOT, email or phone, and get new MC leads with phone and email every day. Free during beta." />
+    <title>HaulPanel — Free TMS for truck dispatchers · MC lookup · New MC leads</title>
+    <meta name="description" content="HaulPanel is a free TMS for truck dispatch companies: loads, trucks and drivers, rate per mile, carrier fees and weekly statements, invoices and payments. Check any carrier or broker by MC, USDOT, email or phone, and get new MC leads with phone and email every day." />
+    <meta name="keywords" content="truck dispatch software, TMS for dispatchers, dispatch TMS, trucking TMS, free TMS, MC number lookup, USDOT lookup, carrier lookup, new MC leads, new authority leads, FMCSA carrier search, carrier statements, dispatch board" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#0b1220" />
+    <meta name="application-name" content="HaulPanel" />
     <link rel="canonical" href="https://haulpanel.com/" />
     <!-- Link previews (Telegram, WhatsApp, Facebook, Slack) -->
     <meta property="og:type" content="website" />
@@ -20,7 +24,56 @@
     <meta property="og:image" content="https://haulpanel.com/new-mc-leads.jpg" />
     <meta property="og:image:width" content="1600" />
     <meta property="og:image:height" content="900" />
+    <meta property="og:image:alt" content="HaulPanel — new MC leads with phone and email, updated daily" />
+    <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="HaulPanel — TMS for dispatch companies" />
+    <meta name="twitter:description" content="Run your dispatch company from one panel: loads, carrier statements, invoices and payments. Plus MC/DOT lookup and new MC leads every day. Free during beta." />
+    <meta name="twitter:image" content="https://haulpanel.com/new-mc-leads.jpg" />
+    <!-- Structured data: what HaulPanel is, for search engines -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "Organization",
+          "@id": "https://haulpanel.com/#org",
+          "name": "HaulPanel",
+          "url": "https://haulpanel.com/",
+          "logo": "https://haulpanel.com/logo.png",
+          "email": "support@haulpanel.com",
+          "sameAs": ["https://t.me/MCUSDOTScannerbot"]
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://haulpanel.com/#site",
+          "name": "HaulPanel",
+          "url": "https://haulpanel.com/",
+          "publisher": { "@id": "https://haulpanel.com/#org" }
+        },
+        {
+          "@type": "SoftwareApplication",
+          "name": "HaulPanel",
+          "url": "https://haulpanel.com/",
+          "applicationCategory": "BusinessApplication",
+          "applicationSubCategory": "Transportation Management System (TMS)",
+          "operatingSystem": "Web browser",
+          "description": "Free TMS for truck dispatch companies: loads, trucks and drivers, rate per mile, carrier fees and weekly statements, invoices and payments, MC/USDOT company lookup and new MC leads every day.",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "Free during beta" },
+          "featureList": [
+            "Load board with loaded and empty miles and rate per mile",
+            "Weekly carrier statements (PDF) with percent or flat dispatch fees",
+            "Dispatcher pay by percent of gross",
+            "Invoices, payments and overdue tracking (net 30)",
+            "MC number, USDOT, email and phone company lookup",
+            "New MC leads with phone and email every day",
+            "Import loads from Excel, CSV or Google Sheets"
+          ],
+          "publisher": { "@id": "https://haulpanel.com/#org" }
+        }
+      ]
+    }
+    </script>
     <!-- Telegram Mini App bridge: inert in a normal browser, identifies the user inside Telegram. -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>

@@ -6,15 +6,15 @@ interface Item { label: string; href: string; icon?: IconName; tag?: string; ext
 const CHANNEL = 'https://t.me/MCScannerFMCSA'
 
 /** Dark site footer: brand and status, link columns, legal line. */
-export function Footer({ telegram, lastLookup, backendOk }: { telegram: Links; lastLookup: string; backendOk: boolean | null }) {
+export function Footer({ telegram, backendOk }: { telegram: Links; lastLookup?: string; backendOk: boolean | null }) {
   const columns: { title: string; items: Item[] }[] = [
     {
       title: 'Product',
       items: [
         { label: 'Dispatch TMS', href: '#/crm', tag: 'Beta' },
-        { label: 'Company lookup', href: lastLookup },
-        { label: 'New MC leads', href: '#/leads' },
-        { label: 'MC scanner', href: '#/scan' },
+        { label: 'MC number lookup', href: '/mc-number-lookup' },
+        { label: 'New MC leads', href: '/new-mc-leads' },
+        { label: 'MC scanner', href: '/mc-scanner' },
       ],
     },
     {

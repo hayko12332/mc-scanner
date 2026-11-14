@@ -12,6 +12,11 @@ import { CrmPage } from './pages/CrmPage'
 
 const isLookup = (hash: string) => hash.startsWith('#/lookup')
 
+// Search pages are real paths (the server gives each its own title and text); they open the matching tool.
+const PATH_ROUTES: Record<string, string> = { '/new-mc-leads': '#/leads', '/mc-number-lookup': '#/lookup', '/mc-scanner': '#/scan' }
+const pathRoute = PATH_ROUTES[location.pathname.replace(/\/+$/, '')]
+if (pathRoute && (!location.hash || location.hash === '#')) history.replaceState(null, '', location.pathname + location.search + pathRoute)
+
 /** Current location hash, plus the last lookup hash so the Lookup tab keeps its search while you are away. */
 function useHash() {
   const [hash, setHash] = useState(location.hash)
@@ -80,7 +85,7 @@ export default function App() {
           </nav>
           <div className="nav-cta">
             <a className="nav-link hide-sm" href="#/crm?login">Log in</a>
-            <a className="btn primary nav-start" href="#/crm?signup">Start free</a>
+            <a className="btn nav-start" href="#/crm?signup">Start free</a>
           </div>
         </div>
       </header>
