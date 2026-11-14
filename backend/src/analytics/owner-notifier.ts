@@ -31,6 +31,10 @@ export function device(userAgent: string): string {
   return '';
 }
 
+/** Crawlers, link previews and headless browsers: they open pages but are not people, so no alert. */
+export const isBotAgent = (userAgent: string) =>
+  /bot|crawl|spider|slurp|headless|lighthouse|preview|facebookexternalhit|python|curl|wget|httpclient|scrapy|phantom|puppeteer|playwright/i.test(userAgent);
+
 function who(e: { country: string; userAgent: string; tgUsername: string; tgName: string }): string {
   const place = [flag(e.country) + (e.country ? ` ${e.country}` : ''), device(e.userAgent)].filter(Boolean).join(', ');
   const tg = e.tgUsername ? `@${e.tgUsername}` : e.tgName;
@@ -54,7 +58,7 @@ export class OwnerNotifier {
   /** Builds the alert texts for one batch of site events; `isNewVisitor` = first time this visitor is seen. */
   siteAlerts(events: StoredEvent[], isNewVisitor: boolean): string[] {
     const first = events[0];
-    if (!first || this.isOwner(first.visitorId, first.tgUserId)) return [];
+    if (!first || this.isOwner(first.visitorId, first.tgUserId) || isBotAgent(first.userAgent ?? '')) return [];
     const texts: string[] = [];
     if (isNewVisitor) {
       const page = events.find((e) => e.event === 'page_view')?.props.page;

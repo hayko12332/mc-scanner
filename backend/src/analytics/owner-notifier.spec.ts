@@ -90,4 +90,12 @@ describe('flag and device', () => {
     expect(device('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)')).toBe('iPhone');
     expect(device('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)')).toBe('Mac');
   });
+
+  it('stays quiet about crawlers and headless browsers', () => {
+    const n = new OwnerNotifier({ ownerTelegramId: 1, ownerVisitorIds: [], send: async () => undefined });
+    const ev = (ua: string) => [{ at: '', event: 'page_view', props: { page: 'home' }, visitorId: 'v-' + ua.length, tgUserId: null, tgUsername: '', tgName: '', country: 'US', userAgent: ua, referrer: '' }] as never;
+    expect(n.siteAlerts(ev('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0 Safari/537.36'), true)).toEqual([]);
+    expect(n.siteAlerts(ev('Mozilla/5.0 (compatible; Googlebot/2.1)'), true)).toEqual([]);
+    expect(n.siteAlerts(ev('Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/157.0 Safari/537.36'), true)).toHaveLength(1);
+  });
 });
