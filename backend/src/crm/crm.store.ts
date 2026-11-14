@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type pg from 'pg';
-import type { CrmCarrier, CrmState, CrmUser, Dispatcher, FeeType, ImportRow, Load, LoadStatus, Truck } from './crm.types.js';
+import type { CompanyInput, CrmCarrier, CrmState, CrmUser, Dispatcher, FeeType, ImportRow, Load, LoadStatus, Truck } from './crm.types.js';
 
 const SESSION_DAYS = 60;
+export type CodePurpose = 'verify' | 'reset';
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS crm_users (
@@ -82,6 +83,27 @@ const SCHEMA = `
   ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS lumper NUMERIC(12,2) NOT NULL DEFAULT 0;
   ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS invoiced_on DATE;
   ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS paid_on DATE;
+  -- Accounts: email + password sign-up (verified by a code), Google sign-in, and the company behind the workspace
+  ALTER TABLE crm_users ALTER COLUMN google_sub DROP NOT NULL;
+  ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+  ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+  ALTER TABLE crm_users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT '';
+  UPDATE crm_users SET email_verified = true WHERE google_sub IS NOT NULL AND NOT email_verified;
+  CREATE INDEX IF NOT EXISTS crm_users_email ON crm_users (lower(email));
+  ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS company_name TEXT NOT NULL DEFAULT '';
+  ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS company_type TEXT NOT NULL DEFAULT '';
+  ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS company_mc TEXT NOT NULL DEFAULT '';
+  ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS company_dot TEXT NOT NULL DEFAULT '';
+  ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS company_phone TEXT NOT NULL DEFAULT '';
+  ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS fleet_size TEXT NOT NULL DEFAULT '';
+  CREATE TABLE IF NOT EXISTS crm_email_codes (
+    email       TEXT NOT NULL,
+    purpose     TEXT NOT NULL,
+    code_hash   TEXT NOT NULL,
+    expires_at  TIMESTAMPTZ NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (email, purpose)
+  );
 `;
 
 const CARRIER_COLS = 'id, name, mc, dot, phone, email, notes, fee_type, fee, factoring';
@@ -131,18 +153,115 @@ export class CrmStore {
     this.ready = pool.query(SCHEMA);
   }
 
-  /** Creates the user and their workspace on first sign-in; returns the user. */
-  async signIn(p: { sub: string; email: string; name: string; picture: string }): Promise<CrmUser> {
+  private toUser = (r: Record<string, unknown>): CrmUser => ({ id: Number(r.id), email: String(r.email), name: String(r.name), picture: String(r.picture ?? '') });
+
+  private async ensureWorkspace(userId: number) {
+    await this.pool.query('INSERT INTO crm_workspaces (owner_id) VALUES ($1) ON CONFLICT (owner_id) DO NOTHING', [userId]);
+  }
+
+  /** The account for an email (oldest first if old data has duplicates), with what sign-in needs. */
+  async findByEmail(email: string): Promise<(CrmUser & { passwordHash: string | null; verified: boolean; googleSub: string | null }) | null> {
     await this.ready;
     const { rows } = await this.pool.query(
-      `INSERT INTO crm_users (google_sub, email, name, picture) VALUES ($1,$2,$3,$4)
-       ON CONFLICT (google_sub) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, picture = EXCLUDED.picture
-       RETURNING id, email, name, picture`,
-      [p.sub, p.email, p.name, p.picture],
-    );
-    const user = { id: Number(rows[0].id), email: rows[0].email, name: rows[0].name, picture: rows[0].picture };
-    await this.pool.query('INSERT INTO crm_workspaces (owner_id) VALUES ($1) ON CONFLICT (owner_id) DO NOTHING', [user.id]);
+      'SELECT id, email, name, picture, password_hash, email_verified, google_sub FROM crm_users WHERE lower(email) = $1 ORDER BY id LIMIT 1', [email]);
+    const r = rows[0];
+    return r ? { ...this.toUser(r), passwordHash: r.password_hash, verified: r.email_verified, googleSub: r.google_sub } : null;
+  }
+
+  /**
+   * Google sign-in: the account with this Google id, else the account with the same email (Google has verified it,
+   * so the two are linked), else a new account. Linking to an account whose email was never verified drops its
+   * password, so someone who signed up with another person's email cannot keep access.
+   */
+  async signIn(p: { sub: string; email: string; name: string; picture: string }): Promise<CrmUser> {
+    await this.ready;
+    const bySub = await this.pool.query(
+      'UPDATE crm_users SET name = $2, picture = $3, email_verified = true WHERE google_sub = $1 RETURNING id, email, name, picture', [p.sub, p.name, p.picture]);
+    let row = bySub.rows[0];
+    if (!row) {
+      const existing = p.email ? await this.findByEmail(p.email.toLowerCase()) : null;
+      if (existing && !existing.googleSub) {
+        const linked = await this.pool.query(
+          `UPDATE crm_users SET google_sub = $2, picture = $3, name = CASE WHEN name = '' THEN $4 ELSE name END,
+             password_hash = CASE WHEN email_verified THEN password_hash ELSE NULL END, email_verified = true
+           WHERE id = $1 RETURNING id, email, name, picture`, [existing.id, p.sub, p.picture, p.name]);
+        row = linked.rows[0];
+      } else {
+        const created = await this.pool.query(
+          `INSERT INTO crm_users (google_sub, email, name, picture, email_verified) VALUES ($1,$2,$3,$4,true) RETURNING id, email, name, picture`,
+          [p.sub, p.email, p.name, p.picture]);
+        row = created.rows[0];
+      }
+    }
+    const user = this.toUser(row);
+    await this.ensureWorkspace(user.id);
     return user;
+  }
+
+  /**
+   * Email sign-up: a new unverified account, or (if this email signed up before but never confirmed it) the same
+   * account with the new details. Returns null when a confirmed account already uses the email.
+   */
+  async signUp(p: { email: string; name: string; passwordHash: string; phone: string; company: CompanyInput }): Promise<CrmUser | null> {
+    await this.ready;
+    const existing = await this.findByEmail(p.email);
+    if (existing && (existing.verified || existing.googleSub)) return null;
+    const { rows } = existing
+      ? await this.pool.query('UPDATE crm_users SET name = $2, password_hash = $3, phone = $4 WHERE id = $1 RETURNING id, email, name, picture',
+        [existing.id, p.name, p.passwordHash, p.phone])
+      : await this.pool.query('INSERT INTO crm_users (email, name, password_hash, phone) VALUES ($1,$2,$3,$4) RETURNING id, email, name, picture',
+        [p.email, p.name, p.passwordHash, p.phone]);
+    const user = this.toUser(rows[0]);
+    await this.ensureWorkspace(user.id);
+    await this.setCompany(user.id, p.company);
+    return user;
+  }
+
+  async markVerified(userId: number) {
+    await this.pool.query('UPDATE crm_users SET email_verified = true WHERE id = $1', [userId]);
+  }
+
+  async setPassword(userId: number, passwordHash: string) {
+    await this.pool.query('UPDATE crm_users SET password_hash = $2, email_verified = true WHERE id = $1', [userId, passwordHash]);
+    // A new password signs out every other device.
+    await this.pool.query('DELETE FROM crm_sessions WHERE user_id = $1', [userId]);
+  }
+
+  /** Company details of the user's workspace (asked at sign-up, or right after the first Google sign-in). */
+  async setCompany(userId: number, c: CompanyInput) {
+    await this.pool.query(
+      `UPDATE crm_workspaces SET company_name = $2, company_type = $3, company_mc = $4, company_dot = $5, company_phone = $6, fleet_size = $7
+       WHERE owner_id = $1`, [userId, c.name, c.type, c.mc, c.dot, c.phone, c.fleetSize]);
+  }
+
+  async company(ws: number): Promise<CompanyInput> {
+    const { rows } = await this.pool.query(
+      'SELECT company_name, company_type, company_mc, company_dot, company_phone, fleet_size FROM crm_workspaces WHERE id = $1', [ws]);
+    const r = rows[0] ?? {};
+    return { name: r.company_name ?? '', type: r.company_type ?? '', mc: r.company_mc ?? '', dot: r.company_dot ?? '', phone: r.company_phone ?? '', fleetSize: r.fleet_size ?? '' };
+  }
+
+  // One-time email codes (verification and password reset): stored hashed, 15 minutes, 5 tries.
+
+  async saveCode(email: string, purpose: CodePurpose, hash: string) {
+    await this.ready;
+    await this.pool.query(
+      `INSERT INTO crm_email_codes (email, purpose, code_hash, expires_at, attempts) VALUES ($1,$2,$3, now() + interval '15 minutes', 0)
+       ON CONFLICT (email, purpose) DO UPDATE SET code_hash = EXCLUDED.code_hash, expires_at = EXCLUDED.expires_at, attempts = 0`,
+      [email, purpose, hash]);
+  }
+
+  /** 'ok' (and the code is used up), 'wrong', or 'expired' (also after 5 wrong tries). */
+  async useCode(email: string, purpose: CodePurpose, hash: string): Promise<'ok' | 'wrong' | 'expired'> {
+    await this.ready;
+    const { rows } = await this.pool.query(
+      'UPDATE crm_email_codes SET attempts = attempts + 1 WHERE email = $1 AND purpose = $2 RETURNING code_hash, attempts, expires_at > now() AS fresh',
+      [email, purpose]);
+    const r = rows[0];
+    if (!r || !r.fresh || r.attempts > 5) return 'expired';
+    if (r.code_hash !== hash) return 'wrong';
+    await this.pool.query('DELETE FROM crm_email_codes WHERE email = $1 AND purpose = $2', [email, purpose]);
+    return 'ok';
   }
 
   async createSession(userId: number): Promise<string> {
@@ -180,7 +299,10 @@ export class CrmStore {
       this.pool.query(`SELECT ${TRUCK_COLS} FROM crm_trucks WHERE workspace_id = $1 AND NOT archived ORDER BY unit, driver`, [ws]),
       this.pool.query(`SELECT ${LOAD_COLS} FROM crm_loads WHERE workspace_id = $1 ORDER BY load_date DESC, id DESC`, [ws]),
     ]);
-    return { user, dispatchers: d.rows.map(toDispatcher), carriers: c.rows.map(toCarrier), trucks: t.rows.map(toTruck), loads: l.rows.map(toLoad) };
+    return {
+      user, company: await this.company(ws),
+      dispatchers: d.rows.map(toDispatcher), carriers: c.rows.map(toCarrier), trucks: t.rows.map(toTruck), loads: l.rows.map(toLoad),
+    };
   }
 
   // Dispatchers

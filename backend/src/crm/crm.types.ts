@@ -78,8 +78,13 @@ export interface Load {
   paidOn: string | null;
 }
 
+/** Who uses the workspace: asked at sign-up, like other TMSs do, to set the board up for the business. */
+export type CompanyType = 'dispatch' | 'carrier' | 'broker' | '';
+export interface CompanyInput { name: string; type: CompanyType | string; mc: string; dot: string; phone: string; fleetSize: string }
+
 export interface CrmState {
   user: CrmUser;
+  company: CompanyInput;
   dispatchers: Dispatcher[];
   carriers: CrmCarrier[];
   trucks: Truck[];

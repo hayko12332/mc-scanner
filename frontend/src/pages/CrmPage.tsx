@@ -3,7 +3,7 @@ import { CarriersView, DispatchersView, TrucksView } from '../components/crm/Peo
 import { StatementsView } from '../components/crm/StatementsView'
 import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
-import { SignIn } from '../components/crm/SignIn'
+import { CompanySetup, SignIn } from '../components/crm/SignIn'
 import { Icon } from '../components/Icon'
 import { track } from '../lib/analytics'
 import { crm, CrmError, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
@@ -175,6 +175,11 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   if (!demo && config && !config.enabled) return shell(<p className="w-msg">The dispatch board is not available right now.</p>)
   if (!demo && config && (signedOut || !state)) return shell(<SignIn config={config} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />)
   if (!state) return shell(<p className="w-msg">Loading…</p>)
+
+  // A Google sign-up hasn't told us about the company yet: ask first, like other TMSs do.
+  if (!demo && state.company && !state.company.name) {
+    return shell(<CompanySetup user={state.user} onDone={() => { track('crm_company'); void reload() }} />)
+  }
 
   const openLoad = openId == null ? null : state.loads.find((l) => l.id === openId) ?? null
 

@@ -47,7 +47,19 @@ export interface Load {
 export type LoadInput = Omit<Load, 'id'>
 export type CarrierInput = Omit<CrmCarrier, 'id'>
 export type TruckInput = Omit<Truck, 'id'>
-export interface CrmState { user: CrmUser; dispatchers: Dispatcher[]; carriers: CrmCarrier[]; trucks: Truck[]; loads: Load[] }
+export type CompanyType = 'dispatch' | 'carrier' | 'broker'
+export interface Company { name: string; type: CompanyType | ''; mc: string; dot: string; phone: string; fleetSize: string }
+export const COMPANY_TYPES: [CompanyType, string, string][] = [
+  ['dispatch', 'Dispatch service', 'I dispatch trucks for carriers'],
+  ['carrier', 'Carrier / fleet', 'I own or run trucks'],
+  ['broker', 'Freight broker', 'I broker loads'],
+]
+export const FLEET_SIZES = ['1', '2–5', '6–20', '21–50', '50+']
+export interface SignUpInput { name: string; email: string; password: string; company: string; companyType: CompanyType | ''; mc: string; dot: string; phone: string; fleetSize: string }
+/** Sign-in either finishes (user) or needs the emailed code first (verify). */
+export type AuthResult = { user: CrmUser; verify?: undefined } | { verify: true; email: string; user?: undefined }
+
+export interface CrmState { user: CrmUser; company?: Company; dispatchers: Dispatcher[]; carriers: CrmCarrier[]; trucks: Truck[]; loads: Load[] }
 export interface MilesResult { miles: number; estimate: boolean }
 
 /** Defaults for the fields a new load doesn't need to fill in. */
@@ -99,7 +111,7 @@ export function carrierFee(c: Pick<CrmCarrier, 'feeType' | 'fee'> | undefined, l
 }
 export const feeLabel = (c: Pick<CrmCarrier, 'feeType' | 'fee'> | undefined) =>
   !c || !c.fee ? 'No fee set' : c.feeType === 'flat' ? `${usd(c.fee)} / week` : `${c.fee}% of gross`
-export interface CrmConfig { googleClientId: string; devLogin: boolean; enabled: boolean }
+export interface CrmConfig { googleClientId: string; devLogin: boolean; enabled: boolean; emailAuth?: boolean }
 export interface ImportRow {
   date: string; broker: string; pro: string; origin: string; destination: string; rate: number; dispatcher: string; carrier: string
   loadedMiles: number
@@ -134,6 +146,14 @@ export const crm = {
   google: (credential: string) => call<{ user: CrmUser }>('POST', '/auth/google', { credential }),
   devLogin: (name: string) => call<{ user: CrmUser }>('POST', '/auth/dev', { name }),
   logout: () => call<{ ok: true }>('POST', '/auth/logout'),
+  signUp: (v: SignUpInput) => call<AuthResult>('POST', '/auth/signup', v),
+  login: (email: string, password: string) => call<AuthResult>('POST', '/auth/login', { email, password }),
+  verify: (email: string, code: string) => call<{ user: CrmUser }>('POST', '/auth/verify', { email, code }),
+  resend: (email: string, purpose: 'verify' | 'reset') => call<{ ok: true }>('POST', '/auth/resend', { email, purpose }),
+  forgot: (email: string) => call<{ ok: true }>('POST', '/auth/forgot', { email }),
+  reset: (email: string, code: string, password: string) => call<{ user: CrmUser }>('POST', '/auth/reset', { email, code, password }),
+  setCompany: (c: Omit<Company, 'type'> & { type: CompanyType | '' }) =>
+    call<Company>('POST', '/company', { company: c.name, companyType: c.type, mc: c.mc, dot: c.dot, phone: c.phone, fleetSize: c.fleetSize }),
   state: () => call<CrmState>('GET', '/state'),
   addDispatcher: (d: Omit<Dispatcher, 'id'>) => call<Dispatcher>('POST', '/dispatchers', d),
   updateDispatcher: (d: Dispatcher) => call<Dispatcher>('PATCH', `/dispatchers/${d.id}`, d),

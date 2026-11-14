@@ -25,6 +25,13 @@ export const config = {
   ownerVisitorIds: env('OWNER_VISITOR_IDS').split(',').map((s) => s.trim()).filter(Boolean),
   // Google OAuth client id (public): "Sign in with Google" for the dispatcher CRM, and Google Sheets export.
   googleClientId: env('GOOGLE_CLIENT_ID'),
+  // Product name used in emails.
+  brandName: env('BRAND_NAME') || 'HaulPanel',
+  // Email (sign-up verification and password reset codes) is sent through Resend (https://resend.com).
+  resendApiKey: env('RESEND_API_KEY'),
+  mailFrom: env('MAIL_FROM') || 'HaulPanel <no-reply@haulpanel.com>',
+  mailReplyTo: env('MAIL_REPLY_TO'),
+  onRender: env('RENDER') === 'true',
   // Local development only: lets /api/crm/auth/dev log in without Google. Never set on the server.
   crmDevLogin: env('CRM_DEV_LOGIN') === '1' && env('RENDER') !== 'true',
   // Public https address of the site; Render sets RENDER_EXTERNAL_URL automatically.

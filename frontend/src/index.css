@@ -1812,3 +1812,52 @@ button.linkish:hover { text-decoration: underline; }
 .w-tabs::-webkit-scrollbar { display: none; }
 .w-tabs button { flex: none; white-space: nowrap; }
 .work { max-width: 100vw; overflow-x: clip; }
+
+/* Sign-up / log-in (like other TMSs: pitch on the left, account form on the right) */
+.au { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 440px); gap: 40px; align-items: start; max-width: 1040px; margin: 32px auto; padding: 0 16px; }
+.au.au-single { grid-template-columns: minmax(0, 480px); justify-content: center; }
+.au-pitch { padding-top: 24px; }
+.au-pitch h1 { margin: 12px 0 10px; font-size: 34px; line-height: 1.15; letter-spacing: -0.03em; }
+.au-pitch > p { margin: 0 0 6px; font-size: 16px; color: var(--muted); max-width: 460px; }
+.au-pitch .crm-points { margin: 22px 0; max-width: 460px; }
+.au-pitch .crm-demo-btn { width: auto; }
+.au-card { padding: 28px; border-radius: 14px; }
+.work .au-card { box-shadow: var(--shadow); background: var(--surface); border: 1px solid var(--border); }
+.au-card h2 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.02em; }
+.au-sub { margin: 0 0 18px; color: var(--muted); font-size: 14px; }
+.au-form { display: grid; gap: 14px; }
+.au-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.au-field { display: grid; gap: 5px; min-width: 0; }
+.au-field > span { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.au-field > small { font-size: 12px; color: var(--muted); }
+.au-field input, .au-field select { width: 100%; height: 40px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 14.5px; }
+.au-field input:focus, .au-field select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.au-pass, .au-inline { position: relative; display: flex; gap: 8px; }
+.au-pass input { padding-right: 64px; }
+.au-pass button { position: absolute; right: 6px; top: 6px; height: 28px; padding: 0 10px !important; border: 0; border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 12.5px !important; font-weight: 600; }
+.au-inline button { flex: none; height: 40px; padding: 0 16px !important; }
+.au-types { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.au-types button { display: grid; gap: 2px; padding: 10px !important; text-align: left; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); }
+.au-types button b { font-size: 13.5px; }
+.au-types button small { font-size: 11.5px; color: var(--muted); line-height: 1.3; font-weight: 400; }
+.au-types button.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+.au-submit { height: 44px; margin-top: 4px; font-size: 15px !important; font-weight: 700; }
+.au-google { display: flex; justify-content: center; min-height: 44px; }
+.au-or { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: var(--muted); font-size: 12.5px; }
+.au-or::before, .au-or::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+.au-switch { margin: 16px 0 0; text-align: center; font-size: 13.5px; color: var(--muted); }
+.au-switch button, .au-link { padding: 0 !important; border: 0; background: none; color: var(--accent); font-weight: 600; font-size: inherit !important; }
+.au-link { justify-self: end; margin-top: -6px; font-size: 13px !important; }
+.au-code { height: 52px !important; font-size: 26px !important; letter-spacing: 10px; text-align: center; font-variant-numeric: tabular-nums; }
+.au-info, .au-error { margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; font-size: 13.5px; }
+.au-info { background: var(--accent-soft); color: var(--accent); }
+.au-error { background: var(--bad-soft); color: var(--bad); font-weight: 600; }
+.au-card .crm-privacy { text-align: center; }
+@media (max-width: 860px) {
+  .au { grid-template-columns: minmax(0, 1fr); gap: 20px; margin: 16px auto; }
+  .au-pitch { padding-top: 0; }
+  .au-pitch h1 { font-size: 26px; }
+  .au-pitch .crm-points { display: none; }
+}
+@media (max-width: 480px) { .au-row, .au-types { grid-template-columns: minmax(0, 1fr); } .au-card { padding: 20px; } }
+.au-types button { align-content: start; }
