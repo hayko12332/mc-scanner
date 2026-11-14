@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://mc-scanner-6nao.onrender.com/sitemap.xml
