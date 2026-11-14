@@ -1,4 +1,5 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { track } from '../lib/analytics'
 import { Icon, type IconName } from '../components/Icon'
 
 type St = 'booked' | 'transit' | 'delivered' | 'invoiced' | 'paid'
@@ -173,15 +174,44 @@ function Check({ children }: { children: ReactNode }) {
 export function StartButton({ children = 'Start free', big = true }: { children?: ReactNode; big?: boolean }) {
   return <a className={`hp-btn primary ${big ? '' : 'sm'}`} href="#/crm?signup">{children}<Icon name="arrow" size={16} /></a>
 }
-function DemoButton({ dark = false }: { dark?: boolean }) {
-  return <a className={`hp-btn ${dark ? 'dark' : ''}`} href="#/crm?demo=1"><span className="hp-play"><Icon name="play" size={11} /></span>See the demo</a>
+function DemoButton({ dark = false, onPlay }: { dark?: boolean; onPlay: () => void }) {
+  return <button type="button" className={`hp-btn ${dark ? 'dark' : ''}`} onClick={onPlay}><span className="hp-play"><Icon name="play" size={11} /></span>See the demo</button>
+}
+
+/** The 90-second product tour, in a window over the page; from there, the live demo or sign-up. */
+function DemoVideo({ close }: { close: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => { removeEventListener('keydown', onKey); document.body.style.overflow = '' }
+  }, [close])
+  return (
+    <div className="hp-video" role="dialog" aria-modal="true" aria-label="HaulPanel demo video" onMouseDown={(e) => { if (e.target === e.currentTarget) close() }}>
+      <div className="hp-video-box">
+        <button className="hp-video-x" aria-label="Close" onClick={close}>×</button>
+        <video src="/haulpanel-demo.mp4" poster="/haulpanel-demo.jpg" controls autoPlay playsInline preload="auto"
+          onEnded={() => track('demo_video_end')} />
+        <div className="hp-video-foot">
+          <div><b>HaulPanel in 90 seconds</b><span>Loads, statements, payments, company lookup and new MC leads.</span></div>
+          <div className="hp-video-cta">
+            <a className="hp-btn sm" href="#/crm?demo=1">Try the live demo</a>
+            <StartButton big={false} />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 /** Landing page: HaulPanel as a TMS for dispatch companies. Light and quiet, with the product itself up front. */
 export function HomePage({ backendOk }: { backendOk: boolean | null }) {
   void backendOk
+  const [video, setVideo] = useState(false)
+  const play = () => { track('demo_video'); setVideo(true) }
   return (
     <div className="hp">
+      {video && <DemoVideo close={() => setVideo(false)} />}
       <section className="hp-hero">
         <div className="hp-hero-text">
           <p className="hp-eyebrow"><span>New</span>The TMS for truck dispatch companies</p>
@@ -192,7 +222,7 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
           </p>
           <div className="hp-cta">
             <StartButton />
-            <DemoButton />
+            <DemoButton onPlay={play} />
           </div>
           <p className="hp-fine"><Icon name="check" size={14} />Free during beta<Icon name="check" size={14} />No credit card<Icon name="check" size={14} />Set up in 2 minutes</p>
         </div>
@@ -281,7 +311,7 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
         <p>Free during beta. Bring your loads from Excel, CSV or Google Sheets.</p>
         <div className="hp-cta center">
           <StartButton>Create a free account</StartButton>
-          <DemoButton dark />
+          <DemoButton dark onPlay={play} />
         </div>
       </section>
     </div>
