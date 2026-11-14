@@ -176,7 +176,7 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
       {video && <DemoVideo close={() => setVideo(false)} />}
       <section className="hp-hero">
         <div className="hp-hero-text">
-          <p className="hp-eyebrow"><span>New</span>The TMS for truck dispatch companies</p>
+          <a className="hp-eyebrow" href="#/leads?go=1"><span>⚡ New MC leads</span>Carriers that got authority today, with phone &amp; email<Icon name="arrow" size={14} /></a>
           <h1>Run your dispatch company from <span>one panel</span></h1>
           <p className="hp-lead">
             Loads, trucks and drivers, carrier statements, invoices and payments — in one place built for dispatchers.
@@ -184,9 +184,9 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
           </p>
           <div className="hp-cta">
             <StartButton />
-            <DemoButton onPlay={play} />
+            <a className="hp-btn" href="#/leads?go=1"><span className="hp-play hp-zap"><Icon name="zap" size={12} /></span>Get today’s MC leads</a>
           </div>
-          <p className="hp-fine"><Icon name="check" size={14} />Free during beta<Icon name="check" size={14} />No credit card<Icon name="check" size={14} />Set up in 2 minutes</p>
+          <p className="hp-fine"><Icon name="check" size={14} />Free during beta<Icon name="check" size={14} />No credit card<Icon name="check" size={14} />MC leads without sign-up</p>
         </div>
         <HeroVideo onPlay={play} />
       </section>

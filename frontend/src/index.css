@@ -2354,3 +2354,8 @@ button.linkish:hover { text-decoration: underline; }
 .hp-hero-play-text { display: grid; gap: 1px; } .hp-hero-play-text b { font-size: 16px; } .hp-hero-play-text small { font-size: 12.5px; color: #94a3b8; }
 .hp-hero-video:focus-visible { outline: 3px solid #2563eb; outline-offset: 4px; }
 @media (max-width: 600px) { .hp-hero-play { padding: 6px 14px 6px 6px; gap: 10px; } .hp-hero-play-btn { width: 42px; height: 42px; } .hp-hero-play-text small { display: none; } }
+a.hp-eyebrow { text-decoration: none !important; transition: border-color 0.15s, box-shadow 0.15s; }
+a.hp-eyebrow:hover { border-color: #c7d7fe; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12); }
+.hp-eyebrow span { color: #c2410c; background: #fff7ed; }
+.hp-eyebrow .icon { color: #2563eb; margin-left: 2px; }
+.hp-zap { background: #fff7ed; color: #ea580c; }
