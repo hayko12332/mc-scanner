@@ -134,7 +134,7 @@ function Check({ children }: { children: ReactNode }) {
 
 /** Primary call to action: solid button with an arrow that moves on hover. */
 export function StartButton({ children = 'Start free', big = true }: { children?: ReactNode; big?: boolean }) {
-  return <a className={`hp-btn primary ${big ? '' : 'sm'}`} href="#/crm?signup">{children}<Icon name="arrow" size={16} /></a>
+  return <a className={`hp-btn primary ${big ? '' : 'sm'}`} href="#/crm?signup" data-track="start_free">{children}<Icon name="arrow" size={16} /></a>
 }
 function DemoButton({ dark = false, onPlay }: { dark?: boolean; onPlay: () => void }) {
   return <button type="button" className={`hp-btn ${dark ? 'dark' : ''}`} onClick={onPlay}><span className="hp-play"><Icon name="play" size={11} /></span>See the demo</button>
@@ -153,11 +153,12 @@ function DemoVideo({ close }: { close: () => void }) {
       <div className="hp-video-box">
         <button className="hp-video-x" aria-label="Close" onClick={close}>×</button>
         <video src="/haulpanel-demo.mp4" poster="/haulpanel-demo.jpg" controls autoPlay playsInline preload="auto"
-          onEnded={() => track('demo_video_end')} />
+          onEnded={() => track('demo_video_end')}
+          onPause={(e) => { const v = e.currentTarget; if (!v.ended) track('demo_video_pause', { at: Math.round(v.currentTime) }) }} />
         <div className="hp-video-foot">
           <div><b>HaulPanel in 90 seconds</b><span>Loads, statements, payments, company lookup and new MC leads.</span></div>
           <div className="hp-video-cta">
-            <a className="hp-btn sm" href="#/crm?demo=1">Try the live demo</a>
+            <a className="hp-btn sm" href="#/crm?demo=1" data-track="live_demo_from_video">Try the live demo</a>
             <StartButton big={false} />
           </div>
         </div>
@@ -176,7 +177,7 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
       {video && <DemoVideo close={() => setVideo(false)} />}
       <section className="hp-hero">
         <div className="hp-hero-text">
-          <a className="hp-eyebrow" href="#/leads?go=1"><span>⚡ New MC leads</span>Carriers that got authority today, with phone &amp; email<Icon name="arrow" size={14} /></a>
+          <a className="hp-eyebrow" href="#/leads?go=1" data-track="leads_chip"><span>⚡ New MC leads</span>Carriers that got authority today, with phone &amp; email<Icon name="arrow" size={14} /></a>
           <h1>Run your dispatch company from <span>one panel</span></h1>
           <p className="hp-lead">
             Loads, trucks and drivers, carrier statements, invoices and payments — in one place built for dispatchers.
@@ -184,7 +185,7 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
           </p>
           <div className="hp-cta">
             <StartButton />
-            <a className="hp-btn" href="#/leads?go=1"><span className="hp-play hp-zap"><Icon name="zap" size={12} /></span>Get today’s MC leads</a>
+            <a className="hp-btn" href="#/leads?go=1" data-track="get_leads"><span className="hp-play hp-zap"><Icon name="zap" size={12} /></span>Get today’s MC leads</a>
           </div>
           <p className="hp-fine"><Icon name="check" size={14} />Free during beta<Icon name="check" size={14} />No credit card<Icon name="check" size={14} />MC leads without sign-up</p>
         </div>
@@ -232,7 +233,7 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
               <Check>Phone and email for every carrier, verified on SAFER</Check>
               <Check>Export to Excel, Google Sheets or your phone’s contacts</Check>
             </ul>
-            <a className="hp-btn" href="#/leads">See today’s new MC leads<Icon name="arrow" size={16} /></a>
+            <a className="hp-btn" href="#/leads" data-track="leads_section">See today’s new MC leads<Icon name="arrow" size={16} /></a>
           </div>
           <div className="hp-leads-card">
             <div className="hp-leads-head"><b><span className="hv-bolt"><Icon name="zap" size={13} /></span>New MC leads · Today</b><span>152 carriers</span></div>

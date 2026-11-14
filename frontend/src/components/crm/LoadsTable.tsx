@@ -4,6 +4,7 @@ import {
   addDays, carrierFee, extras, fmtMiles, fmtRpm, gross, overdueDays, rpm, shortDate, STATUSES, today, usd, weekStart,
   withStatusDates, type CrmState, type ImportRow, type Load, type LoadInput, type LoadStatus,
 } from '../../lib/crm'
+import { track } from '../../lib/analytics'
 import { buildXlsx } from '../../lib/xlsx'
 import { Icon } from '../Icon'
 import { ImportDialog } from './ImportDialog'
@@ -102,7 +103,8 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
   const [q, setQ] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'date', desc: true })
   const [importing, setImporting] = useState(false)
-  const [kpi, setKpi] = useState<KpiKind | null>(null)
+  const [kpi, setKpiState] = useState<KpiKind | null>(null)
+  const setKpi = (k: KpiKind | null) => { if (k) track('kpi_open', { kind: k }); setKpiState(k) }
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
   const carrierById = useMemo(() => new Map(carriers.map((c) => [c.id, c])), [carriers])
@@ -255,7 +257,9 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
   if (!state.loads.length) {
     return (
       <>
-        <GettingStarted state={state} add={add} importFile={() => setImporting(true)} goTab={goTab} />
+        <GettingStarted state={state} add={() => { track('setup_step', { step: 'new_load' }); add() }}
+          importFile={() => { track('setup_step', { step: 'import' }); setImporting(true) }}
+          goTab={(t) => { track('setup_step', { step: t }); goTab(t) }} />
         {importing && (
           <ImportDialog carriers={carriers} onClose={() => setImporting(false)}
             onImport={async (rows2) => { await importLoads(rows2); setImporting(false) }} />
@@ -282,7 +286,7 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
         </div>
         <div className="lt-actions">
           <button className="ghost" onClick={() => setImporting(true)}><Icon name="database" size={14} />Import</button>
-          <button className="ghost" onClick={exportXlsx} disabled={!rows.length}><Icon name="download" size={14} />Export</button>
+          <button className="ghost" onClick={() => { track('loads_export', { rows: rows.length }); exportXlsx() }} disabled={!rows.length}><Icon name="download" size={14} />Export</button>
           <button className="primary" onClick={add} title="New load (N)">+ New load</button>
         </div>
       </div>
@@ -442,7 +446,7 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
       {kpi && (
         <KpiDrawer kind={kpi} rows={rows} state={state} close={() => setKpi(null)} openLoad={openLoad}
           periodLabel={`${PERIODS.find(([id]) => id === period)![1]}${carrierId ? ` · ${carrierById.get(Number(carrierId))?.name ?? ''}` : ''}${dispatcherId ? ` · ${dispatcherName.get(Number(dispatcherId)) ?? ''}` : ''}`}
-          markPaid={(ls) => quiet(updateMany(ls, (l) => withStatusDates(l, 'paid')))}
+          markPaid={(ls) => { track('mark_paid', { from: 'kpi' }); quiet(updateMany(ls, (l) => withStatusDates(l, 'paid'))) }}
           goStatements={() => goTab('statements')} />
       )}
 

@@ -3,6 +3,7 @@ import { api } from '../../api'
 import {
   crm, type AuthResult, type Company, type CrmConfig, type CrmUser, type SignUpInput,
 } from '../../lib/crm'
+import { track } from '../../lib/analytics'
 import { formatPhone } from '../../lib/format'
 import { Icon } from '../Icon'
 
@@ -120,6 +121,8 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
   const emailAuth = config.emailAuth !== false
 
   const go = (s: Screen) => { setScreen(s); setError(''); setInfo(''); setCode('') }
+  // Funnel: which account screen people reach (sign-up, log-in, code, reset).
+  useEffect(() => { track('auth_view', { screen }) }, [screen])
 
   useEffect(() => {
     if (!config.googleClientId || inTelegram || !google.current || (screen !== 'signup' && screen !== 'login')) return
@@ -144,12 +147,14 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
       await fn()
     } catch (e) {
       setError((e as Error).message)
+      track('auth_error', { screen, error: (e as Error).message.slice(0, 90) })
     } finally {
       setBusy(false)
     }
   }
   const after = (r: AuthResult) => {
     if (r.user) return onSignedIn(r.user)
+    if (screen === 'signup') track('crm_signup', { company: v.company.slice(0, 60), mc: (v.mc || mcDot).replace(/\D/g, '').slice(0, 10) })
     setEmail(r.email)
     go('verify')
     setInfo(`We sent a 6-digit code to ${r.email}`)
@@ -161,12 +166,12 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
     void run(async () => after(await crm.signUp({ ...v, companyType: 'dispatch', mc: v.mc || (v.dot === typed ? '' : typed) })))
   }
   const logIn = (e: FormEvent) => { e.preventDefault(); void run(async () => after(await crm.login(email, password))) }
-  const verify = (e: FormEvent) => { e.preventDefault(); void run(async () => onSignedIn((await crm.verify(email, code)).user)) }
+  const verify = (e: FormEvent) => { e.preventDefault(); void run(async () => { const r = await crm.verify(email, code); track('crm_verified'); onSignedIn(r.user) }) }
   const forgot = (e: FormEvent) => {
     e.preventDefault()
-    void run(async () => { await crm.forgot(email); go('reset'); setInfo(`If ${email} has an account, a reset code is on its way.`) })
+    void run(async () => { await crm.forgot(email); track('password_forgot'); go('reset'); setInfo(`If ${email} has an account, a reset code is on its way.`) })
   }
-  const reset = (e: FormEvent) => { e.preventDefault(); void run(async () => onSignedIn((await crm.reset(email, code, password)).user)) }
+  const reset = (e: FormEvent) => { e.preventDefault(); void run(async () => { const r = await crm.reset(email, code, password); track('password_reset'); onSignedIn(r.user) }) }
   const resend = (purpose: 'verify' | 'reset') => void run(async () => { await crm.resend(email, purpose); setInfo(`A new code is on its way to ${email}`) })
 
   const googleBlock = config.googleClientId && !inTelegram ? (
@@ -200,7 +205,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
                 <div className="au-inline">
                   <input inputMode="numeric" value={mcDot} onChange={(e) => setMcDot(e.target.value)} placeholder="e.g. 1234567"
                     onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void fill(mcDot) } }} />
-                  <button type="button" className="ghost" onClick={() => void fill(mcDot)}>Find</button>
+                  <button type="button" className="ghost" onClick={() => { track('mc_fill'); void fill(mcDot) }}>Find</button>
                 </div>
               </Field>
               <div className="au-row">
@@ -327,7 +332,7 @@ export function CompanySetup({ user, onDone }: { user: CrmUser; onDone: (c: Comp
             <Field label="MC number" hint={note || 'Optional — we fill in your company from FMCSA'}>
               <div className="au-inline">
                 <input inputMode="numeric" value={mcDot} onChange={(e) => setMcDot(e.target.value)} placeholder="e.g. 1234567" />
-                <button type="button" className="ghost" onClick={() => void fill(mcDot)}>Find</button>
+                <button type="button" className="ghost" onClick={() => { track('mc_fill'); void fill(mcDot) }}>Find</button>
               </div>
             </Field>
             <Field label="Company name"><input required value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} /></Field>

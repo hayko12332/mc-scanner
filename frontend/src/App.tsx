@@ -84,8 +84,8 @@ export default function App() {
             <a href="#/scan" className={`hide-md ${page === 'scan' ? 'active' : ''}`}>MC scanner</a>
           </nav>
           <div className="nav-cta">
-            <a className="nav-link hide-sm" href="#/crm?login">Log in</a>
-            <a className="btn nav-start" href="#/crm?signup">Start free</a>
+            <a className="nav-link hide-sm" href="#/crm?login" data-track="header_login">Log in</a>
+            <a className="btn nav-start" href="#/crm?signup" data-track="header_start_free">Start free</a>
           </div>
         </div>
       </header>

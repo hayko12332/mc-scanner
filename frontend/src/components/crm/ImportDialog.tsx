@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type DragEvent } from 'react'
 import { parseSheet, shortDate, usd, type CrmCarrier, type ImportRow } from '../../lib/crm'
 import { ACCEPT, readSheetFile, toTsv } from '../../lib/readSheet'
+import { track } from '../../lib/analytics'
 import { Icon } from '../Icon'
 
 const FIELD_NAMES: Record<keyof ImportRow, string> = {
@@ -46,10 +47,13 @@ export function ImportDialog({ carriers, onImport, onClose }: Props) {
     setReading(true)
     setFileName(file.name)
     try {
-      setText(toTsv(await readSheetFile(file)))
+      const rows = await readSheetFile(file)
+      setText(toTsv(rows))
+      track('import_file', { ext: file.name.split('.').pop()?.toLowerCase() ?? '', rows: rows.length })
     } catch (e) {
       setText('')
       setError((e as Error).message)
+      track('import_error', { error: (e as Error).message.slice(0, 90) })
     } finally {
       setReading(false)
     }
@@ -65,6 +69,7 @@ export function ImportDialog({ carriers, onImport, onClose }: Props) {
     setBusy(true)
     setError('')
     try {
+      track('import_run', { source: fileName ? 'file' : 'paste', rows: parsed.rows.length })
       await onImport(parsed.rows)
     } catch (e) {
       setError((e as Error).message)

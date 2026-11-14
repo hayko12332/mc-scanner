@@ -11,7 +11,7 @@ export interface NotifierOptions {
 }
 
 /** Actions reported once per visitor (per server run), besides the first visit itself. */
-const FIRST_ACTIONS = new Set(['leads_start', 'scan_start', 'lookup', 'csv_export']);
+const FIRST_ACTIONS = new Set(['leads_start', 'scan_start', 'lookup', 'csv_export', 'crm_signup', 'crm_verified', 'crm_demo', 'demo_video']);
 const MAX_REMEMBERED = 5000;
 
 /** Turns a two-letter country code into its flag emoji ("US" -> 🇺🇸). */
@@ -72,6 +72,10 @@ export class OwnerNotifier {
       if (e.event === 'lookup') texts.push(`🔎 Ищет компанию: ${p.q} (найдено: ${p.results})\n${who(e)}`);
       if (e.event === 'leads_start') texts.push(`⚡ Загружает New MC leads за ${p.days} дн.\n${who(e)}`);
       if (e.event === 'csv_export') texts.push(`⬇️ Экспорт ${String(p.format ?? 'csv').toUpperCase()}: ${p.rows} перевозчиков\n${who(e)}`);
+      if (e.event === 'crm_signup') texts.push(`🆕 Регистрация в Dispatch: ${p.company || 'без названия'}${p.mc ? ` (MC ${p.mc})` : ''} — ждёт код из письма\n${who(e)}`);
+      if (e.event === 'crm_verified') texts.push(`✅ Подтвердил почту и вошёл в Dispatch\n${who(e)}`);
+      if (e.event === 'crm_demo') texts.push(`🧪 Открыл демо Dispatch\n${who(e)}`);
+      if (e.event === 'demo_video') texts.push(`🎬 Смотрит видео-обзор\n${who(e)}`);
     }
     return texts;
   }

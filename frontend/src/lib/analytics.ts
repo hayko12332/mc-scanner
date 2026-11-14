@@ -66,6 +66,8 @@ export function initAnalytics(): void {
   addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush(true))
   addEventListener('pagehide', () => flush(true))
   document.addEventListener('click', (e) => {
+    const marked = (e.target as Element | null)?.closest?.('[data-track]') as HTMLElement | null
+    if (marked) track('click', { what: marked.dataset.track ?? '', page: location.hash.split('?')[0] || '#/' })
     const a = (e.target as Element | null)?.closest?.('a[href^="http"]') as HTMLAnchorElement | null
     if (a) track('outbound', { host: new URL(a.href).host, label: (a.textContent ?? '').trim().slice(0, 60) })
   }, { capture: true })

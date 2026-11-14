@@ -4,6 +4,7 @@ import {
   addDays, carrierFee, extras, feeLabel, fmtMiles, fmtRpm, gross, rpm, shortDate, today, usd, weekStart,
   type CrmCarrier, type CrmState, type Load,
 } from '../../lib/crm'
+import { track } from '../../lib/analytics'
 import { buildXlsx } from '../../lib/xlsx'
 import { Icon } from '../Icon'
 import { place } from './LoadsTable'
@@ -38,6 +39,7 @@ export function StatementsView({ state, toast }: { state: CrmState; toast: (m: s
   }
 
   const print = (r: Row) => {
+    track('statement_pdf', { loads: r.loads.length })
     const w = window.open('', '_blank')
     if (!w) return toast('Allow pop-ups for this site to print the statement')
     const lumper = r.loads.reduce((s, l) => s + l.lumper, 0)
@@ -80,6 +82,7 @@ export function StatementsView({ state, toast }: { state: CrmState; toast: (m: s
   }
 
   const excel = (r: Row) => {
+    track('statement_excel', { loads: r.loads.length })
     const data: (string | number)[][] = r.loads.map((l) => [
       l.date, l.pro, l.broker, place(l.origin), place(l.destination), truck(l), l.loadedMiles || '', l.rate, extras(l) || '', gross(l),
     ])
