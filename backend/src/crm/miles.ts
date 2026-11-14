@@ -6,7 +6,7 @@ import { db } from '../db.js';
 // the public OSRM server. Every place and route is cached in Postgres, so each lane is looked up only once.
 // If routing is down, the straight-line distance × 1.2 is used as an estimate.
 
-const UA = 'LeadHaul/1.0 (https://mc-scanner-6nao.onrender.com)';
+const UA = 'HaulPanel/1.0 (https://haulpanel.com)';
 const METERS_PER_MILE = 1609.344;
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS geo_places (q TEXT PRIMARY KEY, lat DOUBLE PRECISION, lon DOUBLE PRECISION, found_at TIMESTAMPTZ NOT NULL DEFAULT now());

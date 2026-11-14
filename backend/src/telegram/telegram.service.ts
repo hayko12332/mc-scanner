@@ -298,7 +298,7 @@ export class TelegramService implements OnApplicationBootstrap {
       '🆕 Carriers that just got their operating authority, with phone and email — most have no dispatcher yet.',
       '🔎 Scan any MC range for authorized carriers, verified live on SAFER.',
       '🏢 Check any company by MC, USDOT, email or phone: authority, insurance, fleet, state registration, liens and courts.',
-      '🚧 Coming soon: CRM for dispatchers.',
+      '📋 Dispatch TMS: loads, trucks, rate per mile, carrier statements, invoices and payments — free during beta.',
       '',
       `🤖 Bot: @${this.username || 'LeadHaul'} — tap the button below and press Start`,
       `🌐 Website: ${this.siteUrl}`,
