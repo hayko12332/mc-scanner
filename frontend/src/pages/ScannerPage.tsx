@@ -42,10 +42,12 @@ interface Props {
   backendOk: boolean | null
   copy: (text: string, what?: string) => void
   toast: (message: string) => void
+  /** Shown inside the dispatch board: New MC leads only, without the mode switch. */
+  embedded?: boolean
 }
 
 /** The two tools (New MC leads and the MC range scanner) with their results; both keep running in the background. */
-export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Props) {
+export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast, embedded }: Props) {
   const saved = useMemo(() => loadState<SavedState>(), [])
   const [settings, setSettings] = useState<ScanSettings>({ ...DEFAULT_SETTINGS, ...saved.settings })
   const [filters, setFilters] = useState<Filters>({ ...DEFAULT_FILTERS, ...saved.filters })
@@ -152,7 +154,7 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
   return (
     <>
       <section id="scanner" className="section-anchor tools">
-        <div className="mode-tabs" role="tablist" aria-label="Mode">
+        {!embedded && <div className="mode-tabs" role="tablist" aria-label="Mode">
           <a href="#/leads" role="tab" aria-selected={isLeads} className={isLeads ? 'on' : ''}>
             <Icon name="zap" size={18} />
             <span><b>New MC leads <span className="new-tag">NEW</span></b><small>Carriers and brokers that just got authority</small></span>
@@ -161,7 +163,7 @@ export function ScannerPage({ mode, hash, navKey, backendOk, copy, toast }: Prop
             <Icon name="scan" size={18} />
             <span><b>Scan MC range</b><small>Walk MC numbers one by one</small></span>
           </a>
-        </div>
+        </div>}
         {isLeads ? (
           <LeadsPanel
             kind={leadKind}

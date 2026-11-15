@@ -109,7 +109,11 @@ function readHash(hash: string): { q: string; type: LookupType } {
   return { q: params.get('q') ?? '', type: TYPES.some((t) => t.value === type) ? type! : 'auto' }
 }
 
-export function LookupPage({ hash, copy }: { hash: string; copy: (text: string) => void }) {
+/**
+ * `navigate` keeps searches inside the dispatch board (no page change); on the site the address bar is used.
+ * `embedded`: shown inside the board, with a compact header instead of the big hero.
+ */
+export function LookupPage({ hash, copy, navigate, embedded }: { hash: string; copy: (text: string) => void; navigate?: (hash: string) => void; embedded?: boolean }) {
   const { q, type } = readHash(hash)
   const [input, setInput] = useState(q)
   const [inputType, setInputType] = useState<LookupType>(type)
@@ -142,14 +146,17 @@ export function LookupPage({ hash, copy }: { hash: string; copy: (text: string) 
 
   const submit = (e: { preventDefault(): void }) => {
     e.preventDefault()
-    if (input.trim()) location.hash = lookupHref(input.trim(), inputType)
+    if (!input.trim()) return
+    const href = lookupHref(input.trim(), inputType)
+    if (navigate) navigate(href)
+    else location.hash = href
   }
 
   const shared = result && result.profiles.length > 1 && result.kinds.some((k) => k === 'email' || k === 'phone')
 
   return (
     <>
-      <section className="hero-band lookup-band">
+      <section className={`hero-band lookup-band ${embedded ? 'in-board' : ''}`}>
         <div className="wrap lookup-hero">
           <span className="eyebrow dark">Company lookup</span>
           <h1>Check any carrier <span className="hl">in one search</span></h1>
@@ -164,7 +171,7 @@ export function LookupPage({ hash, copy }: { hash: string; copy: (text: string) 
               onChange={(e) => setInput(e.target.value)}
               placeholder="MC-1650101, USDOT 2952744, info@acme.com or (614) 555-1234"
               aria-label="MC, USDOT, email or phone"
-              autoFocus
+              autoFocus={!embedded}
             />
             <button className="primary big glow" type="submit" disabled={loading}>
               {loading ? <><span className="spinner" /> Searching…</> : <>Search<Icon name="arrow" size={16} /></>}

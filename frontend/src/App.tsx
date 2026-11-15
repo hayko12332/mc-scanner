@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from './api'
 import { useToast } from './hooks/useToast'
 import { ComingSoon } from './components/ComingSoon'
@@ -31,11 +32,14 @@ function useHash() {
     addEventListener('hashchange', onChange)
     return () => removeEventListener('hashchange', onChange)
   }, [])
-  return { hash, navKey, lastLookup }
+  return { hash, navKey, lastLookup, setLastLookup }
 }
 
+export type BoardTool = 'lookup' | 'leads'
+const TOOL_KEY = 'haulpanel.boardTool'
+
 export default function App() {
-  const { hash, navKey, lastLookup } = useHash()
+  const { hash, navKey, lastLookup, setLastLookup } = useHash()
   const page = isLookup(hash) ? 'lookup'
     : hash.startsWith('#/feedback') ? 'feedback'
     : hash.startsWith('#/crm') ? 'crm'
@@ -57,6 +61,32 @@ export default function App() {
     track('page_view', { page })
     scrollTo(0, 0)
   }, [page])
+
+  // Lookup and New MC leads opened inside the dispatch board (its sidebar "Tools").
+  const [boardTool, setBoardTool] = useState<BoardTool | null>(() => {
+    try { const t = sessionStorage.getItem(TOOL_KEY); return t === 'lookup' || t === 'leads' ? t : null } catch { return null }
+  })
+  const [boardSlot, setBoardSlot] = useState<HTMLElement | null>(null)
+  const openBoardTool = useCallback((t: BoardTool | null) => {
+    if (t) track('board_tool', { tool: t })
+    try { if (t) sessionStorage.setItem(TOOL_KEY, t); else sessionStorage.removeItem(TOOL_KEY) } catch { /* not remembered */ }
+    setBoardTool(t)
+  }, [])
+  const inBoard = page === 'crm' && boardTool != null && boardSlot != null
+  const toolsNode = useMemo(() => document.createElement('div'), [])
+  const homeSlot = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const target = inBoard ? boardSlot : homeSlot.current
+    if (target && toolsNode.parentNode !== target) target.appendChild(toolsNode)
+  })
+  /** Inside the board, links between the tools (a company's MC, "check this company") stay in the board. */
+  const onToolClick = (e: MouseEvent) => {
+    if (!inBoard) return
+    const a = (e.target as HTMLElement).closest('a')
+    const href = a?.getAttribute('href') ?? ''
+    if (href.startsWith('#/lookup')) { e.preventDefault(); setLastLookup(href); openBoardTool('lookup'); scrollTo(0, 0) }
+    else if (href.startsWith('#/leads')) { e.preventDefault(); openBoardTool('leads') }
+  }
 
   const copy = useCallback(async (text: string, what = text) => {
     if (!text) return toast.show('Nothing to copy')
@@ -91,26 +121,35 @@ export default function App() {
       </header>
       )}
 
-      {page === 'crm' && <CrmPage toast={toast.show} />}
+      {page === 'crm' && <CrmPage toast={toast.show} tool={boardTool} setTool={openBoardTool} toolSlot={setBoardSlot} />}
       <main className="wrap" hidden={page === 'crm'}>
         {page === 'home' && <HomePage backendOk={backendOk} />}
-        {/* The tools and Lookup stay mounted so a running scan keeps going while you look something up. */}
-        <div hidden={!isTool}>
-          <ScannerPage
-            mode={page === 'scan' ? 'range' : 'leads'}
-            hash={hash}
-            navKey={navKey}
-            backendOk={backendOk}
-            copy={(t, w) => void copy(t, w)}
-            toast={toast.show}
-          />
-        </div>
-        <div hidden={page !== 'lookup'}>
-          <LookupPage hash={lastLookup} copy={(t) => void copy(t)} />
-        </div>
+        {/* Lookup and the lead tools live here, or inside the dispatch board when opened from its sidebar (see below). */}
+        <div ref={homeSlot} />
         {page === 'feedback' && <FeedbackPage groupUrl={telegram.group} supportUrl={telegram.support} />}
         {page !== 'feedback' && page !== 'crm' && page !== 'home' && <ComingSoon />}
       </main>
+      {/* The tools are mounted once and their DOM is moved between the site and the board, so a running search
+          or lead download keeps going (and keeps its results) when you switch between them. */}
+      {createPortal(
+        <div onClickCapture={onToolClick}>
+          <div hidden={!(isTool || (inBoard && boardTool === 'leads'))}>
+            <ScannerPage
+              mode={inBoard ? 'leads' : page === 'scan' ? 'range' : 'leads'}
+              embedded={inBoard}
+              hash={hash}
+              navKey={navKey}
+              backendOk={backendOk}
+              copy={(t, w) => void copy(t, w)}
+              toast={toast.show}
+            />
+          </div>
+          <div hidden={!(page === 'lookup' || (inBoard && boardTool === 'lookup'))}>
+            <LookupPage hash={lastLookup} navigate={inBoard ? setLastLookup : undefined} embedded={inBoard} copy={(t) => void copy(t)} />
+          </div>
+        </div>,
+        toolsNode,
+      )}
 
       {page !== 'crm' && <Footer telegram={telegram} lastLookup={lastLookup} backendOk={backendOk} />}
       <div className={`toast ${toast.message ? 'show' : ''}`}>{toast.message}</div>

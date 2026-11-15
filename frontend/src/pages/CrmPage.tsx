@@ -4,10 +4,11 @@ import { StatementsView } from '../components/crm/StatementsView'
 import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { CompanySetup, SignIn } from '../components/crm/SignIn'
-import { Icon } from '../components/Icon'
+import { Icon, type IconName } from '../components/Icon'
 import { track } from '../lib/analytics'
-import { crm, CrmError, looksLikePlace, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
+import { crm, CrmError, looksLikePlace, type Company, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
 import { crmDemo } from '../lib/crmDemo'
+import type { BoardTool } from '../App'
 
 type Tab = 'loads' | 'statements' | 'carriers' | 'trucks' | 'dispatchers'
 type Theme = 'light' | 'dark'
@@ -27,10 +28,8 @@ const readTheme = (): Theme => {
   }
 }
 
-/** Full-screen work layout: its own slim top bar instead of the site header, light theme by default. */
-function Shell({ theme, setTheme, children, nav, user, banner }: {
-  theme: Theme; setTheme: (t: Theme) => void; children: ReactNode; nav?: ReactNode; user?: ReactNode; banner?: ReactNode
-}) {
+/** Before sign-in (and while loading): a slim bar with the logo over the page. */
+function Shell({ theme, children, banner }: { theme: Theme; children: ReactNode; banner?: ReactNode }) {
   return (
     <div className={`work theme-${theme}`}>
       <header className="w-top">
@@ -38,16 +37,6 @@ function Shell({ theme, setTheme, children, nav, user, banner }: {
           <img src="/logo.svg" alt="" width="22" height="22" />
           <b>HaulPanel</b>
         </a>
-        {nav}
-        <div className="w-right">
-          <a className="w-link" href="#/leads"><Icon name="zap" size={14} />MC leads</a>
-          <a className="w-link" href="#/lookup"><Icon name="search" size={14} />Lookup</a>
-          <button className="w-icon" title={theme === 'light' ? 'Dark theme' : 'Light theme'} aria-label="Switch theme"
-            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
-            {theme === 'light' ? '☾' : '☀'}
-          </button>
-          {user}
-        </div>
       </header>
       {banner}
       <div className="w-body">{children}</div>
@@ -55,8 +44,71 @@ function Shell({ theme, setTheme, children, nav, user, banner }: {
   )
 }
 
+type NavItem = [Tab, string, IconName, number]
+
+/**
+ * Signed in: the TMS layout — a dark sidebar that stays put (your company on top, the sections, tools, and you
+ * at the bottom) and one work area that scrolls with the page, so there is a single scroll, never a box inside a box.
+ */
+function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, company, demo, onLeave, banner, children }: {
+  theme: Theme; setTheme: (t: Theme) => void; items: NavItem[]; tab: Tab; setTab: (t: Tab) => void
+  tool: BoardTool | null; setTool: (t: BoardTool | null) => void
+  user: CrmUser; company?: Company; demo: boolean; onLeave: () => void; banner?: ReactNode; children: ReactNode
+}) {
+  const org = company?.name || (demo ? 'Demo Dispatch LLC' : user.name)
+  const initials = org.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('')
+  return (
+    <div className={`work app theme-${theme}`}>
+      <aside className="w-side">
+        <a href="#/" className="w-side-logo" title="HaulPanel home"><img src="/logo.svg" alt="" width="24" height="24" /><b>HaulPanel</b></a>
+        <div className="w-org" title={org}>
+          <span className="w-org-mark">{initials || 'H'}</span>
+          <span className="w-org-text"><b>{org}</b><small>{company?.mc ? `MC ${company.mc}` : demo ? 'Demo account' : 'Dispatch company'}</small></span>
+        </div>
+        <nav className="w-nav" aria-label="Sections">
+          {items.map(([id, label, icon, n]) => (
+            <button key={id} title={label} className={!tool && tab === id ? 'on' : ''} aria-current={!tool && tab === id ? 'page' : undefined}
+              onClick={() => { setTool(null); setTab(id); scrollTo(0, 0) }}>
+              <Icon name={icon} size={16} /><span>{label}</span>{n > 0 && <em>{n}</em>}
+            </button>
+          ))}
+          <div className="w-nav-label">Tools</div>
+          <button title="Company lookup" className={tool === 'lookup' ? 'on' : ''} onClick={() => { setTool('lookup'); scrollTo(0, 0) }}>
+            <Icon name="search" size={16} /><span>Company lookup</span>
+          </button>
+          <button title="New MC leads" className={tool === 'leads' ? 'on' : ''} onClick={() => { setTool('leads'); scrollTo(0, 0) }}>
+            <Icon name="zap" size={16} /><span>New MC leads</span>
+          </button>
+        </nav>
+        <div className="w-side-foot">
+          <button className="w-nav-btn" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+            <Icon name={theme === 'light' ? 'moon' : 'sun'} size={16} /><span>{theme === 'light' ? 'Dark theme' : 'Light theme'}</span>
+          </button>
+          <div className="w-me" title={user.email}>
+            {user.picture ? <img src={user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{user.name.slice(0, 1).toUpperCase()}</span>}
+            <span className="w-me-text"><b>{user.name}</b><small>{demo ? 'Trying the demo' : user.email}</small></span>
+            <button className="w-me-out" title={demo ? 'Exit demo' : 'Sign out'} aria-label={demo ? 'Exit demo' : 'Sign out'} onClick={onLeave}>
+              <Icon name="logout" size={16} />
+            </button>
+          </div>
+        </div>
+      </aside>
+      <main className="w-main">
+        {banner}
+        <div className="w-body">{children}</div>
+      </main>
+    </div>
+  )
+}
+
 /** Dispatch board (TMS): sign in with Google, then the load journal, carriers and dispatchers. */
-export function CrmPage({ toast }: { toast: (m: string) => void }) {
+export function CrmPage({ toast, tool, setTool, toolSlot }: {
+  toast: (m: string) => void
+  /** Lookup or New MC leads opened from the sidebar; they are placed into `toolSlot`. */
+  tool: BoardTool | null
+  setTool: (t: BoardTool | null) => void
+  toolSlot: (el: HTMLElement | null) => void
+}) {
   const [config, setConfig] = useState<CrmConfig | null>(null)
   const [state, setState] = useState<CrmState | null>(null)
   const [signedOut, setSignedOut] = useState(false)
@@ -91,8 +143,9 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
 
   const onSignedIn = useCallback((u: CrmUser) => {
     track('crm_sign_in', { email_domain: u.email.split('@')[1] ?? '' })
+    toast(`Welcome, ${u.name.split(' ')[0] || u.email} — you’re signed in`)
     void reload()
-  }, [reload])
+  }, [reload, toast])
 
   /** Runs a change, shows errors as a toast, then refreshes from the server so totals always match it. */
   const act = useCallback(async (fn: () => Promise<unknown>, done?: string) => {
@@ -173,9 +226,7 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
       <button className="primary" onClick={() => setDemo(false)}>Sign in to use it for real</button>
     </div>
   ) : null
-  const shell = (children: ReactNode, nav?: ReactNode, user?: ReactNode) => (
-    <Shell theme={theme} setTheme={setTheme} nav={nav} user={user} banner={banner}>{children}</Shell>
-  )
+  const shell = (children: ReactNode) => <Shell theme={theme} banner={banner}>{children}</Shell>
 
   if (error && !state) return shell(<p className="w-msg error">{error}</p>)
   if (!demo && (!config || (!state && !signedOut))) return shell(<p className="w-msg">Loading…</p>)
@@ -190,31 +241,20 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
 
   const openLoad = openId == null ? null : state.loads.find((l) => l.id === openId) ?? null
 
-  const TABS: [Tab, string, number][] = [
-    ['loads', 'Loads', state.loads.length],
-    ['statements', 'Statements', state.carriers.filter((c) => c.fee > 0).length],
-    ['carriers', 'Carriers', state.carriers.length],
-    ['trucks', 'Trucks', state.trucks.length],
-    ['dispatchers', 'Dispatchers', state.dispatchers.length],
+  const items: NavItem[] = [
+    ['loads', 'Loads', 'file', state.loads.length],
+    ['statements', 'Statements', 'dollar', state.carriers.filter((c) => c.fee > 0).length],
+    ['carriers', 'Carriers', 'building', state.carriers.length],
+    ['trucks', 'Trucks', 'truck', state.trucks.length],
+    ['dispatchers', 'Dispatchers', 'users', state.dispatchers.length],
   ]
-  const nav = (
-    <nav className="w-tabs">
-      {TABS.map(([id, label, n]) => (
-        <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}<span>{n}</span></button>
-      ))}
-    </nav>
-  )
-  const user = (
-    <div className="w-user" title={state.user.email}>
-      {state.user.picture ? <img src={state.user.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{state.user.name.slice(0, 1)}</span>}
-      <span>{state.user.name}</span>
-      <button className="w-link" onClick={() => (demo ? Promise.resolve(setDemo(false)) : crm.logout().then(() => { setState(null); setSignedOut(true) }))}>{demo ? 'Exit demo' : 'Sign out'}</button>
-    </div>
-  )
+  const leave = () => (demo ? setDemo(false) : void crm.logout().then(() => { setState(null); setSignedOut(true) }))
 
-  return shell(
-    <>
-      {tab === 'loads' && (
+  return (
+    <AppShell theme={theme} setTheme={setTheme} items={items} tab={tab} setTab={setTab} tool={tool} setTool={setTool} user={state.user} company={state.company}
+      demo={demo} onLeave={leave} banner={banner}>
+      {tool && <div className={`w-tool w-tool-${tool}`} ref={toolSlot} />}
+      {!tool && tab === 'loads' && (
         <LoadsTable
           state={state}
           updateLoad={updateLoad}
@@ -254,7 +294,7 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
         <NewLoadDrawer state={state} defaults={creating} close={closeNew} miles={api.miles}
           add={(l) => addLoad(l).then(() => track('crm_add_load'))} />
       )}
-      {tab === 'carriers' && (
+      {!tool && tab === 'carriers' && (
         <CarriersView
           state={state}
           add={(c) => act(() => api.addCarrier(c), 'Carrier added')}
@@ -262,8 +302,8 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
           remove={(id) => act(() => api.removeCarrier(id))}
         />
       )}
-      {tab === 'statements' && <StatementsView state={state} toast={toast} />}
-      {tab === 'trucks' && (
+      {!tool && tab === 'statements' && <StatementsView state={state} toast={toast} />}
+      {!tool && tab === 'trucks' && (
         <TrucksView
           state={state}
           add={(t) => act(() => api.addTruck(t), 'Truck added')}
@@ -271,7 +311,7 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
           remove={(id) => act(() => api.removeTruck(id))}
         />
       )}
-      {tab === 'dispatchers' && (
+      {!tool && tab === 'dispatchers' && (
         <DispatchersView
           state={state}
           add={(d) => act(() => api.addDispatcher(d), 'Dispatcher added')}
@@ -279,8 +319,6 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
           remove={(id) => act(() => api.removeDispatcher(id))}
         />
       )}
-    </>,
-    nav,
-    user,
+    </AppShell>
   )
 }

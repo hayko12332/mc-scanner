@@ -2377,3 +2377,181 @@ a.hp-eyebrow:hover { border-color: #c7d7fe; box-shadow: 0 2px 8px rgba(37, 99, 2
 .pi-list li small { font-size: 11px; color: var(--muted); }
 .pi-list li.on { background: var(--accent-soft); }
 .pi-list li.on svg { color: var(--accent); }
+
+/* ---------- TMS app layout: dark sidebar + one scrolling work area (the ProductShot design) ---------- */
+.work.app { display: grid; grid-template-columns: 236px minmax(0, 1fr); align-items: start; }
+.w-side {
+  position: sticky; top: 0; z-index: 25; height: 100vh; display: flex; flex-direction: column; gap: 6px; padding: 14px 10px 10px;
+  background: #0b1220; color: #94a3b8; overflow-y: auto; scrollbar-width: none;
+}
+.work.theme-dark .w-side { background: #0a0d12; border-right: 1px solid var(--border); }
+.w-side-logo { display: flex; align-items: center; gap: 9px; padding: 2px 10px 10px; color: #fff !important; text-decoration: none !important; font-size: 15px; }
+.w-side-logo img { border-radius: 6px; }
+.w-org { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 9px 10px; border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); }
+.w-org-mark { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, #2563eb, #4f46e5); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.02em; }
+.w-org-text, .w-me-text { display: grid; min-width: 0; flex: 1; }
+.w-org-text b, .w-me-text b { color: #f8fafc; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-org-text small, .w-me-text small { color: #94a3b8; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.w-nav button, .w-nav a, .w-side .w-nav-btn {
+  display: flex; align-items: center; gap: 11px; width: 100%; height: 36px; padding: 0 10px !important; border: 0 !important;
+  border-radius: 8px !important; background: none !important; color: #cbd5e1 !important; font-size: 13.5px !important; font-weight: 500;
+  text-align: left; text-decoration: none !important; cursor: pointer; transition: background 0.12s, color 0.12s;
+}
+.w-nav button .icon, .w-nav a .icon, .w-side .w-nav-btn .icon { flex: none; color: #64748b; }
+.w-nav button:hover, .w-nav a:hover, .w-side .w-nav-btn:hover { background: rgba(255, 255, 255, 0.06) !important; color: #fff !important; }
+.w-nav button.on { background: rgba(255, 255, 255, 0.1) !important; color: #fff !important; font-weight: 600; }
+.w-nav button.on .icon { color: #60a5fa; }
+.w-nav em { margin-left: auto; padding: 1px 7px; border-radius: 99px; font-style: normal; font-size: 11.5px; font-weight: 600; color: #94a3b8; background: rgba(255, 255, 255, 0.07); }
+.w-nav button.on em { color: #e2e8f0; background: rgba(96, 165, 250, 0.18); }
+.w-nav-label { margin: 16px 10px 4px; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; }
+.w-side-foot { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.08); }
+.w-me { display: flex; align-items: center; gap: 10px; padding: 6px 4px 2px 8px; }
+.w-me img, .w-me .avatar { flex: none; width: 30px; height: 30px; border-radius: 50%; }
+.w-me .avatar { display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; background: #2563eb; }
+.w-me-out { flex: none; display: grid; place-items: center; width: 32px; height: 32px; padding: 0 !important; border: 0 !important;
+  border-radius: 8px !important; background: none !important; color: #94a3b8 !important; cursor: pointer; }
+.w-me-out:hover { background: rgba(255, 255, 255, 0.08) !important; color: #fff !important; }
+.w-main { min-width: 0; }
+.app .w-body { max-width: 1640px; margin: 0; padding: 18px 28px 56px; }
+.app .w-demo { padding: 9px 28px; }
+.app .lt-bulk { left: calc(50% + 118px); }
+
+/* One scroll: the page scrolls, the table header sticks to the top of the window (no scroll box inside the page). */
+@media (min-width: 901px) {
+  .app .lt-scroll { overflow: visible; max-height: none; }
+  .app .lb, .app .lt-table { min-width: 0; }
+  .app .lt-scroll thead th:first-child { border-top-left-radius: 8px; }
+  .app .lt-scroll thead th:last-child { border-top-right-radius: 8px; }
+  .app .lt-scroll tfoot tr:last-child td:first-child { border-bottom-left-radius: 8px; }
+  .app .lt-scroll tfoot tr:last-child td:last-child { border-bottom-right-radius: 8px; }
+}
+
+/* Narrower screens: the sidebar becomes an icon rail */
+@media (max-width: 1200px) and (min-width: 901px) {
+  .work.app { grid-template-columns: 64px minmax(0, 1fr); }
+  .w-side { padding: 14px 8px 10px; align-items: center; }
+  .w-side-logo { padding: 2px 0 12px; } .w-side-logo b { display: none; }
+  .w-org { padding: 0; background: none; border: 0; } .w-org-text { display: none; }
+  .w-nav { width: 100%; }
+  .w-nav button, .w-nav a, .w-side .w-nav-btn { justify-content: center; padding: 0 !important; }
+  .w-nav span, .w-nav em, .w-nav-label, .w-side .w-nav-btn span, .w-me-text { display: none; }
+  .w-nav-label { display: block; height: 1px; margin: 10px 8px; font-size: 0; background: rgba(255, 255, 255, 0.08); }
+  .w-me { flex-direction: column; padding: 4px 0 0; gap: 6px; }
+  .app .w-body { padding: 16px 20px 56px; }
+  .app .lt-bulk { left: calc(50% + 32px); }
+}
+
+/* Phones and tablets: a dark top bar with the sections side by side */
+@media (max-width: 900px) {
+  .work.app { display: block; }
+  .w-side { flex-direction: row; align-items: center; gap: 6px; height: auto; padding: 8px 10px; overflow-x: auto; overflow-y: hidden; }
+  .w-side-logo { padding: 0 4px 0 2px; } .w-side-logo b { display: none; }
+  .w-org, .w-nav-label { display: none; }
+  .w-nav { flex-direction: row; flex: none; gap: 2px; }
+  .w-nav button, .w-nav a { width: auto; flex: none; height: 34px; gap: 7px; white-space: nowrap; }
+  .w-nav a span, .w-nav em { display: none; }
+  .w-side-foot { flex-direction: row; align-items: center; margin-left: auto; padding: 0; border: 0; }
+  .w-side .w-nav-btn { width: 34px; justify-content: center; padding: 0 !important; } .w-side .w-nav-btn span, .w-me-text { display: none; }
+  .w-me { padding: 0; gap: 4px; } .w-me img, .w-me .avatar { width: 26px; height: 26px; }
+  .app .w-body { padding: 12px 12px 48px; }
+  .app .w-demo { padding: 8px 12px; }
+  .app .lt-bulk { left: 50%; }
+}
+.w-nav button, .w-nav a, .w-side .w-nav-btn { justify-content: flex-start; }
+@media (max-width: 1200px) and (min-width: 901px) { .w-nav button, .w-nav a, .w-side .w-nav-btn { justify-content: center; } }
+@media (max-width: 600px) {
+  .w-nav button:not(.on) span, .w-nav a, .w-side .w-nav-btn { display: none; }
+  .w-nav button { padding: 0 9px !important; }
+  .w-side { overflow-x: visible; }
+  .app .lt-status { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+  .app .lt-status::-webkit-scrollbar { display: none; }
+  .app .lt-status button { flex: none; white-space: nowrap; }
+  .app .lt-top { flex-wrap: wrap; }
+}
+
+/* ---------- Company lookup: the light, calm style of the app (site page and inside the board) ---------- */
+.lookup-band {
+  color: var(--text); border-bottom: 1px solid var(--border);
+  background: radial-gradient(900px 320px at 50% -10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%), var(--surface);
+}
+.lookup-band::before { opacity: 0.6; background-image: radial-gradient(color-mix(in srgb, var(--muted) 22%, transparent) 1px, transparent 1px); }
+.lookup-hero h1 { color: var(--text); font-size: 40px; }
+.lookup-hero h1 .hl { background: linear-gradient(90deg, #2563eb, #0891b2); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.lookup-hero .hero-sub { color: var(--muted); font-size: 16.5px; }
+.lookup-band .eyebrow.dark { color: var(--accent); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent); }
+.lookup-band .search-box {
+  background: var(--surface); border: 1px solid var(--border); backdrop-filter: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 30px rgba(15, 23, 42, 0.07);
+}
+.lookup-band .search-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent), 0 10px 30px rgba(15, 23, 42, 0.07); }
+.lookup-band .search-icon { color: var(--muted); }
+.lookup-band .search-box input { color: var(--text); }
+.lookup-band .search-box input::placeholder { color: color-mix(in srgb, var(--muted) 80%, transparent); }
+.lookup-band .search-box button { background: var(--accent); box-shadow: none; }
+.lookup-band .search-box button:hover:not(:disabled) { background: var(--accent-hover); }
+.lookup-band .segmented { background: var(--surface-2); border: 1px solid var(--border); }
+.lookup-band .segmented button { color: var(--muted); }
+.lookup-band .segmented button:hover:not(.on) { color: var(--text); }
+.lookup-band .segmented button.on { color: var(--text); background: var(--surface); box-shadow: 0 1px 2px rgba(15, 23, 42, 0.1), 0 0 0 1px var(--border); }
+.lookup-band .examples { color: var(--muted); }
+.lookup-band .examples a { color: var(--text); background: var(--surface); border: 1px solid var(--border); }
+.lookup-band .examples a:hover { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+
+/* Tools inside the dispatch board: a work-area header instead of the page-wide hero */
+.w-tool .hero-band { width: auto; left: 0; margin: 0; border: 1px solid var(--border); border-radius: 12px; }
+.w-tool .hero-band::before { display: none; }
+.w-tool .lookup-band { background: var(--surface); }
+.w-tool .lookup-hero { max-width: none; padding: 20px 22px 18px; text-align: left; }
+.w-tool .lookup-hero .eyebrow { display: none; }
+.w-tool .lookup-hero h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.02em; }
+.w-tool .lookup-hero h1 .hl { -webkit-text-fill-color: currentColor; background: none; color: var(--text); }
+.w-tool .lookup-hero .hero-sub { margin: 0 0 14px; max-width: none; font-size: 13.5px; }
+.w-tool .search-box { padding: 5px 5px 5px 14px; border-radius: 10px; box-shadow: none; }
+.w-tool .search-box input { height: 38px; font-size: 15px; }
+.w-tool .search-box button { min-width: 110px; padding: 8px 14px; border-radius: 8px; font-size: 13.5px; }
+.w-tool .search-meta { margin-top: 10px; }
+.w-tool .segmented { padding: 3px; border-radius: 9px; }
+.w-tool .segmented button { padding: 4px 11px; font-size: 12.5px; border-radius: 7px; }
+.w-tool .lookup-gets { margin-top: 22px; }
+.w-tool .lookup-gets .section-head { margin-bottom: 12px; text-align: left; }
+.w-tool .lookup-gets .section-head .eyebrow { display: none; }
+.w-tool .lookup-gets h2 { font-size: 15px; margin: 0; }
+.w-tool .gets { gap: 10px; }
+.w-tool .get { padding: 14px; border-radius: 10px; box-shadow: none; }
+.w-tool .get:hover { transform: none; box-shadow: none; border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.w-tool .get h3 { font-size: 13.5px; } .w-tool .get p { font-size: 12.5px; }
+.w-tool .get .tile-icon { width: 34px; height: 34px; border-radius: 8px; }
+.w-tool .result-summary { margin: 18px 0 10px; font-size: 13.5px; }
+.w-tool .profile { border-radius: 12px; padding: 18px; box-shadow: none; }
+.w-tool .lookup-gets .section-head { max-width: none; margin-left: 0; margin-right: 0; }
+
+/* ---------- New MC leads & scanner: the calm app style (site page and inside the board) ---------- */
+.scan-panel { border-radius: 12px; padding: 20px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05); }
+.scan-panel::before { display: none; }
+.scan-head { gap: 12px; margin-bottom: 16px; }
+.scan-head .tile-icon { width: 40px; height: 40px; border-radius: 10px; box-shadow: none; }
+.scan-title h2 { font-size: 18px; font-weight: 700; }
+.scan-title p { font-size: 13.5px; }
+.kind-switch, .period-picker { border-radius: 10px; }
+.kind-switch button { border-radius: 8px; }
+.kind-switch button b { font-size: 14px; }
+.results-head h3 { font-size: 17px; font-weight: 700; }
+.panel.registry { border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05); }
+.registry-head { text-transform: none !important; letter-spacing: 0 !important; font-size: 12px !important; }
+.mode-tabs a { border-radius: 12px; }
+
+/* Inside the board: same density as the load board */
+.w-tool .tools { padding-top: 0; }
+.w-tool .scan-panel { padding: 16px 18px; margin-bottom: 14px; }
+.w-tool .scan-head { margin-bottom: 12px; }
+.w-tool .scan-head .tile-icon { width: 34px; height: 34px; border-radius: 8px; }
+.w-tool .scan-title h2 { font-size: 17px; }
+.w-tool .kind-switch { margin-bottom: 12px; }
+.w-tool .kind-switch button { padding-top: 8px; padding-bottom: 8px; }
+.w-tool .results-head { margin-top: 4px; }
+.w-tool .results-head h3 { font-size: 15px; }
+.w-tool .registry { padding: 0; }
+.leads-panel .primary.big, .scan-panel .primary.big { background: var(--accent); box-shadow: none; }
