@@ -2732,3 +2732,9 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
   .sk-grid3 { grid-template-columns: 1fr 1fr; }
 }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+/* Leads list header inside the board: the board has no site header, so it sticks to the very top */
+.w-tool .registry-head { top: 0; border-radius: 12px 12px 0 0; box-shadow: 0 1px 0 var(--border); }
+.w-tool .registry { border-radius: 12px; }
+@media (max-width: 900px) { .w-tool .registry-head { top: 50px; } }
+.w-tool .registry { overflow: clip; }
+.w-tool .registry-head { border-radius: 0; }
