@@ -199,10 +199,10 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
             Stop rebuilding the spreadsheet every Monday.
           </p>
           <div className="hp-cta">
-            <StartButton>Start free</StartButton>
-            <LiveDemoButton />
+            <StartButton>Start your free TMS</StartButton>
+            <a className="hp-btn" href="#/leads?go=1" data-track="get_leads"><span className="hp-play hp-zap"><Icon name="zap" size={12} /></span>Get today’s MC leads</a>
           </div>
-          <p className="hp-fine"><Icon name="check" size={14} />Free during beta<Icon name="check" size={14} />No credit card<Icon name="check" size={14} />Set up in 5 minutes</p>
+          <p className="hp-fine"><Icon name="check" size={14} />Free during beta<Icon name="check" size={14} />No credit card<Icon name="check" size={14} />MC leads without sign-up</p>
         </div>
         <div className="hp3-shot">
           <div className="hp3-frame">
