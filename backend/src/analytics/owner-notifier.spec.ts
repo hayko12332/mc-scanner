@@ -29,6 +29,13 @@ describe('OwnerNotifier', () => {
     expect(text).toContain('scanner');
   });
 
+  it('shows the IP and a short visitor number, so alerts of the same person can be told apart', () => {
+    const { n } = notifier();
+    const [text] = n.siteAlerts([ev('scan_start', { from: 1818735 }, { ip: '203.0.113.7', visitorId: 'f9b7b89f-1234-5678' })], false);
+    expect(text).toContain('Запустил скан с MC 1818735');
+    expect(text).toContain('IP 203.0.113.7 · #f9b7b89f');
+  });
+
   it('does not report a returning visitor page view', () => {
     const { n } = notifier();
     expect(n.siteAlerts([ev('page_view', { page: 'lookup' })], false)).toEqual([]);

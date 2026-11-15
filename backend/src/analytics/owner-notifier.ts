@@ -35,10 +35,17 @@ export function device(userAgent: string): string {
 export const isBotAgent = (userAgent: string) =>
   /bot|crawl|spider|slurp|headless|lighthouse|preview|facebookexternalhit|python|curl|wget|httpclient|scrapy|phantom|puppeteer|playwright/i.test(userAgent);
 
-function who(e: { country: string; userAgent: string; tgUsername: string; tgName: string }): string {
+/**
+ * Who did it: Telegram name, country and device, then IP and a short visitor number — the same person's alerts
+ * share them, and the number finds them in analytics_events (visitor_id starts with it).
+ */
+function who(e: { country: string; userAgent: string; tgUsername: string; tgName: string; ip?: string; visitorId?: string }): string {
   const place = [flag(e.country) + (e.country ? ` ${e.country}` : ''), device(e.userAgent)].filter(Boolean).join(', ');
   const tg = e.tgUsername ? `@${e.tgUsername}` : e.tgName;
-  return [tg, place].filter(Boolean).join(' · ') || 'unknown';
+  const id = e.visitorId && !e.visitorId.startsWith('tg:') ? `#${e.visitorId.slice(0, 8)}` : '';
+  const line = [tg, place].filter(Boolean).join(' · ') || 'unknown';
+  const net = [e.ip ? `IP ${e.ip}` : '', id].filter(Boolean).join(' · ');
+  return net ? `${line}\n${net}` : line;
 }
 
 /**
