@@ -2637,12 +2637,6 @@ a.hp-eyebrow:hover { border-color: #c7d7fe; box-shadow: 0 2px 8px rgba(37, 99, 2
 .hp3-bar i { width: 10px; height: 10px; border-radius: 50%; background: #d4d9e1; }
 .hp3-bar em { margin: 0 auto; padding: 2px 14px; border-radius: 6px; font-style: normal; font-size: 12px; color: #64748b; background: #fff; border: 1px solid #e3e7ee; }
 .hp3-frame .hp-app { max-width: none; border-radius: 0; box-shadow: none; }
-.hp3-play { position: absolute; left: 50%; bottom: 36px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 10px;
-  padding: 8px 18px 8px 8px; border: 0; border-radius: 99px; cursor: pointer; color: #fff; font: inherit; font-size: 14.5px;
-  background: rgba(11, 18, 32, 0.88); box-shadow: 0 12px 30px rgba(15, 23, 42, 0.35); backdrop-filter: blur(6px); transition: transform 0.15s, background 0.15s; }
-.hp3-play:hover { transform: translateX(-50%) translateY(-2px); background: #0b1220; }
-.hp3-play span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--hp-blue); }
-.hp3-play b { font-weight: 600; }
 
 .hp3-pains { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
 .hp3-pain { display: flex; flex-direction: column; padding: 26px; border-radius: 16px; background: #fff; border: 1px solid var(--hp-line); box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); }
@@ -2681,7 +2675,29 @@ a.hp-eyebrow:hover { border-color: #c7d7fe; box-shadow: 0 2px 8px rgba(37, 99, 2
   .hp3-hero { padding-top: 44px; }
   .hp3-hero h1 { font-size: 36px; }
   .hp3-hero .hp-lead { font-size: 16.5px; }
-  .hp3-play { bottom: 16px; font-size: 13px; }
   .hp3-included h2 { font-size: 27px; }
   .hp3-q button { font-size: 15.5px; }
 }
+/* Hero picture = the tour button */
+button.hp3-shot { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; box-shadow: none; }
+.hp3-shot .hp3-frame { display: block; transition: box-shadow 0.2s; }
+.hp3-shot:hover .hp3-frame { box-shadow: 0 30px 90px -20px rgba(37, 99, 235, 0.45); }
+.hp3-shot .hp3-frame::after { content: ''; position: absolute; inset: 0; background: rgba(11, 18, 32, 0); transition: background 0.2s; pointer-events: none; }
+.hp3-shot:hover .hp3-frame::after { background: rgba(11, 18, 32, 0.06); }
+.hp3-play { position: absolute; left: 50%; top: min(42%, 300px); bottom: auto; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 14px;
+  padding: 10px 22px 10px 10px; border-radius: 99px; color: #fff; white-space: nowrap; pointer-events: none;
+  background: rgba(11, 18, 32, 0.9); box-shadow: 0 16px 40px rgba(15, 23, 42, 0.4); backdrop-filter: blur(6px); transition: transform 0.2s, background 0.2s; }
+.hp3-shot:hover .hp3-play { transform: translate(-50%, -50%) scale(1.04); background: #0b1220; }
+.hp3-play-btn { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--hp-blue);
+  box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.25); }
+.hp3-play-btn .icon { margin-left: 3px; }
+.hp3-play-text { display: grid; text-align: left; }
+.hp3-play-text b { font-size: 16px; font-weight: 600; }
+.hp3-play-text small { font-size: 12.5px; color: #94a3b8; }
+@media (max-width: 600px) {
+  .hp3-play { top: 170px; padding: 8px 18px 8px 8px; gap: 10px; }
+  .hp3-play-btn { width: 42px; height: 42px; }
+  .hp3-play-text b { font-size: 14.5px; }
+}
+.hp3-shot .hp3-frame { position: relative; }
+button.hp3-shot { margin: 0 auto; max-width: 1120px; }

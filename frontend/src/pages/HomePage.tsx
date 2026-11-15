@@ -204,15 +204,17 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
           </div>
           <p className="hp-fine"><Icon name="check" size={14} />Free during beta<Icon name="check" size={14} />No credit card<Icon name="check" size={14} />MC leads without sign-up</p>
         </div>
-        <div className="hp3-shot">
-          <div className="hp3-frame">
+        {/* The whole picture opens the tour; the play button sits where the eye lands first. */}
+        <button type="button" className="hp3-shot" onClick={play} data-track="hero_tour" aria-label="Watch the 90-second tour of HaulPanel">
+          <span className="hp3-frame">
             <span className="hp3-bar"><i /><i /><i /><em>haulpanel.com · Dispatch board</em></span>
             <ProductShot />
-          </div>
-          <button type="button" className="hp3-play" onClick={play} data-track="hero_tour">
-            <span><Icon name="play" size={16} /></span><b>Watch the 90-second tour</b>
-          </button>
-        </div>
+          </span>
+          <span className="hp3-play">
+            <span className="hp3-play-btn"><Icon name="play" size={22} /></span>
+            <span className="hp3-play-text"><b>Watch the tour</b><small>1:35 · with sound</small></span>
+          </span>
+        </button>
       </section>
 
       <section className="hp-section">
