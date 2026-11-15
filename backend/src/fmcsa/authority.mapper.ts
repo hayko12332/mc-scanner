@@ -109,3 +109,14 @@ export function buildAuthority(legacy: Row | undefined, motus: MotusSummary | un
     bondOnFile: yesNo(onFile.bond_file),
   };
 }
+
+/**
+ * A grant FMCSA posted in the authority history (Granted, Active) while its registration file still says Pending:
+ * that file lags about a day, so today's new carriers would all be dropped. Pending becomes Active here;
+ * inactive or revoked stays out.
+ */
+export function justGranted(a: Authority, kind: LeadKind = 'carrier'): Authority | null {
+  const status = kind === 'broker' ? a.broker : a.motusCarrier;
+  if (status !== 'P') return null;
+  return kind === 'broker' ? { ...a, broker: 'A' } : { ...a, motusCarrier: 'A', common: 'A' };
+}

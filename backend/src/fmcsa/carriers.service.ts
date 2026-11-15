@@ -1,5 +1,5 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
-import { buildAuthority, LEGACY_FIELDS, MOTUS_FIELDS, summarizeMotus, type AuthorityMode } from './authority.mapper.js';
+import { buildAuthority, justGranted, LEGACY_FIELDS, MOTUS_FIELDS, summarizeMotus, type AuthorityMode } from './authority.mapper.js';
 import { CENSUS_FIELDS, censusCompany, censusToCarriers } from './census.mapper.js';
 import { LEAD_KINDS, type Authority, type Carrier, type LeadKind, type LeadsDay, type ScanResult } from './fmcsa.types.js';
 import { docketToMc, docketVariants, joinAddress, legacyDocket } from './normalize.js';
@@ -229,6 +229,14 @@ export class CarriersService implements OnModuleInit, OnModuleDestroy {
     const authority = new Map<number, Authority>();
     for (const part of chunks(candidates.map((c) => c.mc))) {
       for (const [mc, a] of await this.authorities(part, 'strict', kind)) authority.set(mc, a);
+    }
+    // The newest grants still read Pending in the registration file (it lags the authority history by about a day).
+    const lagging = candidates.map((c) => c.mc).filter((mc) => !authority.has(mc));
+    for (const part of chunks(lagging)) {
+      for (const [mc, a] of await this.authorities(part, 'any', kind)) {
+        const granted = justGranted(a, kind);
+        if (granted) authority.set(mc, granted);
+      }
     }
     const carriers: Carrier[] = candidates.flatMap((c) => {
       const a = authority.get(c.mc);

@@ -1,4 +1,4 @@
-import { buildAuthority, summarizeMotus } from './authority.mapper.js';
+import { buildAuthority, justGranted, summarizeMotus } from './authority.mapper.js';
 
 const legacy = (common: string, contract = 'N', broker = 'N') => ({
   docket_number: 'MC001650',
@@ -47,5 +47,22 @@ describe('buildAuthority', () => {
     const broker = motus('Active', 'Broker of Property (Except Household Goods)');
     expect(broker).toMatchObject({ carrier: null, broker: 'A' });
     expect(buildAuthority(legacy('A'), broker, 'strict')).toMatchObject({ broker: 'A', motusCarrier: null });
+  });
+});
+
+describe('justGranted', () => {
+  it('treats a grant still Pending in the registration file as authorized (that file lags a day)', () => {
+    const pending = buildAuthority(undefined, motus('Pending'), 'any')!;
+    expect(buildAuthority(undefined, motus('Pending'), 'strict')).toBeNull();
+    expect(justGranted(pending)).toMatchObject({ motusCarrier: 'A', common: 'A' });
+  });
+
+  it('keeps inactive or revoked carriers out', () => {
+    expect(justGranted(buildAuthority(undefined, motus('Inactive'), 'any')!)).toBeNull();
+  });
+
+  it('works for brokers', () => {
+    const broker = buildAuthority(undefined, motus('Pending', 'Broker of Property (Except Household Goods)'), 'any', 'broker')!;
+    expect(justGranted(broker, 'broker')).toMatchObject({ broker: 'A' });
   });
 });
