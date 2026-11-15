@@ -15,6 +15,7 @@ import { checkPassword, codeHash, emailOk, hashPassword, newCode, normEmail, pas
 import type { CodePurpose } from './crm.store.js';
 import type { CompanyInput } from './crm.types.js';
 import { MilesService } from './miles.js';
+import { PlacesService } from './places.js';
 
 const COOKIE = 'lh_crm';
 const COMPANY_TYPES = ['dispatch', 'carrier', 'broker'];
@@ -43,7 +44,8 @@ function readCookie(req: Request, name: string): string {
 @Controller('crm')
 export class CrmController {
   private readonly store: CrmStore | null;
-  private readonly milesService = new MilesService();
+  private readonly placesService = new PlacesService();
+  private readonly milesService = new MilesService(fetch, this.placesService);
   /** Sign-up, log-in and code checks per IP: enough for people, not for password guessing. */
   private readonly authLimiter = new RateLimiter(40, 10 * 60_000);
   /** Emails per address: one every 30 seconds, at most 6 an hour. */
@@ -266,6 +268,12 @@ export class CrmController {
     const { ws } = await this.auth(req);
     await this.store!.archiveTruck(ws, id);
     return { ok: true };
+  }
+
+  /** US cities matching what is typed in a lane field, e.g. ?q=santa mo → Santa Monica, CA. */
+  @Get('places')
+  places(@Query('q') q = '') {
+    return q.length > 60 ? [] : this.placesService.suggest(q).map((p) => p.label);
   }
 
   /** Driving miles between two places, e.g. ?from=Dallas, TX&to=Atlanta, GA. */

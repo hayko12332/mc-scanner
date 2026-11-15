@@ -2359,3 +2359,21 @@ a.hp-eyebrow:hover { border-color: #c7d7fe; box-shadow: 0 2px 8px rgba(37, 99, 2
 .hp-eyebrow span { color: #c2410c; background: #fff7ed; }
 .hp-eyebrow .icon { color: #2563eb; margin-left: 2px; }
 .hp-zap { background: #fff7ed; color: #ea580c; }
+.ld-hint { margin: 2px 0 8px; font-size: 12.5px; color: var(--muted); }
+.ld-field small .warn, .warn { color: var(--warn); font-weight: 600; }
+.ld-fee { display: grid; gap: 6px; margin: 4px 0 10px; padding: 10px 12px; border-radius: 10px; background: var(--warn-soft); }
+.ld-fee > span { font-size: 12.5px; font-weight: 600; color: var(--warn); }
+.ld-fee-row { display: grid; grid-template-columns: 90px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.ld-fee-row button { padding: 7px 14px !important; }
+/* Place suggestions under Pickup / Delivery / Origin / Destination */
+.pi { position: relative; }
+.pi-list { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; min-width: 220px; margin: 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 9px; box-shadow: 0 10px 28px rgba(15, 23, 42, .16); max-height: 280px; overflow-y: auto; }
+.pi-list li { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 6px; cursor: pointer; font-size: 13.5px; color: var(--text); }
+.pi-list li svg { flex: none; color: var(--muted); }
+.pi-list li span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pi-list li span b { font-weight: 650; }
+.pi-list li em { font-style: normal; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pi-list li small { font-size: 11px; color: var(--muted); }
+.pi-list li.on { background: var(--accent-soft); }
+.pi-list li.on svg { color: var(--accent); }

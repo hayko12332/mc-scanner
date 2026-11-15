@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
-  addDays, carrierFee, daysBetween, extras, feeLabel, fmtRpm, gross, LOAD_EXTRAS, overdueDays, PAY_TERMS_DAYS, rpm, shortDate, STATUSES, today, usd,
-  withStatusDates, type CrmState, type Load, type LoadInput, type LoadStatus, type MilesResult,
+  addDays, carrierFee, daysBetween, extras, feeLabel, fmtRpm, gross, LOAD_EXTRAS, looksLikePlace, overdueDays, PAY_TERMS_DAYS, rpm, shortDate, STATUSES, today, usd,
+  withStatusDates, type CrmCarrier, type CrmState, type Load, type LoadInput, type LoadStatus, type MilesResult,
 } from '../../lib/crm'
 import { place } from './LoadsTable'
+import { PlaceInput } from './PlaceInput'
 
 const money = (s: string) => Math.max(0, Number(s.replace(/[$,\s]/g, '')) || 0)
 const whole = (s: string) => Math.max(0, Math.round(Number(s.replace(/[,\s]/g, '')) || 0))
@@ -31,6 +32,20 @@ function Field({ label, value, onSave, type = 'text', prefix, suffix, hint, plac
   )
 }
 
+/** Origin / destination on an existing load: suggestions while typing; a picked city saves at once. */
+function PlaceField({ label, value, onSave, recent, hint }: { label: string; value: string; onSave: (v: string) => void; recent: string[]; hint?: ReactNode }) {
+  const [v, setV] = useState(value)
+  useEffect(() => setV(value), [value])
+  const commit = (x = v) => { if (x.trim() !== value) onSave(x.trim()) }
+  return (
+    <div className="ld-field">
+      <span>{label}</span>
+      <PlaceInput value={v} onChange={setV} onPick={commit} onBlur={() => commit()} recent={recent} />
+      {hint && <small>{hint}</small>}
+    </div>
+  )
+}
+
 function Pick({ label, value, options, onSave }: { label: string; value: string; options: [string, string][]; onSave: (v: string) => void }) {
   return (
     <label className="ld-field">
@@ -44,10 +59,12 @@ function Pick({ label, value, options, onSave }: { label: string; value: string;
  * Everything about one load in a side panel: the trip (truck, lane, loaded and empty miles), the pay
  * (rate, accessorials, gross, RPM, dispatch fee) and billing (invoice and payment dates against 30-day terms).
  */
-export function LoadDrawer({ load, state, save, remove, close, miles }: {
+export function LoadDrawer({ load, state, save, remove, close, miles, saveCarrier }: {
   load: Load
   state: CrmState
   save: (l: LoadInput) => void
+  /** Sets a carrier's dispatch fee right from the load, when it isn't set yet. */
+  saveCarrier: (c: CrmCarrier) => void
   remove: () => void
   close: () => void
   miles: (from: string, to: string) => Promise<MilesResult>
@@ -56,6 +73,7 @@ export function LoadDrawer({ load, state, save, remove, close, miles }: {
   const [note, setNote] = useState('')
   const set = (patch: Partial<LoadInput>) => save({ ...load, ...patch })
   const carrier = state.carriers.find((c) => c.id === load.carrierId)
+  const places = useMemo(() => recent(state.loads, (l) => [l.origin, l.destination]), [state.loads])
   const truck = state.trucks.find((t) => t.id === load.truckId)
   const dispatcher = state.dispatchers.find((d) => d.id === load.dispatcherId)
 
@@ -74,6 +92,7 @@ export function LoadDrawer({ load, state, save, remove, close, miles }: {
   const calc = async (kind: 'loaded' | 'empty') => {
     const [from, to] = kind === 'loaded' ? [load.origin, load.destination] : [previous?.destination ?? '', load.origin]
     if (!from || !to) return setNote(kind === 'loaded' ? 'Enter origin and destination first' : 'Assign a truck with an earlier load first')
+    if (!looksLikePlace(from) || !looksLikePlace(to)) return setNote('Type the city and state for both ends, e.g. Santa Monica, CA — then calculate.')
     setBusy(kind)
     setNote('')
     try {
@@ -131,10 +150,14 @@ export function LoadDrawer({ load, state, save, remove, close, miles }: {
                 onSave={(v) => { const t = state.trucks.find((x) => String(x.id) === v); set({ truckId: t?.id ?? null, carrierId: t?.carrierId ?? load.carrierId }) }}
                 options={[['', '—'], ...state.trucks.filter((t) => load.carrierId == null || t.carrierId === load.carrierId || t.id === load.truckId)
                   .map((t): [string, string] => [String(t.id), [t.unit && `#${t.unit}`, t.driver].filter(Boolean).join(' · ')])]} />
+              <Pick label="Dispatcher" value={String(load.dispatcherId ?? '')} onSave={(v) => set({ dispatcherId: v ? Number(v) : null })}
+                options={[['', '—'], ...state.dispatchers.map((d): [string, string] => [String(d.id), `${d.name} · ${d.percent}%`])]} />
               <Field label="Broker" value={load.broker} onSave={(v) => set({ broker: v })} />
               <Field label="PRO# / load #" value={load.pro} onSave={(v) => set({ pro: v })} />
-              <Field label="Origin" value={load.origin} placeholder="City, ST" onSave={(v) => set({ origin: v, loadedMiles: 0 })} />
-              <Field label="Destination" value={load.destination} placeholder="City, ST" onSave={(v) => set({ destination: v, loadedMiles: 0 })} />
+              <PlaceField label="Origin" value={load.origin} recent={places} onSave={(v) => set({ origin: v, loadedMiles: 0 })}
+                hint={load.origin && !looksLikePlace(load.origin) ? <span className="warn">Pick the city from the list or type City, ST</span> : undefined} />
+              <PlaceField label="Destination" value={load.destination} recent={places} onSave={(v) => set({ destination: v, loadedMiles: 0 })}
+                hint={load.destination && !looksLikePlace(load.destination) ? <span className="warn">Pick the city from the list or type City, ST</span> : undefined} />
               <Field label="Loaded miles" type="number" value={load.loadedMiles ? String(load.loadedMiles) : ''} suffix="mi" placeholder="0"
                 onSave={(v) => set({ loadedMiles: whole(v) })}
                 action={<button type="button" className="ld-calc" disabled={busy !== ''} onClick={() => void calc('loaded')}>{busy === 'loaded' ? '…' : 'Calculate'}</button>} />
@@ -159,8 +182,14 @@ export function LoadDrawer({ load, state, save, remove, close, miles }: {
             <dl className="ld-math">
               <div><dt>Rate {extras(load) ? `+ accessorials ${usd(extras(load))}` : ''}</dt><dd>{usd(g)} gross</dd></div>
               {load.lumper > 0 && <div><dt>Lumper — paid back to the carrier, not in gross</dt><dd>{usd(load.lumper)}</dd></div>}
-              <div><dt>Dispatch fee · {feeLabel(carrier)}</dt><dd>{fee != null ? usd(Math.round(fee * 100) / 100) : carrier?.feeType === 'flat' ? 'on the weekly statement' : '—'}</dd></div>
+              <div>
+                <dt>Dispatch fee · {carrier ? feeLabel(carrier) : 'no carrier'}</dt>
+                <dd>{fee != null && carrier?.fee ? usd(Math.round(fee * 100) / 100) : carrier?.feeType === 'flat' && carrier.fee ? 'on the weekly statement' : '—'}</dd>
+              </div>
+              {carrier && !carrier.fee && <FeeSetter carrier={carrier} save={saveCarrier} />}
+              {!carrier && <p className="ld-hint">Pick the carrier above — its dispatch fee is counted here.</p>}
               <div><dt>{dispatcher ? `${dispatcher.name}’s pay · ${dispatcher.percent}%` : 'Dispatcher pay'}</dt><dd>{dispatcher ? usd(Math.round(pay * 100) / 100) : '—'}</dd></div>
+              {!dispatcher && <p className="ld-hint">{state.dispatchers.length ? 'Pick the dispatcher above to count their pay.' : 'Add your dispatchers and their percent in the Dispatchers tab.'}</p>}
             </dl>
           </section>
 
@@ -217,7 +246,7 @@ function recent(loads: Load[], pick: (l: Load) => string[]): string[] {
 /** Looks up the miles between two places a moment after both are typed; `off` when the miles were typed by hand. */
 function useAutoMiles(from: string, to: string, off: boolean, miles: (a: string, b: string) => Promise<MilesResult>, got: (n: number) => void) {
   const [busy, setBusy] = useState(false)
-  const ok = from.trim().length > 2 && to.trim().length > 2
+  const ok = looksLikePlace(from) && looksLikePlace(to)
   const latest = useRef(got)
   latest.current = got
   useEffect(() => {
@@ -341,6 +370,13 @@ export function NewLoadDrawer({ state, defaults, add, close, miles }: {
     </label>
   )
 
+  const lane = (k: 'origin' | 'destination', label: string) => (
+    <div className="ld-field">
+      <span>{label}</span>
+      <PlaceInput value={v[k]} onChange={(s) => set({ [k]: s })} recent={places} />
+    </div>
+  )
+
   return (
     <div className="ld-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) close() }}>
       <aside className="ld" role="dialog" aria-label="New load" onKeyDown={onKey}>
@@ -376,11 +412,12 @@ export function NewLoadDrawer({ state, defaults, add, close, miles }: {
           <section>
             <h3>Lane</h3>
             <div className="ld-grid">
-              {input('origin', 'Pickup', { placeholder: 'City, ST', list: 'nl-places' })}
-              {input('destination', 'Delivery', { placeholder: 'City, ST', list: 'nl-places' })}
+              {lane('origin', 'Pickup')}
+              {lane('destination', 'Delivery')}
               {input('loadedMiles', 'Loaded miles', {
                 numeric: true, suffix: 'mi', placeholder: busy.loaded ? 'calculating…' : 'auto',
-                hint: busy.loaded ? 'Calculating from the map…' : touched.loaded ? undefined : 'Filled from the map; type to change',
+                hint: busy.loaded ? 'Calculating from the map…' : (v.origin && !looksLikePlace(v.origin)) || (v.destination && !looksLikePlace(v.destination))
+                  ? <span className="warn">Type city and state for both ends, e.g. Santa Monica, CA</span> : touched.loaded ? undefined : 'Filled from the map; type to change',
                 onChange: (s) => { setTouched((x) => ({ ...x, loaded: s !== '' })); set({ loadedMiles: s }) },
               })}
               {input('emptyMiles', 'Empty miles (deadhead)', {
@@ -437,8 +474,26 @@ export function NewLoadDrawer({ state, defaults, add, close, miles }: {
           </span>
         </footer>
         <datalist id="nl-brokers">{brokers.map((b) => <option key={b} value={b} />)}</datalist>
-        <datalist id="nl-places">{places.map((p) => <option key={p} value={p} />)}</datalist>
       </aside>
+    </div>
+  )
+}
+
+/** "No fee set" on a load: set the carrier's fee right here (it applies to all of this carrier's loads). */
+function FeeSetter({ carrier, save }: { carrier: CrmCarrier; save: (c: CrmCarrier) => void }) {
+  const [v, setV] = useState('')
+  const [type, setType] = useState<'percent' | 'flat'>(carrier.feeType || 'percent')
+  const n = money(v)
+  return (
+    <div className="ld-fee">
+      <span>Set {carrier.name}’s dispatch fee</span>
+      <div className="ld-fee-row">
+        <div className="ld-input"><input inputMode="decimal" placeholder={type === 'percent' ? '8' : '300'} value={v} onChange={(e) => setV(e.target.value)} /></div>
+        <div className="ld-input"><select value={type} onChange={(e) => setType(e.target.value as 'percent' | 'flat')}>
+          <option value="percent">% of gross</option><option value="flat">$ per week</option>
+        </select></div>
+        <button className="primary" disabled={!n} onClick={() => save({ ...carrier, feeType: type, fee: n })}>Save</button>
+      </div>
     </div>
   )
 }

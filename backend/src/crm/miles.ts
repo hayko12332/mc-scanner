@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { db } from '../db.js';
+import { PlacesService } from './places.js';
 
 // Driving miles between two US places ("Dallas, TX" → "Atlanta, GA"), for loaded miles and deadhead.
 // Places are found with OpenStreetMap Nominatim (at most 1 request a second, per its usage policy) and routed with
@@ -60,7 +61,7 @@ export class MilesService {
   /** Nominatim allows one request a second: requests wait for each other here. */
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly fetcher: typeof fetch = fetch) {}
+  constructor(private readonly fetcher: typeof fetch = fetch, private readonly known: PlacesService = new PlacesService()) {}
 
   private pool() {
     const pool = db();
@@ -70,7 +71,8 @@ export class MilesService {
 
   async miles(from: string, to: string): Promise<MilesResult | null> {
     const a = placeKey(from), b = placeKey(to);
-    if (!a || !b) return null;
+    // A bare state ("CA") or a 1–2 letter token matches some random place on the map: not a lane end.
+    if (!a || !b || !/[a-z]{3,}|\d{5}/.test(a) || !/[a-z]{3,}|\d{5}/.test(b)) return null;
     if (a === b) return { miles: 0, estimate: false, from, to };
     const key = `${V}${a}|${b}`;
     const known = this.routes.get(key) ?? (await this.savedRoute(key, from, to));
@@ -111,6 +113,9 @@ export class MilesService {
   }
 
   private async place(text: string): Promise<Point | null> {
+    // "City, ST" picked from the suggestions is in the bundled list: no map lookup needed.
+    const local = this.known.find(text);
+    if (local) return local;
     const q = V + placeKey(text);
     if (this.places.has(q)) return this.places.get(q)!;
     const pool = this.pool();

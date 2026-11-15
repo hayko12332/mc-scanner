@@ -6,7 +6,7 @@ import { LoadsTable } from '../components/crm/LoadsTable'
 import { CompanySetup, SignIn } from '../components/crm/SignIn'
 import { Icon } from '../components/Icon'
 import { track } from '../lib/analytics'
-import { crm, CrmError, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
+import { crm, CrmError, looksLikePlace, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
 import { crmDemo } from '../lib/crmDemo'
 
 type Tab = 'loads' | 'statements' | 'carriers' | 'trucks' | 'dispatchers'
@@ -141,7 +141,7 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
   latest.current = state
   const triedMiles = useRef(new Set<string>())
   useEffect(() => {
-    const todo = (state?.loads ?? []).filter((l) => l.id > 0 && l.origin && l.destination && !l.loadedMiles
+    const todo = (state?.loads ?? []).filter((l) => l.id > 0 && looksLikePlace(l.origin) && looksLikePlace(l.destination) && !l.loadedMiles
       && !triedMiles.current.has(`${l.id}|${l.origin}|${l.destination}`))
     if (!todo.length) return
     let cancelled = false
@@ -247,6 +247,7 @@ export function CrmPage({ toast }: { toast: (m: string) => void }) {
           remove={() => { setOpenId(null); optimistic((s) => ({ ...s, loads: s.loads.filter((x) => x.id !== openLoad.id) }), () => api.removeLoad(openLoad.id), 'Load deleted').catch(() => undefined) }}
           close={closeLoad}
           miles={api.miles}
+          saveCarrier={(c) => { optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c), `${c.name}’s fee saved`).catch(() => undefined) }}
         />
       )}
       {creating && (

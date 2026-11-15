@@ -73,7 +73,7 @@ export function Footer({ telegram, backendOk }: { telegram: Links; lastLookup?: 
         </div>
         <div className="footer-bottom">
           <span>© {new Date().getFullYear()} HaulPanel</span>
-          <span>Data from FMCSA open data and SAFER. Not affiliated with FMCSA or USDOT.</span>
+          <span>Data from FMCSA open data and SAFER. Not affiliated with FMCSA or USDOT. Places: <a href="https://www.geonames.org" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 4.0), maps © OpenStreetMap.</span>
           <span>We record anonymous usage (pages opened, searches) to improve the service.</span>
         </div>
       </div>

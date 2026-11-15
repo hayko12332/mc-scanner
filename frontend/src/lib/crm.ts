@@ -79,6 +79,10 @@ export const rpm = (amount: number, miles: number) => (miles > 0 ? amount / mile
 export const fmtRpm = (v: number | null) => (v == null ? '—' : `$${v.toFixed(2)}`)
 export const fmtMiles = (n: number) => (n ? n.toLocaleString('en-US') : '—')
 
+/** "Santa Monica, CA", "Dallas TX 75201" or a ZIP — enough to find on the map. A bare "CA" or "santa monica" is not. */
+export const looksLikePlace = (s: string) =>
+  /\b\d{5}\b/.test(s) || /[A-Za-z]{3,}.*[,\s]\s*[A-Za-z]{2}\.?(\s+\d{5}(-\d{4})?)?\s*$/.test(s.trim())
+
 /** Days between two YYYY-MM-DD dates. */
 export const daysBetween = (a: string, b: string) => Math.round((parse(b).getTime() - parse(a).getTime()) / 86_400_000)
 
@@ -165,6 +169,8 @@ export const crm = {
   updateTruck: (id: number, t: TruckInput) => call<Truck>('PATCH', `/trucks/${id}`, t),
   removeTruck: (id: number) => call('DELETE', `/trucks/${id}`),
   miles: (from: string, to: string) => call<MilesResult>('GET', `/miles?${new URLSearchParams({ from, to })}`),
+  /** US cities for what is typed in a lane field: "santa mo" → ["Santa Monica, CA", …]. */
+  places: (q: string) => call<string[]>('GET', `/places?${new URLSearchParams({ q })}`),
   addLoad: (l: LoadInput) => call<Load>('POST', '/loads', l),
   updateLoad: (id: number, l: LoadInput) => call<Load>('PATCH', `/loads/${id}`, l),
   removeLoad: (id: number) => call('DELETE', `/loads/${id}`),
