@@ -5,7 +5,8 @@ import {
 } from '../../lib/crm'
 import { track } from '../../lib/analytics'
 import { formatPhone } from '../../lib/format'
-import { Icon } from '../Icon'
+import { Icon, type IconName } from '../Icon'
+import { ProductShot } from '../ProductShot'
 
 interface GoogleId {
   initialize(o: { client_id: string; callback: (r: { credential: string }) => void; ux_mode?: string }): void
@@ -73,28 +74,44 @@ function useFmcsaFill(set: (patch: { company: string; dot: string; mc: string; p
   return { note, fill }
 }
 
-const BRAND_POINTS = [
-  'Loads, trucks and drivers on one board',
-  'Rate per mile, deadhead and accessorials',
-  'Carrier fees and weekly statements in one click',
-  'Invoices, payments and overdue alerts',
+const SIDE_POINTS: [IconName, string, string][] = [
+  ['file', 'Every load on one board', 'Broker, lane, miles, truck, rate per mile and status — grouped by week.'],
+  ['dollar', 'Carrier statements in one click', 'Percent or flat weekly fees, PDF statements, dispatcher pay.'],
+  ['search', 'Check any company', 'MC, USDOT, email or phone lookup and new MC leads every day.'],
 ]
 
-/** Left side of the account pages: the brand and what you get, like the sign-up pages of other TMSs. */
-function BrandPanel() {
+/**
+ * Account pages, laid out like the sign-up pages of professional TMSs: the form on a clean white side,
+ * the product itself on the dark side (a picture of the board and what you get).
+ */
+function AuthLayout({ top, children, foot }: { top?: ReactNode; children: ReactNode; foot?: ReactNode }) {
   return (
-    <aside className="au2-brand">
-      <h1>The TMS for dispatch companies</h1>
-      <ul>
-        {BRAND_POINTS.map((p) => <li key={p}><Icon name="check" size={15} />{p}</li>)}
-      </ul>
-      <div className="au2-card">
-        <div><span>Gross this week</span><b>$10,700</b></div>
-        <div><span>Rate per mile</span><b>$2.68</b></div>
-        <div><span>Dispatch fees</span><b>$856</b></div>
-      </div>
-      <p className="au2-foot">Free during beta · No credit card</p>
-    </aside>
+    <div className="au3">
+      <section className="au3-main">
+        <header className="au3-top">
+          <a href="#/" className="au3-logo"><img src="/logo.svg" alt="" width="28" height="28" /><b>HaulPanel</b></a>
+          {top}
+        </header>
+        <div className="au3-form">{children}</div>
+        <footer className="au3-foot">
+          {foot}
+          <span>© {new Date().getFullYear()} HaulPanel · <a href="mailto:support@haulpanel.com">support@haulpanel.com</a></span>
+        </footer>
+      </section>
+      <aside className="au3-side" aria-hidden="true">
+        <div className="au3-side-in">
+          <span className="au3-kicker">TMS for dispatch companies</span>
+          <h2>Run your whole dispatch company from one panel</h2>
+          <div className="au3-shot"><ProductShot /></div>
+          <ul className="au3-points">
+            {SIDE_POINTS.map(([icon, title, text]) => (
+              <li key={title}><span><Icon name={icon} size={16} /></span><div><b>{title}</b><small>{text}</small></div></li>
+            ))}
+          </ul>
+          <p className="au3-trust"><Icon name="shield" size={14} />Free during beta · No credit card · Your data is private to your company</p>
+        </div>
+      </aside>
+    </div>
   )
 }
 
@@ -115,17 +132,19 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
   const [code, setCode] = useState('')
   const [v, setV] = useState<SignUpInput>({ name: '', email: '', password: '', company: '', companyType: 'dispatch', mc: '', dot: '', phone: '', fleetSize: '' })
   const [mcDot, setMcDot] = useState('')
+  /** Sign-up in two short steps: you, then your company. */
+  const [step, setStep] = useState<1 | 2>(1)
   const { note, fill } = useFmcsaFill((p) => setV((x) => ({ ...x, ...p, phone: x.phone || p.phone })))
   const google = useRef<HTMLDivElement>(null)
   const inTelegram = document.documentElement.classList.contains('in-telegram')
   const emailAuth = config.emailAuth !== false
 
-  const go = (s: Screen) => { setScreen(s); setError(''); setInfo(''); setCode('') }
+  const go = (s: Screen) => { setScreen(s); setError(''); setInfo(''); setCode(''); setStep(1) }
   // Funnel: which account screen people reach (sign-up, log-in, code, reset).
-  useEffect(() => { track('auth_view', { screen }) }, [screen])
+  useEffect(() => { track('auth_view', { screen: screen === 'signup' && step === 2 ? 'signup_company' : screen }) }, [screen, step])
 
   useEffect(() => {
-    if (!config.googleClientId || inTelegram || !google.current || (screen !== 'signup' && screen !== 'login')) return
+    if (!config.googleClientId || inTelegram || !google.current || (screen !== 'signup' && screen !== 'login') || step !== 1) return
     let live = true
     loadGsi().then((g) => {
       if (!live || !google.current) return
@@ -138,7 +157,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
       })
     }, (e: Error) => setError(e.message))
     return () => { live = false }
-  }, [config.googleClientId, inTelegram, onSignedIn, screen])
+  }, [config.googleClientId, inTelegram, onSignedIn, screen, step])
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)
@@ -162,6 +181,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
 
   const signUp = (e: FormEvent) => {
     e.preventDefault()
+    if (step === 1) { setStep(2); setError(''); return }
     const typed = mcDot.replace(/\D/g, '')
     void run(async () => after(await crm.signUp({ ...v, companyType: 'dispatch', mc: v.mc || (v.dot === typed ? '' : typed) })))
   }
@@ -191,33 +211,45 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
   if (screen === 'signup') {
     body = (
       <>
-        <h2>Create your account</h2>
-        <p className="au-sub">Start running your dispatch company on HaulPanel — free during beta.</p>
-        {googleBlock}
+        <div className="au3-steps" aria-label={`Step ${step} of 2`}>
+          <span className={step === 1 ? 'on' : 'done'}><i>{step === 1 ? 1 : <Icon name="check" size={12} />}</i>Your account</span>
+          <em />
+          <span className={step === 2 ? 'on' : ''}><i>2</i>Your company</span>
+        </div>
+        <h2>{step === 1 ? 'Create your free account' : 'Tell us about your company'}</h2>
+        <p className="au-sub">{step === 1
+          ? 'Set up your dispatch board in a few minutes. Free during beta, no credit card.'
+          : 'Type your MC number and we fill in the rest from FMCSA.'}</p>
+        {step === 1 && googleBlock}
         {emailAuth ? (
           <form onSubmit={signUp} className="au-form">
-            <Field label="Full name"><input required autoComplete="name" value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
-            <Field label="Work email"><input type="email" required autoComplete="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} /></Field>
-            <Field label="Password" hint="At least 8 characters"><PasswordInput value={v.password} onChange={(x) => setV({ ...v, password: x })} autoComplete="new-password" /></Field>
-            <div className="au-group">
-              <b>Your dispatch company</b>
-              <Field label="MC number" hint={note || 'Optional — we fill in your company from FMCSA'}>
-                <div className="au-inline">
-                  <input inputMode="numeric" value={mcDot} onChange={(e) => setMcDot(e.target.value)} placeholder="e.g. 1234567"
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void fill(mcDot) } }} />
-                  <button type="button" className="ghost" onClick={() => { track('mc_fill'); void fill(mcDot) }}>Find</button>
-                </div>
-              </Field>
-              <div className="au-row">
-                <Field label="Company name"><input required autoComplete="organization" value={v.company} onChange={(e) => setV({ ...v, company: e.target.value })} /></Field>
+            {step === 1 ? (
+              <>
+                <Field label="Full name"><input required autoComplete="name" value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} autoFocus placeholder="John Smith" /></Field>
+                <Field label="Work email"><input type="email" required autoComplete="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} placeholder="you@company.com" /></Field>
+                <Field label="Password" hint="At least 8 characters"><PasswordInput value={v.password} onChange={(x) => setV({ ...v, password: x })} autoComplete="new-password" /></Field>
+                <button className="primary au-submit">Continue<Icon name="arrow" size={15} /></button>
+              </>
+            ) : (
+              <>
+                <Field label="MC number" hint={note || 'Optional — company name and phone fill in from FMCSA'}>
+                  <div className="au-inline">
+                    <input inputMode="numeric" value={mcDot} onChange={(e) => setMcDot(e.target.value)} placeholder="e.g. 1234567" autoFocus
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void fill(mcDot) } }} />
+                    <button type="button" className="ghost" onClick={() => { track('mc_fill'); void fill(mcDot) }}>Find</button>
+                  </div>
+                </Field>
+                <Field label="Company name"><input required autoComplete="organization" value={v.company} onChange={(e) => setV({ ...v, company: e.target.value })} placeholder="Acme Dispatch LLC" /></Field>
                 <Field label="Phone"><input type="tel" autoComplete="tel" value={v.phone} onChange={(e) => setV({ ...v, phone: e.target.value })} placeholder="Optional" /></Field>
-              </div>
-            </div>
-            <button className="primary au-submit" disabled={busy}>{busy ? 'Creating your account…' : 'Create account'}</button>
+                <div className="au3-actions">
+                  <button type="button" className="ghost" onClick={() => setStep(1)}>Back</button>
+                  <button className="primary au-submit" disabled={busy}>{busy ? 'Creating your account…' : 'Create account'}</button>
+                </div>
+                <p className="au3-legal">We’ll email you a 6-digit code to confirm your address.</p>
+              </>
+            )}
           </form>
         ) : !googleBlock && <p className="crm-note">Sign-up opens very soon — meanwhile try the demo.</p>}
-        <p className="au-switch">Already have an account? <button type="button" onClick={() => go('login')}>Log in</button></p>
-        <p className="au-scope">HaulPanel is built for dispatch companies. Accounts for carriers and freight brokers are coming soon.</p>
       </>
     )
   } else if (screen === 'login') {
@@ -236,7 +268,6 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
             <button className="primary au-submit" disabled={busy}>{busy ? 'Logging in…' : 'Log in'}</button>
           </form>
         )}
-        <p className="au-switch">New to HaulPanel? <button type="button" onClick={() => go('signup')}>Create an account</button></p>
       </>
     )
   } else if (screen === 'verify') {
@@ -286,24 +317,24 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
     )
   }
 
+  const top = screen === 'signup'
+    ? <span className="au3-switch">Already have an account? <button type="button" onClick={() => go('login')}>Log in</button></span>
+    : screen === 'login'
+      ? <span className="au3-switch">New to HaulPanel? <button type="button" onClick={() => go('signup')}>Create an account</button></span>
+      : undefined
+
   return (
-    <div className="au2">
-      <BrandPanel />
-      <section className="au2-main">
-        <div className="au2-form">
-          {inTelegram && <p className="crm-note">Google sign-in doesn’t work inside Telegram — use your email, or open <b>{location.host}</b> in a browser.</p>}
-          {info && !error && <p className="au-info">{info}</p>}
-          {error && <p className="au-error" role="alert">{error}</p>}
-          {body}
-          <button type="button" className="au2-demo" onClick={onDemo}><Icon name="zap" size={14} />Just looking? Open the demo — no sign-up</button>
-          {config.devLogin && (
-            <button className="crm-dev" onClick={() => crm.devLogin('Test dispatcher').then((r) => onSignedIn(r.user), (e: Error) => setError(e.message))}>
-              Test login (local only)
-            </button>
-          )}
-        </div>
-      </section>
-    </div>
+    <AuthLayout top={top} foot={<button type="button" className="au3-demo" onClick={onDemo}><Icon name="play" size={12} />Just looking? Open the demo board</button>}>
+      {inTelegram && <p className="crm-note">Google sign-in doesn’t work inside Telegram — use your email, or open <b>{location.host}</b> in a browser.</p>}
+      {info && !error && <p className="au-info">{info}</p>}
+      {error && <p className="au-error" role="alert">{error}</p>}
+      {body}
+      {config.devLogin && (
+        <button className="crm-dev" onClick={() => crm.devLogin('Test dispatcher').then((r) => onSignedIn(r.user), (e: Error) => setError(e.message))}>
+          Test login (local only)
+        </button>
+      )}
+    </AuthLayout>
   )
 }
 
@@ -321,10 +352,7 @@ export function CompanySetup({ user, onDone }: { user: CrmUser; onDone: (c: Comp
     crm.setCompany({ ...c, type: 'dispatch', mc: c.mc || (c.dot === typed ? '' : typed) }).then(onDone, (er: Error) => { setError(er.message); setBusy(false) })
   }
   return (
-    <div className="au2">
-      <BrandPanel />
-      <section className="au2-main">
-        <div className="au2-form">
+    <AuthLayout>
           <h2>Welcome, {user.name.split(' ')[0] || 'there'}!</h2>
           <p className="au-sub">One last step: tell us about your dispatch company.</p>
           {error && <p className="au-error" role="alert">{error}</p>}
@@ -340,8 +368,6 @@ export function CompanySetup({ user, onDone }: { user: CrmUser; onDone: (c: Comp
             <button className="primary au-submit" disabled={busy}>{busy ? 'Saving…' : 'Open my board'}</button>
           </form>
           <p className="au-switch">Signed in as {user.email}. <button type="button" onClick={() => void crm.logout().then(() => location.reload())}>Not you? Sign out</button></p>
-        </div>
-      </section>
-    </div>
+    </AuthLayout>
   )
 }

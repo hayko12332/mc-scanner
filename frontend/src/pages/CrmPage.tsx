@@ -29,7 +29,9 @@ const readTheme = (): Theme => {
 }
 
 /** Before sign-in (and while loading): a slim bar with the logo over the page. */
-function Shell({ theme, children, banner }: { theme: Theme; children: ReactNode; banner?: ReactNode }) {
+function Shell({ theme, children, banner, bare }: { theme: Theme; children: ReactNode; banner?: ReactNode; bare?: boolean }) {
+  // Account pages have their own full-screen layout.
+  if (bare) return <div className={`work theme-${theme}`}>{children}</div>
   return (
     <div className={`work theme-${theme}`}>
       <header className="w-top">
@@ -226,17 +228,17 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
       <button className="primary" onClick={() => setDemo(false)}>Sign in to use it for real</button>
     </div>
   ) : null
-  const shell = (children: ReactNode) => <Shell theme={theme} banner={banner}>{children}</Shell>
+  const shell = (children: ReactNode, bare = false) => <Shell theme={theme} banner={banner} bare={bare}>{children}</Shell>
 
   if (error && !state) return shell(<p className="w-msg error">{error}</p>)
   if (!demo && (!config || (!state && !signedOut))) return shell(<p className="w-msg">Loading…</p>)
   if (!demo && config && !config.enabled) return shell(<p className="w-msg">The dispatch board is not available right now.</p>)
-  if (!demo && config && (signedOut || !state)) return shell(<SignIn config={config} initial={hashParams().has('login') ? 'login' : 'signup'} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />)
+  if (!demo && config && (signedOut || !state)) return shell(<SignIn config={config} initial={hashParams().has('login') ? 'login' : 'signup'} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />, true)
   if (!state) return shell(<p className="w-msg">Loading…</p>)
 
   // A Google sign-up hasn't told us about the company yet: ask first, like other TMSs do.
   if (!demo && state.company && !state.company.name) {
-    return shell(<CompanySetup user={state.user} onDone={() => { track('crm_company'); void reload() }} />)
+    return shell(<CompanySetup user={state.user} onDone={() => { track('crm_company'); void reload() }} />, true)
   }
 
   const openLoad = openId == null ? null : state.loads.find((l) => l.id === openId) ?? null

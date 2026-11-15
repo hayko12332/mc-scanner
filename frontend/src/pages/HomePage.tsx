@@ -1,24 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { track } from '../lib/analytics'
-import { Icon } from '../components/Icon'
-
-/**
- * First-screen picture: a short silent loop of the real board (adding a load, miles filling in) in an app frame,
- * with a play button that opens the full narrated tour. Reduced-motion users see the still frame.
- */
-function HeroVideo({ onPlay }: { onPlay: () => void }) {
-  const still = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
-  return (
-    <button type="button" className="hp-hero-video" onClick={onPlay} aria-label="Watch the 90-second tour of HaulPanel">
-      <span className="hp-hero-video-bar"><i /><i /><i /><em>haulpanel.com · Dispatch</em></span>
-      <video src={still ? undefined : '/hero-loop.mp4'} poster="/hero-loop.jpg" autoPlay={!still} muted loop playsInline preload="auto" aria-hidden="true" />
-      <span className="hp-hero-play">
-        <span className="hp-hero-play-btn"><Icon name="play" size={22} /></span>
-        <span className="hp-hero-play-text"><b>Watch the tour</b><small>1:35 · with sound</small></span>
-      </span>
-    </button>
-  )
-}
+import { Icon, type IconName } from '../components/Icon'
+import { ProductShot } from '../components/ProductShot'
 
 /** Visual for the load row: one load opened, the way the load panel shows it. */
 function LoadVisual() {
@@ -128,6 +111,25 @@ const PLAN = [
   'Company lookup by MC, USDOT, email or phone', 'New MC leads every day with phone and email', 'Import from Excel, CSV or Google Sheets',
 ]
 
+/** The pains a dispatch office lives with, and what HaulPanel does about each. */
+const PAINS: [IconName, string, string, string][] = [
+  ['dollar', 'Monday statements take half a day', 'Copying loads into a template for every carrier, working out 8% of the gross, double-checking the math.',
+    'Statements are ready every Monday: each carrier’s fee — percent or flat — and a PDF to send.'],
+  ['clock', 'Unpaid loads slip through the cracks', 'Invoices sit in email, nobody remembers which broker is 40 days late, and cash flow suffers.',
+    'Every invoice is tracked against net-30. Overdue loads turn red on the board and in the totals.'],
+  ['file', 'The spreadsheet only one person understands', 'Rate per mile on a calculator, deadhead guessed, numbers that never match between dispatchers.',
+    'Miles come from the map, deadhead from the truck’s last drop. RPM, gross and dispatcher pay add up on their own.'],
+]
+
+const FAQ: [string, string][] = [
+  ['Is HaulPanel really free?', 'Yes. Everything is free for dispatch companies during the beta — no credit card and no limits on loads, carriers or trucks. We will tell you well in advance before any paid plan starts, and you can export all your data at any time.'],
+  ['Can I bring my loads from Excel or Google Sheets?', 'Yes. Upload an .xlsx or .csv file, or paste straight from Google Sheets. HaulPanel recognizes the usual columns (date, broker, load #, origin, destination, rate, miles) and shows a preview before importing.'],
+  ['Who can see my data?', 'Only your company. Every account’s loads, carriers and statements are private to that account and are never shared or sold.'],
+  ['Do I need to install anything?', 'No. HaulPanel runs in the browser on a computer, tablet or phone. Sign up and your board is ready.'],
+  ['What is a dispatch fee, and how is it counted?', 'For each carrier you set either a percent of gross (for example 8%) or a flat weekly amount. HaulPanel applies it per week to that carrier’s loads, and puts it on the weekly statement.'],
+  ['What data do Lookup and MC leads use?', 'Official FMCSA open data (carrier census, licensing and insurance) with live SAFER checks. HaulPanel is not affiliated with FMCSA or USDOT.'],
+]
+
 function Check({ children }: { children: ReactNode }) {
   return <li><Icon name="check" size={15} />{children}</li>
 }
@@ -136,8 +138,9 @@ function Check({ children }: { children: ReactNode }) {
 export function StartButton({ children = 'Start free', big = true }: { children?: ReactNode; big?: boolean }) {
   return <a className={`hp-btn primary ${big ? '' : 'sm'}`} href="#/crm?signup" data-track="start_free">{children}<Icon name="arrow" size={16} /></a>
 }
-function DemoButton({ dark = false, onPlay }: { dark?: boolean; onPlay: () => void }) {
-  return <button type="button" className={`hp-btn ${dark ? 'dark' : ''}`} onClick={onPlay}><span className="hp-play"><Icon name="play" size={11} /></span>See the demo</button>
+/** The live demo board with sample data: try the product without signing up. */
+function LiveDemoButton({ dark = false }: { dark?: boolean }) {
+  return <a className={`hp-btn ${dark ? 'dark' : ''}`} href="#/crm?demo=1" data-track="live_demo"><span className="hp-play"><Icon name="play" size={11} /></span>Open the live demo</a>
 }
 
 /** The 90-second product tour, in a window over the page; from there, the live demo or sign-up. */
@@ -167,37 +170,66 @@ function DemoVideo({ close }: { close: () => void }) {
   )
 }
 
-/** Landing page: HaulPanel as a TMS for dispatch companies. Light and quiet, with the product itself up front. */
+/** Landing page: HaulPanel as a TMS for dispatch companies — the pain, the product, the proof, then the answers. */
 export function HomePage({ backendOk }: { backendOk: boolean | null }) {
   void backendOk
   const [video, setVideo] = useState(false)
+  const [open, setOpen] = useState<number | null>(0)
   const play = () => { track('demo_video'); setVideo(true) }
+  // How far people read the page (once per milestone per visit), to see where they stop.
+  useEffect(() => {
+    const seen = new Set<number>()
+    const onScroll = () => {
+      const max = document.scrollingElement!.scrollHeight - innerHeight
+      const pct = max > 0 ? (scrollY / max) * 100 : 100
+      for (const m of [25, 50, 75, 100]) if (pct >= m - 2 && !seen.has(m)) { seen.add(m); track('home_scroll', { pct: m }) }
+    }
+    addEventListener('scroll', onScroll, { passive: true })
+    return () => removeEventListener('scroll', onScroll)
+  }, [])
   return (
-    <div className="hp">
+    <div className="hp hp3">
       {video && <DemoVideo close={() => setVideo(false)} />}
-      <section className="hp-hero">
-        <div className="hp-hero-text">
-          <a className="hp-eyebrow" href="#/leads?go=1" data-track="leads_chip"><span>⚡ New MC leads</span>Carriers that got authority today, with phone &amp; email<Icon name="arrow" size={14} /></a>
-          <h1>Run your dispatch company from <span>one panel</span></h1>
+      <section className="hp3-hero">
+        <div className="hp3-hero-text">
+          <span className="hp3-chip"><i />Free TMS for truck dispatch companies</span>
+          <h1>Your whole dispatch office <span>on one board</span></h1>
           <p className="hp-lead">
-            Loads, trucks and drivers, carrier statements, invoices and payments — in one place built for dispatchers.
-            Plus carrier checks by MC or USDOT and new MC leads every day.
+            Loads, rate per mile, carrier fees, weekly statements and unpaid invoices — counted for you.
+            Stop rebuilding the spreadsheet every Monday.
           </p>
           <div className="hp-cta">
-            <StartButton />
-            <a className="hp-btn" href="#/leads?go=1" data-track="get_leads"><span className="hp-play hp-zap"><Icon name="zap" size={12} /></span>Get today’s MC leads</a>
+            <StartButton>Start free</StartButton>
+            <LiveDemoButton />
           </div>
-          <p className="hp-fine"><Icon name="check" size={14} />Free during beta<Icon name="check" size={14} />No credit card<Icon name="check" size={14} />MC leads without sign-up</p>
+          <p className="hp-fine"><Icon name="check" size={14} />Free during beta<Icon name="check" size={14} />No credit card<Icon name="check" size={14} />Set up in 5 minutes</p>
         </div>
-        <HeroVideo onPlay={play} />
+        <div className="hp3-shot">
+          <div className="hp3-frame">
+            <span className="hp3-bar"><i /><i /><i /><em>haulpanel.com · Dispatch board</em></span>
+            <ProductShot />
+          </div>
+          <button type="button" className="hp3-play" onClick={play} data-track="hero_tour">
+            <span><Icon name="play" size={16} /></span><b>Watch the 90-second tour</b>
+          </button>
+        </div>
       </section>
 
-      <section className="hp-band">
-        <div className="hp-facts">
-          <div><span className="hp-fact-icon"><Icon name="database" size={18} /></span><div><b>Official FMCSA data</b><small>carrier census, licensing &amp; insurance</small></div></div>
-          <div><span className="hp-fact-icon"><Icon name="shield" size={18} /></span><div><b>Live SAFER checks</b><small>authority verified in real time</small></div></div>
-          <div><span className="hp-fact-icon"><Icon name="zap" size={18} /></span><div><b>150+ new MC a day</b><small>with phone and email</small></div></div>
-          <div><span className="hp-fact-icon"><Icon name="dollar" size={18} /></span><div><b>$0 during beta</b><small>no credit card needed</small></div></div>
+      <section className="hp-section">
+        <div className="hp-head">
+          <p className="hp-kicker">Sound familiar?</p>
+          <h2>Dispatching is hard enough without the paperwork</h2>
+          <p>HaulPanel takes the busywork off your dispatchers so they can spend the day booking loads.</p>
+        </div>
+        <div className="hp3-pains">
+          {PAINS.map(([icon, pain, text, fix]) => (
+            <div key={pain} className="hp3-pain">
+              <span className="hp3-pain-icon"><Icon name={icon} size={18} /></span>
+              <h3>{pain}</h3>
+              <p>{text}</p>
+              <div className="hp3-fix"><Icon name="check" size={15} /><span><b>With HaulPanel:</b> {fix}</span></div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -222,24 +254,17 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
         </div>
       </section>
 
-      <section className="hp-section hp-leadband">
-        <div className="hp-split">
+      <section className="hp-section">
+        <div className="hp3-included">
           <div>
-            <p className="hp-kicker">New MC leads</p>
-            <h2>Find your next carrier before anyone else</h2>
-            <p>Every day 150+ carriers get their FMCSA authority — and most don’t have a dispatcher yet. HaulPanel lists them with phone and email, so your team calls them first.</p>
-            <ul className="hp-list">
-              <Check>New authorities from today, yesterday, or the last 30 days</Check>
-              <Check>Phone and email for every carrier, verified on SAFER</Check>
-              <Check>Export to Excel, Google Sheets or your phone’s contacts</Check>
-            </ul>
-            <a className="hp-btn" href="#/leads" data-track="leads_section">See today’s new MC leads<Icon name="arrow" size={16} /></a>
+            <p className="hp-kicker">Included</p>
+            <h2>Free tools that come with your board</h2>
+            <p>Open them from the board’s sidebar — no extra accounts, no extra tabs.</p>
           </div>
-          <div className="hp-leads-card">
-            <div className="hp-leads-head"><b><span className="hv-bolt"><Icon name="zap" size={13} /></span>New MC leads · Today</b><span>152 carriers</span></div>
-            {[['B•••• Express LLC', 'TX', '2 trucks'], ['S•••• Trucking Inc', 'IL', '1 truck'], ['M•••• Logistics LLC', 'GA', '3 trucks'], ['R•••• Transport', 'OH', '1 truck']].map(([n, st, tr]) => (
-              <div key={n} className="hp-lrow"><span><b>{n}</b><small>MC-1712••• · {st} · {tr}</small></span><span className="ph">(•••) •••-••••</span><i className="hp-pill paid">Authorized</i></div>
-            ))}
+          <div className="hp3-tools">
+            <div><span className="hp3-pain-icon"><Icon name="search" size={18} /></span><b>Company lookup</b><small>Check any carrier or broker by MC, USDOT, email or phone: authority, insurance, live SAFER status, related companies.</small></div>
+            <div><span className="hp3-pain-icon"><Icon name="zap" size={18} /></span><b>New MC leads</b><small>Carriers and brokers that just got their FMCSA authority — 150+ a day — with phone and email, ready to export.</small></div>
+            <div><span className="hp3-pain-icon"><Icon name="database" size={18} /></span><b>Excel &amp; Sheets import</b><small>Bring your load history in a minute: upload a file or paste from Google Sheets, check the preview, import.</small></div>
           </div>
         </div>
       </section>
@@ -269,13 +294,31 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
         </div>
       </section>
 
+      <section className="hp-section">
+        <div className="hp-head">
+          <p className="hp-kicker">Questions</p>
+          <h2>Before you sign up</h2>
+        </div>
+        <div className="hp3-faq">
+          {FAQ.map(([q, a], i) => (
+            <div key={q} className={`hp3-q ${open === i ? 'open' : ''}`}>
+              <button type="button" aria-expanded={open === i} onClick={() => { setOpen(open === i ? null : i); if (open !== i) track('faq_open', { q: q.slice(0, 40) }) }}>
+                {q}<Icon name="chevron" size={18} />
+              </button>
+              {open === i && <p>{a}</p>}
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="hp-final">
-        <h2>Start running your dispatch on HaulPanel</h2>
+        <h2>Run next week on HaulPanel</h2>
         <p>Free during beta. Bring your loads from Excel, CSV or Google Sheets.</p>
         <div className="hp-cta center">
           <StartButton>Create a free account</StartButton>
-          <DemoButton dark onPlay={play} />
+          <LiveDemoButton dark />
         </div>
+        <button type="button" className="hp3-final-tour" onClick={play}><Icon name="play" size={12} />Or watch the 90-second tour</button>
       </section>
     </div>
   )
