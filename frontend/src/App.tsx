@@ -88,6 +88,13 @@ export default function App() {
     else if (href.startsWith('#/leads')) { e.preventDefault(); openBoardTool('leads') }
   }
 
+  /** Header links: keep the real path in the link, switch the in-app view on a plain click. */
+  const go = (target: string) => (e: MouseEvent) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+    e.preventDefault()
+    location.hash = target
+  }
+
   const copy = useCallback(async (text: string, what = text) => {
     if (!text) return toast.show('Nothing to copy')
     try {
@@ -109,9 +116,10 @@ export default function App() {
           </a>
           <nav className="tabs" aria-label="Product">
             <a href="#/crm">Dispatch TMS</a>
-            <a href={lastLookup} className={page === 'lookup' ? 'active' : ''}>Company lookup</a>
-            <a href="#/leads" className={page === 'leads' ? 'active' : ''}>New MC leads</a>
-            <a href="#/scan" className={`hide-md ${page === 'scan' ? 'active' : ''}`}>MC scanner</a>
+            {/* Real addresses for search engines; a plain click switches the view without reloading. */}
+            <a href="/mc-number-lookup" onClick={go(lastLookup)} className={page === 'lookup' ? 'active' : ''}>Company lookup</a>
+            <a href="/new-mc-leads" onClick={go('#/leads')} className={page === 'leads' ? 'active' : ''}>New MC leads</a>
+            <a href="/mc-scanner" onClick={go('#/scan')} className={`hide-md ${page === 'scan' ? 'active' : ''}`}>MC scanner</a>
           </nav>
           <div className="nav-cta">
             <a className="nav-link hide-sm" href="#/crm?login" data-track="header_login">Log in</a>

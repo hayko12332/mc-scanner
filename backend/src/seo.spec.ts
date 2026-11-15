@@ -23,4 +23,9 @@ describe('Search pages', () => {
     expect(html).toContain('<title>A &amp; &lt;B&gt;</title>');
     expect(html).toContain('content="say &quot;hi&quot;"');
   });
+  it('replaces the off-screen text block of the current index.html too', () => {
+    const html = seoHtml(INDEX.replace('<main style', '<main class="boot-text" style'), '/mc-number-lookup', SEO_PAGES['/mc-number-lookup']);
+    expect(html).not.toContain('old text');
+    expect(html).toContain('<main class="boot-text"');
+  });
 });

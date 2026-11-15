@@ -5,6 +5,7 @@ import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { CompanySetup, SignIn } from '../components/crm/SignIn'
 import { Icon, type IconName } from '../components/Icon'
+import { BoardSkeleton } from '../components/Skeleton'
 import { track } from '../lib/analytics'
 import { crm, CrmError, looksLikePlace, type Company, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
 import { crmDemo } from '../lib/crmDemo'
@@ -231,10 +232,10 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
   const shell = (children: ReactNode, bare = false) => <Shell theme={theme} banner={banner} bare={bare}>{children}</Shell>
 
   if (error && !state) return shell(<p className="w-msg error">{error}</p>)
-  if (!demo && (!config || (!state && !signedOut))) return shell(<p className="w-msg">Loading…</p>)
+  if (!demo && (!config || (!state && !signedOut))) return <BoardSkeleton theme={theme} />
   if (!demo && config && !config.enabled) return shell(<p className="w-msg">The dispatch board is not available right now.</p>)
   if (!demo && config && (signedOut || !state)) return shell(<SignIn config={config} initial={hashParams().has('login') ? 'login' : 'signup'} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />, true)
-  if (!state) return shell(<p className="w-msg">Loading…</p>)
+  if (!state) return <BoardSkeleton theme={theme} />
 
   // A Google sign-up hasn't told us about the company yet: ask first, like other TMSs do.
   if (!demo && state.company && !state.company.name) {

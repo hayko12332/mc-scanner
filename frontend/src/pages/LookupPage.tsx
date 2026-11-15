@@ -3,6 +3,7 @@ import { api } from '../api'
 import { CarrierDetails } from '../components/CarrierDetails'
 import { PublicRecords } from '../components/PublicRecords'
 import { Icon, type IconName } from '../components/Icon'
+import { CompanySkeleton } from '../components/Skeleton'
 import { Pill, StatusPill } from '../components/ui'
 import { track } from '../lib/analytics'
 import { entityLabel } from '../lib/carrier'
@@ -202,6 +203,7 @@ export function LookupPage({ hash, copy, navigate, embedded }: { hash: string; c
       </section>
 
       {!q && <WhatYouGet />}
+      {loading && !result && <CompanySkeleton />}
 
       {error && <p className="panel error">{error}</p>}
       {result && (

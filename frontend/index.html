@@ -2,14 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Icons: favicon.ico (48/32/16) is what Google's search results use; SVG for modern browsers. -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192.png" />
     <link rel="apple-touch-icon" href="/logo.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <title>HaulPanel — Free TMS for truck dispatchers · MC lookup · New MC leads</title>
-    <meta name="description" content="HaulPanel is a free TMS for truck dispatch companies: loads, trucks and drivers, rate per mile, carrier fees and weekly statements, invoices and payments. Check any carrier or broker by MC, USDOT, email or phone, and get new MC leads with phone and email every day." />
+    <title>HaulPanel — Free TMS for Truck Dispatch Companies</title>
+    <meta name="description" content="Free TMS and dispatch software for truck dispatch companies: loads, rate per mile, carrier fees, weekly statements and invoices. Plus MC lookup and new MC leads." />
     <meta name="keywords" content="truck dispatch software, TMS for dispatchers, dispatch TMS, trucking TMS, free TMS, MC number lookup, USDOT lookup, carrier lookup, new MC leads, new authority leads, FMCSA carrier search, carrier statements, dispatch board" />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="theme-color" content="#0b1220" />
@@ -19,17 +23,17 @@
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="HaulPanel" />
     <meta property="og:url" content="https://haulpanel.com/" />
-    <meta property="og:title" content="HaulPanel — TMS for dispatch companies" />
+    <meta property="og:title" content="HaulPanel — Free TMS for Truck Dispatch Companies" />
     <meta property="og:description" content="Run your dispatch company from one panel: loads, trucks, rate per mile, carrier statements, invoices and payments. Plus MC/DOT company lookup and new MC leads every day. Free during beta." />
-    <meta property="og:image" content="https://haulpanel.com/new-mc-leads.jpg" />
-    <meta property="og:image:width" content="1600" />
-    <meta property="og:image:height" content="900" />
-    <meta property="og:image:alt" content="HaulPanel — new MC leads with phone and email, updated daily" />
+    <meta property="og:image" content="https://haulpanel.com/og-haulpanel.jpg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="HaulPanel dispatch board: loads grouped by week, rate per mile, dispatch fees and unpaid invoices" />
     <meta property="og:locale" content="en_US" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="HaulPanel — TMS for dispatch companies" />
+    <meta name="twitter:title" content="HaulPanel — Free TMS for Truck Dispatch Companies" />
     <meta name="twitter:description" content="Run your dispatch company from one panel: loads, carrier statements, invoices and payments. Plus MC/DOT lookup and new MC leads every day. Free during beta." />
-    <meta name="twitter:image" content="https://haulpanel.com/new-mc-leads.jpg" />
+    <meta name="twitter:image" content="https://haulpanel.com/og-haulpanel.jpg" />
     <!-- Structured data: what HaulPanel is, for search engines -->
     <script type="application/ld+json">
     {
@@ -40,7 +44,7 @@
           "@id": "https://haulpanel.com/#org",
           "name": "HaulPanel",
           "url": "https://haulpanel.com/",
-          "logo": "https://haulpanel.com/logo.png",
+          "logo": { "@type": "ImageObject", "url": "https://haulpanel.com/logo.png", "width": 512, "height": 512 },
           "email": "support@haulpanel.com",
           "sameAs": ["https://t.me/MCUSDOTScannerbot"]
         },
@@ -58,6 +62,7 @@
           "applicationCategory": "BusinessApplication",
           "applicationSubCategory": "Transportation Management System (TMS)",
           "operatingSystem": "Web browser",
+          "screenshot": "https://haulpanel.com/og-haulpanel.jpg",
           "description": "Free TMS for truck dispatch companies: loads, trucks and drivers, rate per mile, carrier fees and weekly statements, invoices and payments, MC/USDOT company lookup and new MC leads every day.",
           "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD", "description": "Free during beta" },
           "featureList": [
@@ -85,12 +90,25 @@
     }
     </script>
     <!-- Telegram Mini App bridge: inert in a normal browser, identifies the user inside Telegram. -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+    <style>
+      .boot { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 18px; background: #fff; }
+      .boot img { border-radius: 10px; animation: boot-pulse 1.6s ease-in-out infinite; }
+      .boot i { display: block; width: 120px; height: 3px; border-radius: 3px; background: #e5e7eb; overflow: hidden; position: relative; }
+      .boot i::after { content: ''; position: absolute; inset: 0; width: 40%; border-radius: 3px; background: #2563eb; animation: boot-bar 1.1s ease-in-out infinite; }
+      .boot-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+      @keyframes boot-bar { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      @keyframes boot-pulse { 50% { opacity: 0.65; } }
+      @media (prefers-color-scheme: dark) { .boot { background: #0b1120; } .boot i { background: #1e2a44; } }
+    </style>
+    <noscript><style>.boot { display: none; } .boot-text { position: static; width: auto; height: auto; clip: auto; }</style></noscript>
   </head>
   <body>
     <div id="root">
-      <!-- Shown to link previews, search engines and readers without JavaScript; React replaces it on load. -->
-      <main style="max-width: 760px; margin: 0 auto; padding: 24px 16px; font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+      <!-- While the app loads: the logo and a thin progress line. React replaces all of this. -->
+      <div class="boot" aria-hidden="true"><img src="/logo.svg" alt="" width="44" height="44" /><i></i></div>
+      <!-- For link previews, search engines and readers without JavaScript (kept off screen while the app loads). -->
+      <main class="boot-text" style="max-width: 760px; margin: 0 auto; padding: 24px 16px; font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
         <h1>HaulPanel — the TMS for dispatch companies</h1>
         <p>Run your dispatch company from one panel. Free during beta.</p>
         <ul>

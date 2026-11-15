@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Loading, SkLines } from './Skeleton'
 import { api } from '../api'
 import { track } from '../lib/analytics'
 import { formatDate } from '../lib/format'
@@ -49,7 +50,7 @@ function StateRegistry({ state, name }: { state: string; name: string }) {
   }, [state, name])
 
   if (error) return <p className="error">Could not load: {error}</p>
-  if (!result) return <p className="muted">Searching the {STATES[state].name} registry…</p>
+  if (!result) return <Loading label={`Searching the ${STATES[state].name} registry…`}><p className="muted sk-caption">Searching the {STATES[state].name} registry…</p><SkLines lines={2} /></Loading>
   if (!result.supported) {
     return <p className="muted">{STATES[state].name} publishes no free registry data feed — use the links below.</p>
   }

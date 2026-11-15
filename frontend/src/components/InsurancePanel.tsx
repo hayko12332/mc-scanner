@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Loading, SkLines } from './Skeleton'
 import { api } from '../api'
 import { formatDate, formatMoney } from '../lib/format'
 import type { Insurance, Policy } from '../types'
@@ -51,7 +52,7 @@ export function InsurancePanel({ mc }: { mc: number }) {
   }, [mc])
 
   if (error) return <div className="muted">Could not load: {error}</div>
-  if (!insurance) return <div className="muted">Loading…</div>
+  if (!insurance) return <Loading label="Loading insurance…"><SkLines lines={3} /></Loading>
   return (
     <div>
       {insurance.current.length

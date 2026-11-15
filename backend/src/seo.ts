@@ -11,8 +11,8 @@ const SITE = 'https://haulpanel.com';
 
 export const SEO_PAGES: Record<string, SeoPage> = {
   '/new-mc-leads': {
-    title: 'New MC Leads — new FMCSA authorities with phone & email, daily | HaulPanel',
-    description: 'New MC leads every day: trucking companies and freight brokers that just got FMCSA operating authority, with phone and email. Filter by today, yesterday, 7, 14 or 30 days and export to Excel, Google Sheets or CSV. Free.',
+    title: 'New MC Leads Daily — Carriers with Phone & Email | HaulPanel',
+    description: 'New MC leads every day: carriers and freight brokers that just got FMCSA authority, with phone and email. Export to Excel, Sheets or CSV. Free.',
     h1: 'New MC leads — carriers that just got their authority',
     intro: 'Every day 150+ carriers get their FMCSA operating authority, and most of them don’t have a dispatcher yet. HaulPanel lists them with phone and email so you can call them first.',
     points: [
@@ -23,8 +23,8 @@ export const SEO_PAGES: Record<string, SeoPage> = {
     ],
   },
   '/mc-number-lookup': {
-    title: 'MC Number Lookup — check any carrier or broker by MC, USDOT, email or phone | HaulPanel',
-    description: 'Free MC number and USDOT lookup: operating authority, insurance and policy history, live SAFER status, fleet, cargo, state registration, UCC liens and courts — and other companies that share the same phone or email.',
+    title: 'MC Number Lookup — Check Any Carrier by MC or USDOT | HaulPanel',
+    description: 'Free MC and USDOT lookup: authority, insurance history, live SAFER status, fleet, state registration and companies sharing the same phone or email.',
     h1: 'MC number & USDOT lookup',
     intro: 'Check any trucking company or freight broker before you work with it. Search by MC number, USDOT number, email or phone.',
     points: [
@@ -35,8 +35,8 @@ export const SEO_PAGES: Record<string, SeoPage> = {
     ],
   },
   '/mc-scanner': {
-    title: 'MC Scanner — find authorized carriers with phone & email by MC range | HaulPanel',
-    description: 'Scan any MC number range (MC, MC+1, MC+2…) and collect authorized carriers or freight brokers with phone and email, each verified live on FMCSA SAFER. Export to CSV and Excel. Free.',
+    title: 'MC Scanner — Authorized Carriers with Phone & Email | HaulPanel',
+    description: 'Scan any MC number range and collect authorized carriers or brokers with phone and email, verified live on SAFER. Export to CSV or Excel. Free.',
     h1: 'MC scanner — authorized carriers with phone & email',
     intro: 'Pick a starting MC number and the scanner walks the range, keeping only companies with active authority, a phone and an email.',
     points: [
@@ -53,7 +53,7 @@ const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 /** The app's index.html with a search page's own title, description, canonical URL and readable text. */
 export function seoHtml(html: string, path: string, page: SeoPage): string {
   const url = SITE + path;
-  const fallback = `<main style="max-width: 760px; margin: 0 auto; padding: 24px 16px; font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
+  const fallback = `<main class="boot-text" style="max-width: 760px; margin: 0 auto; padding: 24px 16px; font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
         <h1>${esc(page.h1)}</h1>
         <p>${esc(page.intro)}</p>
         <ul>${page.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
@@ -68,7 +68,7 @@ export function seoHtml(html: string, path: string, page: SeoPage): string {
     .replace(/(<meta property="og:description" content=")[^"]*(")/, `$1${esc(page.description)}$2`)
     .replace(/(<meta name="twitter:title" content=")[^"]*(")/, `$1${esc(page.title)}$2`)
     .replace(/(<meta name="twitter:description" content=")[^"]*(")/, `$1${esc(page.description)}$2`)
-    .replace(/<main style="[^"]*">[\s\S]*?<\/main>/, fallback);
+    .replace(/<main(?: class="[^"]*")? style="[^"]*">[\s\S]*?<\/main>/, fallback);
 }
 
 const indexPath = fileURLToPath(new URL('../../frontend/dist/index.html', import.meta.url));

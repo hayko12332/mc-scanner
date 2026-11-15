@@ -6,6 +6,7 @@ import type { ScannedCarrier } from '../types'
 import { CarrierDetails } from './CarrierDetails'
 import { ExportMenu, type ExportFormat } from './ExportMenu'
 import { Icon, type IconName } from './Icon'
+import { LeadRowsSkeleton } from './Skeleton'
 
 /** Phone or email line: click the value (or the copy button) to copy it. */
 function ContactLine({ icon, value, display, hint, onCopy }: {
@@ -222,13 +223,8 @@ export function ResultsTable({ carriers, running, noun = 'carrier', nouns = ['ca
             <button className="ghost" onClick={() => setLimit(n)}>Show all</button>
           </div>
         )}
-        {!n && (
-          <p className="muted empty">
-            {running
-              ? 'Loading… the first results show up in a few seconds.'
-              : 'No carriers matching the filters yet. Press Start to scan further.'}
-          </p>
-        )}
+        {!n && running && <LeadRowsSkeleton />}
+        {!n && !running && <p className="muted empty">No carriers matching the filters yet. Press Start to scan further.</p>}
       </div>
     </>
   )

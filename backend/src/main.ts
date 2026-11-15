@@ -3,7 +3,11 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module.js';
 import { config } from './config.js';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { indexHtml, SEO_PAGES, seoHtml } from './seo.js';
+
+const DIST = fileURLToPath(new URL('../../frontend/dist', import.meta.url));
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -20,6 +24,23 @@ async function bootstrap() {
       next();
     });
   }
+  // One address per page for search engines: "/mc-number-lookup/" → "/mc-number-lookup"; addresses that don't exist
+  // answer 404 (with the app, so a person still lands on the home page) instead of a "soft 404" 200.
+  app.use((req: { method: string; path: string; originalUrl: string }, res: {
+    redirect: (code: number, url: string) => void; status: (c: number) => { type: (t: string) => { send: (b: string) => void } }
+  }, next: () => void) => {
+    if ((req.method !== 'GET' && req.method !== 'HEAD') || req.path.startsWith('/api/') || req.path === '/') return next();
+    if (req.path.length > 1 && req.path.endsWith('/')) {
+      return res.redirect(301, req.path.replace(/\/+$/, '') + req.originalUrl.slice(req.path.length));
+    }
+    if (SEO_PAGES[req.path] || /^\/google[0-9a-f]+\.html$/.test(req.path)) return next();
+    let file = req.path;
+    try { file = decodeURIComponent(req.path); } catch { /* keep as typed */ }
+    if (!file.includes('..') && existsSync(DIST + file)) return next();
+    const html = indexHtml();
+    if (/\.[a-z0-9]{2,5}$/i.test(req.path) || !html) return res.status(404).type('text').send('Not found');
+    res.status(404).type('html').send(html.replace(/<meta name="robots" content="[^"]*"/, '<meta name="robots" content="noindex"'));
+  });
   // Search pages (/new-mc-leads, /mc-number-lookup, /mc-scanner): the app with their own title and text.
   app.use((req: { method: string; path: string }, res: { type: (t: string) => { send: (b: string) => void } }, next: () => void) => {
     const page = (req.method === 'GET' || req.method === 'HEAD') ? SEO_PAGES[req.path.replace(/\/+$/, '')] : undefined;

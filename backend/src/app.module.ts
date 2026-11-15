@@ -17,6 +17,13 @@ import { TelegramModule } from './telegram/telegram.module.js';
     ServeStaticModule.forRoot({
       rootPath: fileURLToPath(new URL('../../frontend/dist', import.meta.url)),
       exclude: ['/api/{*path}'],
+      serveStaticOptions: {
+        // Built files have a content hash in their name: cache them for a year. Pictures and icons for a day.
+        setHeaders: (res: { setHeader: (k: string, v: string) => void }, path: string) => {
+          if (/[\\/]assets[\\/]/.test(path)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+          else if (/\.(png|jpe?g|svg|ico|mp4|webp)$/.test(path)) res.setHeader('Cache-Control', 'public, max-age=86400');
+        },
+      },
     }),
     FmcsaModule,
     SaferModule,

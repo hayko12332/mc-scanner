@@ -2701,3 +2701,34 @@ button.hp3-shot { display: block; width: 100%; padding: 0; border: 0; background
 }
 .hp3-shot .hp3-frame { position: relative; }
 button.hp3-shot { margin: 0 auto; max-width: 1120px; }
+
+/* ---------- Loading skeletons (shimmering shapes of what is coming) ---------- */
+.sk { display: block; flex: none; max-width: 100%; border-radius: 6px;
+  --sk-a: color-mix(in srgb, var(--text, #0f172a) 7%, transparent); --sk-b: color-mix(in srgb, var(--text, #0f172a) 13%, transparent);
+  background: linear-gradient(90deg, var(--sk-a) 25%, var(--sk-b) 37%, var(--sk-a) 63%); background-size: 400% 100%; animation: sk-shimmer 1.4s ease infinite; }
+.sk-dark .sk { --sk-a: rgba(255, 255, 255, 0.07); --sk-b: rgba(255, 255, 255, 0.14); }
+@keyframes sk-shimmer { from { background-position: 100% 50%; } to { background-position: 0 50%; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+.sk-wrap { display: block; }
+.sk-lines { display: grid; width: 100%; max-width: 520px; }
+.sk-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.sk-caption { margin: 0 0 10px; }
+.sk-nav { display: flex; align-items: center; gap: 11px; height: 36px; padding: 0 10px; }
+.sk-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.sk-kpis > div { padding: 14px 16px; border-left: 1px solid var(--border); } .sk-kpis > div:first-child { border-left: 0; }
+.sk-table { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.sk-tr { display: grid; grid-template-columns: 76px 1.1fr 1.5fr 1.1fr 90px 110px; gap: 16px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--border); }
+.sk-tr:first-child { border-top: 0; }
+.sk-th { padding: 11px 16px; background: var(--surface-2); }
+.sk-cell { display: grid; gap: 7px; min-width: 0; }
+.sk-card { padding: 22px; margin-top: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.sk-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.sk-lead { display: grid; grid-template-columns: 1.4fr 1.2fr 1fr 0.8fr; gap: 18px; align-items: center; padding: 16px 20px; border-top: 1px solid var(--border); }
+.sk-lead:first-child { border-top: 0; }
+@media (max-width: 900px) {
+  .sk-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sk-kpis > div:nth-child(n+3) { border-top: 1px solid var(--border); } .sk-kpis > div:nth-child(odd) { border-left: 0; }
+  .sk-tr { grid-template-columns: minmax(0, 1fr) 80px; } .sk-tr > :nth-child(1), .sk-tr > :nth-child(3), .sk-tr > :nth-child(4), .sk-tr > :nth-child(6) { display: none; }
+  .sk-lead { grid-template-columns: minmax(0, 1fr); } .sk-lead > :nth-child(n+3) { display: none; }
+  .sk-grid3 { grid-template-columns: 1fr 1fr; }
+}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
