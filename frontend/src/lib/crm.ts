@@ -57,13 +57,20 @@ export const COMPANY_TYPES: [CompanyType, string, string][] = [
   ['broker', 'Freight broker', 'I broker loads'],
 ]
 export const FLEET_SIZES = ['1', '2–5', '6–20', '21–50', '50+']
-export interface SignUpInput { name: string; email: string; password: string; company: string; companyType: CompanyType | ''; mc: string; dot: string; phone: string; fleetSize: string }
+export interface SignUpInput { name: string; email: string; password: string; company: string; companyType: CompanyType | ''; mc: string; dot: string; phone: string; fleetSize: string; invite?: string }
 /** Sign-in either finishes (user) or needs the emailed code first (verify). */
 export type AuthResult = { user: CrmUser; verify?: undefined } | { verify: true; email: string; user?: undefined }
 
 export interface CrmState {
   user: CrmUser; company?: Company; dispatchers: Dispatcher[]; carriers: CrmCarrier[]; trucks: Truck[]; loads: Load[]; checks?: CompanyCheck[]
   files?: CrmFile[]; invoices?: SentInvoice[]; brokerEmails?: Record<string, string>
+  /** Owner of the board, or a dispatcher invited to it (who sees only their own loads). */
+  me?: { role: 'owner' | 'dispatcher'; dispatcherId: number | null }
+  team?: Team
+}
+export interface Team {
+  members: { userId: number; name: string; email: string; dispatcherId: number | null }[]
+  invites: { id: number; email: string; dispatcherId: number | null; expiresAt: string }[]
 }
 export const FILE_KINDS = [['ratecon', 'Rate con'], ['bol', 'BOL'], ['pod', 'POD'], ['invoice', 'Invoice'], ['other', 'Other']] as const
 export type FileKind = (typeof FILE_KINDS)[number][0]
@@ -206,6 +213,11 @@ export const crm = {
   /** US cities for what is typed in a lane field: "santa mo" → ["Santa Monica, CA", …]. */
   places: (q: string) => call<string[]>('GET', `/places?${new URLSearchParams({ q })}`),
   uploadFile: upload,
+  invite: (dispatcherId: number, email: string) => call('POST', '/invites', { dispatcherId, email }),
+  removeInvite: (id: number) => call('DELETE', `/invites/${id}`),
+  removeMember: (userId: number) => call('DELETE', `/members/${userId}`),
+  inviteInfo: (token: string) => call<{ email: string; company: string; dispatcher: string }>('GET', `/invites/${encodeURIComponent(token)}`),
+  acceptInvite: (token: string) => call<{ ok: true; company: string }>('POST', '/invites/accept', { token }),
   fileUrl: (id: number) => `/api/crm/files/${id}`,
   setFileKind: (id: number, kind: FileKind) => call('PATCH', `/files/${id}`, { kind }),
   removeFile: (id: number) => call('DELETE', `/files/${id}`),

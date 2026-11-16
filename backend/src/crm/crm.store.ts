@@ -138,6 +138,24 @@ const SCHEMA = `
     email         TEXT NOT NULL,
     PRIMARY KEY (workspace_id, broker)
   );
+  -- Team: dispatchers invited by the owner sign in with their own account and see only their own loads
+  CREATE TABLE IF NOT EXISTS crm_members (
+    user_id       BIGINT PRIMARY KEY REFERENCES crm_users(id) ON DELETE CASCADE,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    role          TEXT NOT NULL DEFAULT 'dispatcher',
+    dispatcher_id BIGINT REFERENCES crm_dispatchers(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE TABLE IF NOT EXISTS crm_invites (
+    id            BIGSERIAL PRIMARY KEY,
+    token_hash    TEXT UNIQUE NOT NULL,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    email         TEXT NOT NULL,
+    role          TEXT NOT NULL DEFAULT 'dispatcher',
+    dispatcher_id BIGINT REFERENCES crm_dispatchers(id) ON DELETE CASCADE,
+    expires_at    TIMESTAMPTZ NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
   CREATE TABLE IF NOT EXISTS crm_email_codes (
     email       TEXT NOT NULL,
     purpose     TEXT NOT NULL,
@@ -167,6 +185,13 @@ const MAX_BOARD_BYTES = 300 * 1024 * 1024;
 const toFile = (r: Record<string, unknown>): CrmFile => ({
   id: Number(r.id), loadId: r.load_id == null ? null : Number(r.load_id), kind: String(r.kind) as FileKind, name: String(r.name),
   mime: String(r.mime), size: Number(r.size), createdAt: new Date(r.created_at as string).toISOString(),
+});
+
+export type MemberRole = 'owner' | 'dispatcher';
+export interface Invite { id: number; email: string; dispatcherId: number | null; expiresAt: string }
+export interface Team { members: { userId: number; name: string; email: string; dispatcherId: number | null }[]; invites: Invite[] }
+const toInvite = (r: Record<string, unknown>): Invite => ({
+  id: Number(r.id), email: String(r.email), dispatcherId: r.dispatcher_id == null ? null : Number(r.dispatcher_id), expiresAt: new Date(r.expires_at as string).toISOString(),
 });
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -326,17 +351,83 @@ export class CrmStore {
   }
 
   /** The signed-in user and their workspace for a session cookie, or null. */
-  async session(token: string): Promise<{ user: CrmUser; workspaceId: number } | null> {
+  /**
+   * The signed-in user and the board they work on for a session cookie, or null. A dispatcher invited to someone's
+   * board works on that board (role 'dispatcher', limited to their own loads); everyone else owns their own board.
+   */
+  async session(token: string): Promise<{ user: CrmUser; workspaceId: number; role: MemberRole; dispatcherId: number | null } | null> {
     if (!token) return null;
     await this.ready;
     const { rows } = await this.pool.query(
-      `SELECT u.id, u.email, u.name, u.picture, w.id AS workspace_id
-         FROM crm_sessions s JOIN crm_users u ON u.id = s.user_id JOIN crm_workspaces w ON w.owner_id = u.id
-        WHERE s.token_hash = $1 AND s.expires_at > now()`,
+      `SELECT u.id, u.email, u.name, u.picture, coalesce(m.workspace_id, w.id) AS workspace_id,
+              coalesce(m.role, 'owner') AS role, m.dispatcher_id
+         FROM crm_sessions s JOIN crm_users u ON u.id = s.user_id
+         LEFT JOIN crm_members m ON m.user_id = u.id
+         LEFT JOIN crm_workspaces w ON w.owner_id = u.id
+        WHERE s.token_hash = $1 AND s.expires_at > now() AND coalesce(m.workspace_id, w.id) IS NOT NULL`,
       [hash(token)],
     );
     const r = rows[0];
-    return r ? { user: { id: Number(r.id), email: r.email, name: r.name, picture: r.picture }, workspaceId: Number(r.workspace_id) } : null;
+    return r ? {
+      user: { id: Number(r.id), email: r.email, name: r.name, picture: r.picture }, workspaceId: Number(r.workspace_id),
+      role: r.role === 'dispatcher' ? 'dispatcher' : 'owner', dispatcherId: r.dispatcher_id == null ? null : Number(r.dispatcher_id),
+    } : null;
+  }
+
+  // Team
+
+  /** A one-week invite link for a dispatcher of this board; returns the token to put in the link. */
+  async createInvite(ws: number, email: string, dispatcherId: number): Promise<{ token: string; invite: Invite }> {
+    const own = await this.pool.query('SELECT 1 FROM crm_dispatchers WHERE workspace_id = $1 AND id = $2 AND NOT archived', [ws, dispatcherId]);
+    if (!own.rows[0]) throw new Error('Pick one of your dispatchers');
+    await this.pool.query('DELETE FROM crm_invites WHERE workspace_id = $1 AND (dispatcher_id = $2 OR lower(email) = $3)', [ws, dispatcherId, email]);
+    const token = randomBytes(24).toString('base64url');
+    const { rows } = await this.pool.query(
+      `INSERT INTO crm_invites (token_hash, workspace_id, email, dispatcher_id, expires_at) VALUES ($1,$2,$3,$4, now() + interval '7 days')
+       RETURNING id, email, dispatcher_id, expires_at`, [hash(token), ws, email, dispatcherId]);
+    return { token, invite: toInvite(rows[0]) };
+  }
+
+  /** What an invite link is for (shown before signing in), or null when it is unknown or expired. */
+  async invite(token: string): Promise<{ id: number; ws: number; email: string; dispatcherId: number | null; company: string; dispatcher: string } | null> {
+    await this.ready;
+    const { rows } = await this.pool.query(
+      `SELECT i.id, i.workspace_id, i.email, i.dispatcher_id, w.company_name, d.name AS dispatcher
+         FROM crm_invites i JOIN crm_workspaces w ON w.id = i.workspace_id LEFT JOIN crm_dispatchers d ON d.id = i.dispatcher_id
+        WHERE i.token_hash = $1 AND i.expires_at > now()`, [hash(token)]);
+    const r = rows[0];
+    return r ? { id: Number(r.id), ws: Number(r.workspace_id), email: String(r.email), dispatcherId: r.dispatcher_id == null ? null : Number(r.dispatcher_id),
+      company: String(r.company_name ?? ''), dispatcher: String(r.dispatcher ?? '') } : null;
+  }
+
+  /** Joins the board of the invite (replacing any earlier membership) and uses up the invite. */
+  async acceptInvite(inviteId: number, ws: number, userId: number, dispatcherId: number | null) {
+    await this.pool.query(
+      `INSERT INTO crm_members (user_id, workspace_id, role, dispatcher_id) VALUES ($1,$2,'dispatcher',$3)
+       ON CONFLICT (user_id) DO UPDATE SET workspace_id = EXCLUDED.workspace_id, role = 'dispatcher', dispatcher_id = EXCLUDED.dispatcher_id, created_at = now()`,
+      [userId, ws, dispatcherId]);
+    await this.pool.query('DELETE FROM crm_invites WHERE id = $1', [inviteId]);
+  }
+
+  async team(ws: number): Promise<Team> {
+    const [m, i] = await Promise.all([
+      this.pool.query(`SELECT u.id, u.name, u.email, m.dispatcher_id FROM crm_members m JOIN crm_users u ON u.id = m.user_id WHERE m.workspace_id = $1 ORDER BY u.name`, [ws]),
+      this.pool.query(`SELECT id, email, dispatcher_id, expires_at FROM crm_invites WHERE workspace_id = $1 AND expires_at > now() ORDER BY id`, [ws]),
+    ]);
+    return {
+      members: m.rows.map((r) => ({ userId: Number(r.id), name: String(r.name), email: String(r.email), dispatcherId: r.dispatcher_id == null ? null : Number(r.dispatcher_id) })),
+      invites: i.rows.map(toInvite),
+    };
+  }
+
+  async removeInvite(ws: number, id: number) {
+    await this.pool.query('DELETE FROM crm_invites WHERE workspace_id = $1 AND id = $2', [ws, id]);
+  }
+
+  /** Takes a team member off the board (they keep their account) and signs them out everywhere. */
+  async removeMember(ws: number, userId: number) {
+    const { rowCount } = await this.pool.query('DELETE FROM crm_members WHERE workspace_id = $1 AND user_id = $2', [ws, userId]);
+    if (rowCount) await this.pool.query('DELETE FROM crm_sessions WHERE user_id = $1', [userId]);
   }
 
   async endSession(token: string) {

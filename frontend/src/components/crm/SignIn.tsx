@@ -120,17 +120,21 @@ function AuthLayout({ top, children, foot }: { top?: ReactNode; children: ReactN
  * from FMCSA, password), confirm the email with a 6-digit code; log in with email and password or Google;
  * "Forgot password?" emails a reset code. HaulPanel serves dispatch companies for now.
  */
-export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
+export interface InviteInfo { token: string; email: string; company: string; dispatcher: string }
+
+export function SignIn({ config, onSignedIn, onDemo, initial = 'signup', invite }: {
   config: CrmConfig; onSignedIn: (u: CrmUser) => void; onDemo: () => void; initial?: 'signup' | 'login'
+  /** Opened from an invite link: one step (no company of their own), email fixed to the invited one. */
+  invite?: InviteInfo
 }) {
   const [screen, setScreen] = useState<Screen>(initial)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(invite?.email ?? '')
   const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
-  const [v, setV] = useState<SignUpInput>({ name: '', email: '', password: '', company: '', companyType: 'dispatch', mc: '', dot: '', phone: '', fleetSize: '' })
+  const [v, setV] = useState<SignUpInput>({ name: '', email: invite?.email ?? '', password: '', company: '', companyType: 'dispatch', mc: '', dot: '', phone: '', fleetSize: '' })
   const [mcDot, setMcDot] = useState('')
   /** Sign-up in two short steps: you, then your company. */
   const [step, setStep] = useState<1 | 2>(1)
@@ -181,6 +185,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
 
   const signUp = (e: FormEvent) => {
     e.preventDefault()
+    if (invite) return void run(async () => after(await crm.signUp({ ...v, email: invite.email, invite: invite.token })))
     if (step === 1) { setStep(2); setError(''); return }
     const typed = mcDot.replace(/\D/g, '')
     void run(async () => after(await crm.signUp({ ...v, companyType: 'dispatch', mc: v.mc || (v.dot === typed ? '' : typed) })))
@@ -211,13 +216,13 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
   if (screen === 'signup') {
     body = (
       <>
-        <div className="au3-steps" aria-label={`Step ${step} of 2`}>
+        {!invite && <div className="au3-steps" aria-label={`Step ${step} of 2`}>
           <span className={step === 1 ? 'on' : 'done'}><i>{step === 1 ? 1 : <Icon name="check" size={12} />}</i>Your account</span>
           <em />
           <span className={step === 2 ? 'on' : ''}><i>2</i>Your company</span>
-        </div>
-        <h2>{step === 1 ? 'Create your free account' : 'Tell us about your company'}</h2>
-        <p className="au-sub">{step === 1
+        </div>}
+        <h2>{invite ? `Join ${invite.company || 'your team'}` : step === 1 ? 'Create your free account' : 'Tell us about your company'}</h2>
+        <p className="au-sub">{invite ? `You were invited to ${invite.company ? `${invite.company}’s` : 'a'} dispatch board${invite.dispatcher ? ` as ${invite.dispatcher}` : ''}. Create your account with ${invite.email} to start — you’ll see your own loads, documents and pay.` : step === 1
           ? 'Set up your dispatch board in a few minutes. Free during beta, no credit card.'
           : 'Type your MC number and we fill in the rest from FMCSA.'}</p>
         {step === 1 && googleBlock}
@@ -226,9 +231,9 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup' }: {
             {step === 1 ? (
               <>
                 <Field label="Full name"><input required autoComplete="name" value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} autoFocus placeholder="John Smith" /></Field>
-                <Field label="Work email"><input type="email" required autoComplete="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} placeholder="you@company.com" /></Field>
+                <Field label="Work email"><input type="email" required autoComplete="email" value={v.email} readOnly={!!invite} onChange={(e) => setV({ ...v, email: e.target.value })} placeholder="you@company.com" /></Field>
                 <Field label="Password" hint="At least 8 characters"><PasswordInput value={v.password} onChange={(x) => setV({ ...v, password: x })} autoComplete="new-password" /></Field>
-                <button className="primary au-submit">Continue<Icon name="arrow" size={15} /></button>
+                <button className="primary au-submit">{invite ? 'Create account & join' : 'Continue'}<Icon name="arrow" size={15} /></button>
               </>
             ) : (
               <>

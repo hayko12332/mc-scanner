@@ -160,11 +160,44 @@ export function CarriersView({ state, add, update, remove, check }: {
 }
 
 /** Dispatchers (the BB column) and the percent each one earns; name and percent edit in place. */
-export function DispatchersView({ state, add, save, remove }: {
+export interface TeamActions {
+  invite: (dispatcherId: number, email: string) => Promise<unknown>
+  cancel: (inviteId: number) => Promise<unknown>
+  removeMember: (userId: number) => Promise<unknown>
+}
+
+/** A dispatcher's own sign-in: invite them by email; they then see only their own loads, documents and pay. */
+function TeamAccess({ d, state, team }: { d: Dispatcher; state: CrmState; team: TeamActions }) {
+  const [open, setOpen] = useState(false)
+  const [email, setEmail] = useState('')
+  const member = state.team?.members.find((m) => m.dispatcherId === d.id)
+  const invite = state.team?.invites.find((i) => i.dispatcherId === d.id)
+  if (member) return (
+    <div className="tm"><span className="tm-on">✓ Signs in as {member.email}</span>
+      <button className="w-link" onClick={() => { if (confirm(`Remove ${member.email}’s access to this board?`)) void team.removeMember(member.userId) }}>Remove access</button></div>
+  )
+  if (invite && !open) return (
+    <div className="tm"><span className="tm-wait">Invite sent to {invite.email}</span>
+      <button className="w-link" onClick={() => { setEmail(invite.email); setOpen(true) }}>Resend</button>
+      <button className="w-link" onClick={() => void team.cancel(invite.id)}>Cancel</button></div>
+  )
+  if (!open) return <div className="tm"><button className="w-link" onClick={() => setOpen(true)}>+ Invite to sign in</button></div>
+  return (
+    <form className="tm tm-form" onSubmit={(e) => { e.preventDefault(); void team.invite(d.id, email.trim()).then(() => setOpen(false), () => undefined) }}>
+      <input type="email" required autoFocus placeholder={`${d.name.toLowerCase().replace(/\W+/g, '')}@email.com`} value={email} onChange={(e) => setEmail(e.target.value)} />
+      <button className="primary">Send invite</button>
+      <button type="button" className="w-link" onClick={() => setOpen(false)}>Cancel</button>
+    </form>
+  )
+}
+
+export function DispatchersView({ state, add, save, remove, team }: {
   state: CrmState
   add: (d: Omit<Dispatcher, 'id'>) => Promise<unknown>
   save: (d: Dispatcher) => Promise<unknown>
   remove: (id: number) => Promise<unknown>
+  /** Owner only (not in the demo): invite each dispatcher to their own sign-in. */
+  team?: TeamActions
 }) {
   const [name, setName] = useState('')
   const [percent, setPercent] = useState('')
@@ -207,7 +240,7 @@ export function DispatchersView({ state, add, save, remove }: {
             {!rows.length && <tr className="lt-empty"><td colSpan={7}>No dispatchers yet. Each one gets their own percent of the loads they book.</td></tr>}
             {rows.map(({ d, t, payWeek, payMonth }) => (
               <tr key={d.id} className="lt-row">
-                <td className="pv-name"><EditText value={d.name} onSave={(x) => x && update(d, { name: x })} /></td>
+                <td className="pv-name"><EditText value={d.name} onSave={(x) => x && update(d, { name: x })} />{team && <TeamAccess d={d} state={state} team={team} />}</td>
                 <td className="num-edit"><EditText align="right" value={String(d.percent)} display={`${d.percent}%`} onSave={(x) => update(d, { percent: Number(x.replace(/[%\s]/g, '')) || 0 })} /></td>
                 <td className="num">{t.weekLoads}</td>
                 <td className="num">{usd(t.week)}</td>

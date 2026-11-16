@@ -5,7 +5,7 @@ import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { BoardMap } from '../components/crm/MapView'
 import { ReportsView } from '../components/crm/ReportsView'
-import { CompanySetup, SignIn } from '../components/crm/SignIn'
+import { CompanySetup, SignIn, type InviteInfo } from '../components/crm/SignIn'
 import { Icon, type IconName } from '../components/Icon'
 import { BoardSkeleton } from '../components/Skeleton'
 import { track } from '../lib/analytics'
@@ -55,10 +55,10 @@ type NavItem = [Tab, string, IconName, number]
  * Signed in: the TMS layout — a dark sidebar that stays put (your company on top, the sections, tools, and you
  * at the bottom) and one work area that scrolls with the page, so there is a single scroll, never a box inside a box.
  */
-function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, company, demo, onLeave, banner, children }: {
+function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, company, demo, onLeave, banner, children, role }: {
   theme: Theme; setTheme: (t: Theme) => void; items: NavItem[]; tab: Tab; setTab: (t: Tab) => void
   tool: BoardTool | null; setTool: (t: BoardTool | null) => void
-  user: CrmUser; company?: Company; demo: boolean; onLeave: () => void; banner?: ReactNode; children: ReactNode
+  user: CrmUser; company?: Company; demo: boolean; onLeave: () => void; banner?: ReactNode; children: ReactNode; role?: 'owner' | 'dispatcher'
 }) {
   const org = company?.name || (demo ? 'Demo Dispatch LLC' : user.name)
   const initials = org.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('')
@@ -68,7 +68,7 @@ function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, co
         <a href="#/" className="w-side-logo" title="HaulPanel home"><img src="/logo.svg" alt="" width="24" height="24" /><b>HaulPanel</b></a>
         <div className="w-org" title={org}>
           <span className="w-org-mark">{initials || 'H'}</span>
-          <span className="w-org-text"><b>{org}</b><small>{company?.mc ? `MC ${company.mc}` : demo ? 'Demo account' : 'Dispatch company'}</small></span>
+          <span className="w-org-text"><b>{org}</b><small>{role === 'dispatcher' ? 'You’re a dispatcher here' : company?.mc ? `MC ${company.mc}` : demo ? 'Demo account' : 'Dispatch company'}</small></span>
         </div>
         <nav className="w-nav" aria-label="Sections">
           {items.map(([id, label, icon, n]) => (
@@ -136,10 +136,37 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
     try { localStorage.setItem(THEME_KEY, t) } catch { /* the choice just isn't remembered */ }
   }
 
-  const reload = useCallback(() => (demo ? crmDemo : crm).state().then((s) => { setState(s); setSignedOut(false) }, (e: CrmError) => {
-    if (e.status === 401) setSignedOut(true)
-    else setError(e.message)
-  }), [demo])
+  // Opened from an invite link (#/crm?invite=…): join that board as soon as the person is signed in.
+  const invite = useRef<string | null>(hashParams().get('invite'))
+  const [inviteInfo, setInviteInfo] = useState<InviteInfo | undefined>()
+  useEffect(() => {
+    const token = invite.current
+    if (!token) return
+    crm.inviteInfo(token).then((i) => setInviteInfo({ token, ...i }), (e: Error) => { invite.current = null; toast(e.message) })
+  }, [toast])
+  const joinIfInvited = useCallback(async () => {
+    const token = invite.current
+    if (!token) return
+    try {
+      const r = await crm.acceptInvite(token)
+      track('crm_join')
+      toast(`You joined ${r.company || 'the team'}’s board`)
+    } catch (e) {
+      if ((e as CrmError).status === 401) return // not signed in yet: the sign-in form shows the invite
+      toast((e as Error).message)
+    }
+    invite.current = null
+    setInviteInfo(undefined)
+    history.replaceState(null, '', '#/crm')
+  }, [toast])
+
+  const reload = useCallback(async () => {
+    if (!demo) await joinIfInvited()
+    return (demo ? crmDemo : crm).state().then((s) => { setState(s); setSignedOut(false) }, (e: CrmError) => {
+      if (e.status === 401) setSignedOut(true)
+      else setError(e.message)
+    })
+  }, [demo, joinIfInvited])
 
   useEffect(() => {
     crm.config().then(setConfig, (e: Error) => setError(e.message))
@@ -236,11 +263,11 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
   if (error && !state) return shell(<p className="w-msg error">{error}</p>)
   if (!demo && (!config || (!state && !signedOut))) return <BoardSkeleton theme={theme} />
   if (!demo && config && !config.enabled) return shell(<p className="w-msg">The dispatch board is not available right now.</p>)
-  if (!demo && config && (signedOut || !state)) return shell(<SignIn config={config} initial={hashParams().has('login') ? 'login' : 'signup'} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} />, true)
+  if (!demo && config && (signedOut || !state)) return shell(<SignIn config={config} initial={hashParams().has('login') ? 'login' : 'signup'} onSignedIn={onSignedIn} onDemo={() => { track('crm_demo'); setDemo(true) }} invite={inviteInfo} key={inviteInfo?.token ?? 'plain'} />, true)
   if (!state) return <BoardSkeleton theme={theme} />
 
   // A Google sign-up hasn't told us about the company yet: ask first, like other TMSs do.
-  if (!demo && state.company && !state.company.name) {
+  if (!demo && state.company && !state.company.name && !invite.current) {
     return shell(<CompanySetup user={state.user} onDone={() => { track('crm_company'); void reload() }} />, true)
   }
 
@@ -253,13 +280,13 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
     ['reports', 'Reports', 'chart', 0],
     ['carriers', 'Carriers', 'building', state.carriers.length],
     ['trucks', 'Trucks', 'truck', state.trucks.length],
-    ['dispatchers', 'Dispatchers', 'users', state.dispatchers.length],
+    ...(state.me?.role === 'dispatcher' ? [] : [['dispatchers', 'Dispatchers', 'users', state.dispatchers.length] as NavItem]),
   ]
   const leave = () => (demo ? setDemo(false) : void crm.logout().then(() => { setState(null); setSignedOut(true) }))
 
   return (
     <AppShell theme={theme} setTheme={setTheme} items={items} tab={tab} setTab={setTab} tool={tool} setTool={setTool} user={state.user} company={state.company}
-      demo={demo} onLeave={leave} banner={banner}>
+      demo={demo} onLeave={leave} banner={banner} role={state.me?.role}>
       {tool && <div className={`w-tool w-tool-${tool}`} ref={toolSlot} />}
       {!tool && tab === 'loads' && (
         <LoadsTable
@@ -334,6 +361,11 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           add={(d) => act(() => api.addDispatcher(d), 'Dispatcher added')}
           save={(d) => optimistic((s) => ({ ...s, dispatchers: s.dispatchers.map((x) => (x.id === d.id ? d : x)) }), () => api.updateDispatcher(d))}
           remove={(id) => act(() => api.removeDispatcher(id))}
+          team={demo ? undefined : {
+            invite: (dispatcherId, email) => act(() => crm.invite(dispatcherId, email), `Invite sent to ${email}`),
+            cancel: (id) => act(() => crm.removeInvite(id), 'Invite cancelled'),
+            removeMember: (userId) => act(() => crm.removeMember(userId), 'Access removed'),
+          }}
         />
       )}
     </AppShell>

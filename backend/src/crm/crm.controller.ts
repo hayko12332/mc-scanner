@@ -95,8 +95,11 @@ export class CrmController {
     if (!emailOk(email)) throw new BadRequestException('Enter a valid email');
     const weak = passwordProblem(password);
     if (weak) throw new BadRequestException(weak);
-    if (!company.name) throw new BadRequestException('Enter your company name');
-    if (!company.type) throw new BadRequestException('Choose what your company does');
+    // Someone invited to a board joins that company: no company of their own to fill in.
+    const invite = b.invite ? await store.invite(text(b.invite, 100)) : null;
+    const invited = !!invite && invite.email.toLowerCase() === email;
+    if (!invited && !company.name) throw new BadRequestException('Enter your company name');
+    if (!invited && !company.type) throw new BadRequestException('Choose what your company does');
     const user = await store.signUp({ email, name, passwordHash: await hashPassword(password), phone: company.phone, company });
     if (!user) throw new ConflictException('An account with this email already exists — log in instead');
     await this.sendCode(email, 'verify', name);
@@ -177,7 +180,7 @@ export class CrmController {
   @Post('company')
   @HttpCode(200)
   async setCompany(@Req() req: Request, @Body() b: Record<string, unknown>) {
-    const { user } = await this.auth(req);
+    const { user } = await this.owner(req);
     const company = companyInput(b);
     if (!company.name) throw new BadRequestException('Enter your company name');
     if (!company.type) throw new BadRequestException('Choose what your company does');
@@ -214,29 +217,104 @@ export class CrmController {
 
   @Get('state')
   async state(@Req() req: Request) {
-    const { ws, user } = await this.auth(req);
-    return this.store!.state(ws, user);
+    const s = await this.auth(req);
+    const st = await this.store!.state(s.ws, s.user);
+    const me = { role: s.role, dispatcherId: s.dispatcherId };
+    if (s.role === 'owner') return { ...st, me, team: await this.store!.team(s.ws) };
+    // An invited dispatcher sees the board's carriers and trucks, but only their own loads, documents and pay.
+    const loads = st.loads.filter((l) => l.dispatcherId != null && l.dispatcherId === s.dispatcherId);
+    const ids = new Set(loads.map((l) => l.id));
+    return {
+      ...st, me, loads,
+      dispatchers: st.dispatchers.filter((d) => d.id === s.dispatcherId),
+      files: st.files.filter((f) => f.loadId != null && ids.has(f.loadId)),
+      invoices: st.invoices.filter((i) => ids.has(i.loadId)),
+    };
+  }
+
+  // Team (owner only)
+
+  /** Invites a dispatcher of this board by email: they get a link to sign up (or log in) and join. */
+  @Post('invites')
+  @HttpCode(200)
+  async invite(@Req() req: Request, @Body() b: Record<string, unknown>) {
+    const { ws, user } = await this.owner(req);
+    const email = normEmail(text(b.email, 200));
+    if (!emailOk(email)) throw new BadRequestException('Enter the dispatcher’s email');
+    if (email === user.email.toLowerCase()) throw new BadRequestException('That is your own email');
+    if (!this.mailHourly.take(`invite:${ws}`)) throw new HttpException('Too many invites this hour, try again later', 429);
+    let r;
+    try {
+      r = await this.store!.createInvite(ws, email, Number(b.dispatcherId));
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+    const st = await this.store!.company(ws);
+    const company = st.name || user.name;
+    const link = `${config.publicUrl || 'https://haulpanel.com'}/#/crm?invite=${r.token}`;
+    await sendMail({
+      to: email, fromName: `${company} via HaulPanel`, replyTo: user.email,
+      subject: `${user.name || company} invited you to ${company}’s dispatch board`,
+      text: `Hi,\n\n${user.name || company} invited you to work on ${company}’s dispatch board in HaulPanel: your loads, miles and rate per mile, documents and pay in one place.\n\nJoin here (the link works for 7 days):\n${link}\n\n— HaulPanel team`,
+      html: `<p>Hi,</p><p><b>${esc(user.name || company)}</b> invited you to work on <b>${esc(company)}</b>’s dispatch board in HaulPanel: your loads, miles and rate per mile, documents and pay in one place.</p><p><a href="${link}" style="display:inline-block;padding:10px 18px;border-radius:8px;background:#2563eb;color:#fff;text-decoration:none;font-weight:600">Join the board</a></p><p style="color:#64748b">The link works for 7 days.</p><p>— HaulPanel team</p>`,
+    });
+    return r.invite;
+  }
+
+  @Delete('invites/:id')
+  async removeInvite(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
+    const { ws } = await this.owner(req);
+    await this.store!.removeInvite(ws, id);
+    return { ok: true };
+  }
+
+  @Delete('members/:userId')
+  async removeMember(@Req() req: Request, @Param('userId', ParseIntPipe) userId: number) {
+    const { ws } = await this.owner(req);
+    await this.store!.removeMember(ws, userId);
+    return { ok: true };
+  }
+
+  /** What an invite link is for, shown before signing in. */
+  @Get('invites/:token')
+  async inviteInfo(@Req() req: Request, @Param('token') token: string) {
+    this.limit(req);
+    const i = await this.need().invite(text(token, 100));
+    if (!i) throw new NotFoundException('This invite link has expired or was already used — ask for a new one');
+    return { email: i.email, company: i.company, dispatcher: i.dispatcher };
+  }
+
+  /** The signed-in user joins the board they were invited to (the invite must be for their email). */
+  @Post('invites/accept')
+  @HttpCode(200)
+  async acceptInvite(@Req() req: Request, @Body() b: { token?: string }) {
+    const { user } = await this.auth(req);
+    const i = await this.store!.invite(text(b?.token, 100));
+    if (!i) throw new NotFoundException('This invite link has expired or was already used — ask for a new one');
+    if (i.email.toLowerCase() !== user.email.toLowerCase()) throw new ForbiddenException(`This invite is for ${i.email} — sign in with that email`);
+    await this.store!.acceptInvite(i.id, i.ws, user.id, i.dispatcherId);
+    return { ok: true, company: i.company };
   }
 
   // Dispatchers
 
   @Post('dispatchers')
   async addDispatcher(@Req() req: Request, @Body() body: Record<string, unknown>) {
-    const { ws } = await this.auth(req);
+    const { ws } = await this.owner(req);
     const d = dispatcherInput(body);
     return this.store!.addDispatcher(ws, d.name, d.percent);
   }
 
   @Patch('dispatchers/:id')
   async updateDispatcher(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() body: Record<string, unknown>) {
-    const { ws } = await this.auth(req);
+    const { ws } = await this.owner(req);
     const d = dispatcherInput(body);
     return found(await this.store!.updateDispatcher(ws, id, d.name, d.percent));
   }
 
   @Delete('dispatchers/:id')
   async archiveDispatcher(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const { ws } = await this.auth(req);
+    const { ws } = await this.owner(req);
     await this.store!.archiveDispatcher(ws, id);
     return { ok: true };
   }
@@ -261,7 +339,7 @@ export class CrmController {
 
   @Delete('carriers/:id')
   async archiveCarrier(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const { ws } = await this.auth(req);
+    const { ws } = await this.owner(req);
     await this.store!.archiveCarrier(ws, id);
     return { ok: true };
   }
@@ -282,7 +360,7 @@ export class CrmController {
 
   @Delete('trucks/:id')
   async archiveTruck(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const { ws } = await this.auth(req);
+    const { ws } = await this.owner(req);
     await this.store!.archiveTruck(ws, id);
     return { ok: true };
   }
@@ -360,15 +438,16 @@ export class CrmController {
   /** Upload: raw bytes (application/octet-stream), ?kind=pod&name=POD.pdf&mime=application/pdf. PDF, JPEG or PNG, up to 10 MB. */
   @Post('loads/:id/files')
   async addFile(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() body: unknown,
-    @Query('kind') kind = 'other', @Query('name') name = '', @Query('mime') mime = '') {
-    const { ws } = await this.auth(req);
+    @Query('kind') kind = 'other', @Query('name') name = '') {
+    const scope = await this.auth(req);
+    const { ws } = scope;
+    await this.loadAccess(scope, id);
     if (!Buffer.isBuffer(body) || !body.length) throw new BadRequestException('Send the file as application/octet-stream');
     if (body.length > 10 * 1024 * 1024) throw new BadRequestException('The file is over 10 MB');
     const type = sniff(body);
     if (!type) throw new BadRequestException('Only PDF, JPEG and PNG files can be attached');
     const k = (FILE_KINDS as readonly string[]).includes(kind) ? (kind as FileKind) : 'other';
     const clean = text(name, 120).replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim() || `${k}.${type === 'application/pdf' ? 'pdf' : type === 'image/png' ? 'png' : 'jpg'}`;
-    void mime;
     try {
       return found(await this.store!.addFile(ws, id, { kind: k, name: clean, mime: type, data: body }));
     } catch (e) {
@@ -379,8 +458,9 @@ export class CrmController {
 
   @Get('files/:id')
   async getFile(@Req() req: Request, @Res() res: Response, @Param('id', ParseIntPipe) id: number, @Query('download') download = '') {
-    const { ws } = await this.auth(req);
-    const f = found(await this.store!.file(ws, id));
+    const scope = await this.auth(req);
+    const f = found(await this.store!.file(scope.ws, id));
+    await this.loadAccess(scope, f.loadId);
     res.setHeader('Content-Type', f.mime);
     res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="${f.name.replace(/[^\x20-\x7E]|"/g, '_')}"`);
     res.setHeader('Cache-Control', 'private, max-age=3600');
@@ -390,7 +470,9 @@ export class CrmController {
 
   @Patch('files/:id')
   async updateFile(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() body: { kind?: string }) {
-    const { ws } = await this.auth(req);
+    const scope = await this.auth(req);
+    const { ws } = scope;
+    await this.loadAccess(scope, found(await this.store!.file(ws, id)).loadId);
     if (!(FILE_KINDS as readonly string[]).includes(String(body?.kind))) throw new BadRequestException(`Kind must be one of: ${FILE_KINDS.join(', ')}`);
     await this.store!.setFileKind(ws, id, body.kind as FileKind);
     return { ok: true };
@@ -398,7 +480,9 @@ export class CrmController {
 
   @Delete('files/:id')
   async deleteFile(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const { ws } = await this.auth(req);
+    const scope = await this.auth(req);
+    const { ws } = scope;
+    await this.loadAccess(scope, found(await this.store!.file(ws, id)).loadId);
     await this.store!.deleteFile(ws, id);
     return { ok: true };
   }
@@ -408,7 +492,9 @@ export class CrmController {
   /** The invoice of a load as a PDF, with the chosen documents after it (?attach=3,4). */
   @Get('loads/:id/invoice.pdf')
   async invoicePdf(@Req() req: Request, @Res() res: Response, @Param('id', ParseIntPipe) id: number, @Query('attach') attach = '', @Query('download') download = '') {
-    const { ws, user } = await this.auth(req);
+    const scope = await this.auth(req);
+    await this.loadAccess(scope, id);
+    const { ws, user } = scope;
     const { data, files } = await this.invoiceParts(ws, user, id, ids(attach));
     const pdf = await buildInvoicePdf(data, files);
     res.setHeader('Content-Type', 'application/pdf');
@@ -421,7 +507,9 @@ export class CrmController {
   @Post('loads/:id/invoice')
   @HttpCode(200)
   async sendInvoice(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() b: Record<string, unknown>) {
-    const { ws, user } = await this.auth(req);
+    const scope = await this.auth(req);
+    await this.loadAccess(scope, id);
+    const { ws, user } = scope;
     const to = normEmail(String(b.to ?? ''));
     if (!validEmail(to)) throw new BadRequestException('Enter the broker’s billing email');
     const cc = (Array.isArray(b.cc) ? b.cc : []).map((x) => normEmail(String(x))).filter(validEmail).slice(0, 3);
@@ -445,7 +533,9 @@ export class CrmController {
 
   @Patch('loads/:id/invoice')
   async invoiceReminders(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() b: { remind?: boolean }) {
-    const { ws } = await this.auth(req);
+    const scope = await this.auth(req);
+    await this.loadAccess(scope, id);
+    const { ws } = scope;
     await this.store!.setReminders(ws, id, b?.remind !== false);
     return { ok: true };
   }
@@ -471,26 +561,31 @@ export class CrmController {
 
   @Post('loads')
   async addLoad(@Req() req: Request, @Body() body: Record<string, unknown>) {
-    const { ws } = await this.auth(req);
-    return this.store!.addLoad(ws, loadInput(body));
+    const s = await this.auth(req);
+    const l = loadInput(body);
+    return this.store!.addLoad(s.ws, s.role === 'owner' ? l : { ...l, dispatcherId: s.dispatcherId });
   }
 
   @Patch('loads/:id')
   async updateLoad(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() body: Record<string, unknown>) {
-    const { ws } = await this.auth(req);
-    return found(await this.store!.updateLoad(ws, id, loadInput(body)));
+    const s = await this.auth(req);
+    await this.loadAccess(s, id);
+    const l = loadInput(body);
+    return found(await this.store!.updateLoad(s.ws, id, s.role === 'owner' ? l : { ...l, dispatcherId: s.dispatcherId }));
   }
 
   @Delete('loads/:id')
   async deleteLoad(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
-    const { ws } = await this.auth(req);
+    const s = await this.auth(req);
+    await this.loadAccess(s, id);
+    const { ws } = s;
     await this.store!.deleteLoad(ws, id);
     return { ok: true };
   }
 
   @Post('loads/import')
   async importLoads(@Req() req: Request, @Body() body: unknown) {
-    const { ws } = await this.auth(req);
+    const { ws } = await this.owner(req);
     return { imported: await this.store!.importLoads(ws, importRows(body)) };
   }
 
@@ -523,10 +618,24 @@ export class CrmController {
     if (r === 'expired') throw new BadRequestException('The code has expired — tap “Send a new code”');
   }
 
-  private async auth(req: Request): Promise<{ ws: number; user: CrmUser }> {
+  private async auth(req: Request): Promise<Scope> {
     const s = await this.need().session(readCookie(req, COOKIE));
     if (!s) throw new UnauthorizedException('Please sign in');
-    return { ws: s.workspaceId, user: s.user };
+    return { ws: s.workspaceId, user: s.user, role: s.role, dispatcherId: s.dispatcherId };
+  }
+
+  /** Only the owner of the board (not an invited dispatcher) may do this. */
+  private async owner(req: Request): Promise<Scope> {
+    const s = await this.auth(req);
+    if (s.role !== 'owner') throw new ForbiddenException('Only the owner of this board can do that');
+    return s;
+  }
+
+  /** An invited dispatcher may only touch their own loads; anyone else gets "not found". */
+  private async loadAccess(s: Scope, loadId: number | null) {
+    if (s.role === 'owner') return;
+    const l = loadId == null ? null : await this.store!.loadById(s.ws, loadId);
+    if (!l || l.dispatcherId == null || l.dispatcherId !== s.dispatcherId) throw new NotFoundException();
   }
 
   /** Signs in: session cookie, and only the public part of the user goes back (never the password hash). */
@@ -574,6 +683,8 @@ export function invoiceData(load: Load, o: { from: InvoiceData['from']; remitTo?
     lines: lines.length ? lines : [{ label: 'Linehaul', amount: 0 }],
   };
 }
+
+interface Scope { ws: number; user: CrmUser; role: 'owner' | 'dispatcher'; dispatcherId: number | null }
 
 function found<T>(v: T | null): T {
   if (!v) throw new NotFoundException();
