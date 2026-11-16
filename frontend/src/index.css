@@ -2869,3 +2869,28 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 .tm-on { color: var(--ok); } .tm-wait { color: var(--warn); }
 .tm-form input { flex: 1; min-width: 170px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 12.5px; }
 .work .tm-form .primary { padding: 5px 10px; }
+.tm-link code { max-width: 100%; padding: 2px 6px; border-radius: 5px; background: var(--surface-2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Broker tracking: link in the load panel and the public page */
+.ld-track { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 10px; font-size: 12px; }
+.ld-track small { color: var(--muted); }
+.ld-track a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.tk { min-height: 100vh; }
+.tk-top { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.tk-top span { color: var(--muted); font-size: 13px; }
+.tk-main { display: grid; gap: 14px; max-width: 980px; margin: 0 auto; padding: 20px 16px 32px; }
+.tk-msg { padding: 60px 16px; text-align: center; color: var(--muted); }
+.tk-card { padding: 18px 20px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+.tk-card small { color: var(--muted); font-size: 12.5px; }
+.tk-card h1 { margin: 6px 0 4px; font-size: 24px; letter-spacing: -0.02em; }
+.tk-card h1 span { color: var(--muted); font-weight: 400; }
+.tk-sub { margin: 0; color: var(--muted); }
+.tk-steps { display: flex; gap: 8px; margin: 16px 0 12px; padding: 0; list-style: none; }
+.tk-steps li { display: flex; flex: 1; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 9px; background: var(--surface-2); color: var(--muted); font-weight: 600; font-size: 13px; }
+.tk-steps li i { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--border); color: var(--muted); font-style: normal; font-size: 11px; }
+.tk-steps li.on { background: var(--accent-soft); color: var(--text); }
+.tk-steps li.on i { background: var(--accent); color: #fff; }
+.tk-where { margin: 0; font-size: 14px; }
+.tk-map { position: relative; height: min(60vh, 520px); min-height: 300px; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--surface-2); }
+.tk-foot { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
+@media (max-width: 600px) { .tk-steps { flex-direction: column; } .tk-card h1 { font-size: 20px; } }

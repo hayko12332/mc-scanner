@@ -156,6 +156,37 @@ const SCHEMA = `
     expires_at    TIMESTAMPTZ NOT NULL,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
   );
+  -- Drivers on Telegram: a link per truck connects the driver's chat; their updates and live location come in
+  CREATE TABLE IF NOT EXISTS crm_driver_links (
+    token_hash    TEXT PRIMARY KEY,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    truck_id      BIGINT NOT NULL REFERENCES crm_trucks(id) ON DELETE CASCADE,
+    expires_at    TIMESTAMPTZ NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS crm_drivers (
+    tg_user_id    BIGINT PRIMARY KEY,
+    chat_id       BIGINT NOT NULL,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    truck_id      BIGINT NOT NULL REFERENCES crm_trucks(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL DEFAULT '',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE TABLE IF NOT EXISTS crm_positions (
+    truck_id      BIGINT PRIMARY KEY REFERENCES crm_trucks(id) ON DELETE CASCADE,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    lat           DOUBLE PRECISION NOT NULL,
+    lon           DOUBLE PRECISION NOT NULL,
+    at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    live_until    TIMESTAMPTZ
+  );
+  -- Tracking links a dispatcher sends to the broker: the truck on a map for one load, no money shown
+  CREATE TABLE IF NOT EXISTS crm_tracking (
+    token_hash    TEXT PRIMARY KEY,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    load_id       BIGINT UNIQUE NOT NULL REFERENCES crm_loads(id) ON DELETE CASCADE,
+    token         TEXT NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
   CREATE TABLE IF NOT EXISTS crm_email_codes (
     email       TEXT NOT NULL,
     purpose     TEXT NOT NULL,
@@ -187,6 +218,16 @@ const toFile = (r: Record<string, unknown>): CrmFile => ({
   mime: String(r.mime), size: Number(r.size), createdAt: new Date(r.created_at as string).toISOString(),
 });
 
+export interface DriverInfo { ws: number; truckId: number; unit: string; driver: string; company: string }
+export interface Position { truckId: number; lat: number; lon: number; at: string; live: boolean }
+export interface TrackingView {
+  date: string; pro: string; origin: string; destination: string; status: LoadStatus; miles: number; company: string; truck: string
+  position: Position | null
+}
+const toPosition = (r: Record<string, unknown>): Position => ({
+  truckId: Number(r.truck_id), lat: Number(r.lat), lon: Number(r.lon), at: new Date(r.at as string).toISOString(),
+  live: r.live_until != null && new Date(r.live_until as string).getTime() > Date.now(),
+});
 export type MemberRole = 'owner' | 'dispatcher';
 export interface Invite { id: number; email: string; dispatcherId: number | null; expiresAt: string }
 export interface Team { members: { userId: number; name: string; email: string; dispatcherId: number | null }[]; invites: Invite[] }
@@ -436,7 +477,7 @@ export class CrmStore {
 
   async state(ws: number, user: CrmUser): Promise<CrmState> {
     await this.ready;
-    const [d, c, t, l, k, f, inv, be] = await Promise.all([
+    const [d, c, t, l, k, f, inv, be, drv, pos] = await Promise.all([
       this.pool.query('SELECT id, name, percent FROM crm_dispatchers WHERE workspace_id = $1 AND NOT archived ORDER BY name', [ws]),
       this.pool.query(`SELECT ${CARRIER_COLS} FROM crm_carriers WHERE workspace_id = $1 AND NOT archived ORDER BY name`, [ws]),
       this.pool.query(`SELECT ${TRUCK_COLS} FROM crm_trucks WHERE workspace_id = $1 AND NOT archived ORDER BY unit, driver`, [ws]),
@@ -445,6 +486,8 @@ export class CrmStore {
       this.pool.query(`SELECT ${FILE_COLS} FROM crm_files WHERE workspace_id = $1 ORDER BY id`, [ws]),
       this.pool.query(`SELECT load_id, number, sent_to, sent_at, remind, reminders FROM crm_invoices WHERE workspace_id = $1`, [ws]),
       this.pool.query('SELECT broker, email FROM crm_broker_emails WHERE workspace_id = $1', [ws]),
+      this.pool.query('SELECT truck_id, name FROM crm_drivers WHERE workspace_id = $1', [ws]),
+      this.pool.query('SELECT truck_id, lat, lon, at, live_until FROM crm_positions WHERE workspace_id = $1', [ws]),
     ]);
     return {
       user, company: await this.company(ws),
@@ -456,6 +499,8 @@ export class CrmStore {
         remind: !!r.remind, reminders: Number(r.reminders),
       })),
       brokerEmails: Object.fromEntries(be.rows.map((r) => [String(r.broker), String(r.email)])),
+      drivers: drv.rows.map((r) => ({ truckId: Number(r.truck_id), name: String(r.name) })),
+      positions: pos.rows.map(toPosition),
     };
   }
 
@@ -544,6 +589,99 @@ export class CrmStore {
 
   async reminded(loadId: number) {
     await this.pool.query('UPDATE crm_invoices SET reminders = reminders + 1, reminded_at = now() WHERE load_id = $1', [loadId]);
+  }
+
+  // Drivers on Telegram
+
+  /** A link for the truck's driver to connect the Telegram bot (valid 7 days); returns the token for /start. */
+  async createDriverLink(ws: number, truckId: number): Promise<string | null> {
+    const own = await this.pool.query('SELECT 1 FROM crm_trucks WHERE workspace_id = $1 AND id = $2', [ws, truckId]);
+    if (!own.rows[0]) return null;
+    const token = randomBytes(12).toString('base64url');
+    await this.pool.query(`INSERT INTO crm_driver_links (token_hash, workspace_id, truck_id, expires_at) VALUES ($1,$2,$3, now() + interval '7 days')`,
+      [hash(token), ws, truckId]);
+    return token;
+  }
+
+  /** Connects a Telegram chat to the truck of a driver link; null when the link is unknown or expired. */
+  async connectDriver(token: string, tgUserId: number, chatId: number, name: string): Promise<DriverInfo | null> {
+    await this.ready;
+    const { rows } = await this.pool.query('SELECT workspace_id, truck_id FROM crm_driver_links WHERE token_hash = $1 AND expires_at > now()', [hash(token)]);
+    if (!rows[0]) return null;
+    await this.pool.query(
+      `INSERT INTO crm_drivers (tg_user_id, chat_id, workspace_id, truck_id, name) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (tg_user_id) DO UPDATE SET chat_id = EXCLUDED.chat_id, workspace_id = EXCLUDED.workspace_id, truck_id = EXCLUDED.truck_id, name = EXCLUDED.name, created_at = now()`,
+      [tgUserId, chatId, rows[0].workspace_id, rows[0].truck_id, name]);
+    return this.driver(tgUserId);
+  }
+
+  /** The truck and board a Telegram user drives for, or null. */
+  async driver(tgUserId: number): Promise<DriverInfo | null> {
+    await this.ready;
+    const { rows } = await this.pool.query(
+      `SELECT d.workspace_id, d.truck_id, t.unit, t.driver, w.company_name
+         FROM crm_drivers d JOIN crm_trucks t ON t.id = d.truck_id JOIN crm_workspaces w ON w.id = d.workspace_id
+        WHERE d.tg_user_id = $1 AND NOT t.archived`, [tgUserId]);
+    const r = rows[0];
+    return r ? { ws: Number(r.workspace_id), truckId: Number(r.truck_id), unit: String(r.unit), driver: String(r.driver), company: String(r.company_name) } : null;
+  }
+
+  async disconnectDriver(ws: number, truckId: number) {
+    await this.pool.query('DELETE FROM crm_drivers WHERE workspace_id = $1 AND truck_id = $2', [ws, truckId]);
+    await this.pool.query('DELETE FROM crm_positions WHERE workspace_id = $1 AND truck_id = $2', [ws, truckId]);
+  }
+
+  /** The load a truck is working on: the earliest one booked or in transit, else the last delivered. */
+  async currentLoad(ws: number, truckId: number): Promise<Load | null> {
+    const { rows } = await this.pool.query(
+      `SELECT ${LOAD_COLS} FROM crm_loads WHERE workspace_id = $1 AND truck_id = $2 AND status IN ('booked', 'in_transit', 'delivered')
+        ORDER BY CASE status WHEN 'in_transit' THEN 0 WHEN 'booked' THEN 1 ELSE 2 END,
+                 CASE WHEN status = 'delivered' THEN -extract(epoch FROM load_date) ELSE extract(epoch FROM load_date) END, id
+        LIMIT 1`, [ws, truckId]);
+    return rows[0] ? toLoad(rows[0]) : null;
+  }
+
+  async setLoadStatus(ws: number, loadId: number, status: 'in_transit' | 'delivered') {
+    await this.pool.query('UPDATE crm_loads SET status = $3 WHERE workspace_id = $1 AND id = $2', [ws, loadId, status]);
+  }
+
+  async savePosition(ws: number, truckId: number, lat: number, lon: number, liveSeconds: number | null) {
+    await this.pool.query(
+      `INSERT INTO crm_positions (truck_id, workspace_id, lat, lon, at, live_until) VALUES ($1,$2,$3,$4, now(), CASE WHEN $5::int IS NULL THEN NULL ELSE now() + make_interval(secs => $5::int) END)
+       ON CONFLICT (truck_id) DO UPDATE SET lat = EXCLUDED.lat, lon = EXCLUDED.lon, at = now(),
+         live_until = CASE WHEN $5::int IS NULL THEN crm_positions.live_until ELSE EXCLUDED.live_until END`,
+      [truckId, ws, lat, lon, liveSeconds]);
+  }
+
+  // Tracking links for brokers
+
+  /** The tracking link token of a load (the same link every time it is asked for). */
+  async trackingToken(ws: number, loadId: number): Promise<string | null> {
+    const own = await this.pool.query('SELECT 1 FROM crm_loads WHERE workspace_id = $1 AND id = $2', [ws, loadId]);
+    if (!own.rows[0]) return null;
+    const old = await this.pool.query('SELECT token FROM crm_tracking WHERE load_id = $1', [loadId]);
+    if (old.rows[0]) return String(old.rows[0].token);
+    const token = randomBytes(12).toString('base64url');
+    await this.pool.query('INSERT INTO crm_tracking (token_hash, workspace_id, load_id, token) VALUES ($1,$2,$3,$4)', [hash(token), ws, loadId, token]);
+    return token;
+  }
+
+  /** What a broker's tracking page shows: the lane, status and the truck's last position — never money. */
+  async tracking(token: string): Promise<TrackingView | null> {
+    await this.ready;
+    const { rows } = await this.pool.query(
+      `SELECT l.id, to_char(l.load_date, 'YYYY-MM-DD') AS date, l.pro, l.origin, l.destination, l.status, l.loaded_miles,
+              w.company_name, t.unit, p.lat, p.lon, p.at, p.live_until
+         FROM crm_tracking k JOIN crm_loads l ON l.id = k.load_id JOIN crm_workspaces w ON w.id = k.workspace_id
+         LEFT JOIN crm_trucks t ON t.id = l.truck_id LEFT JOIN crm_positions p ON p.truck_id = l.truck_id
+        WHERE k.token_hash = $1`, [hash(token)]);
+    const r = rows[0];
+    if (!r) return null;
+    return {
+      date: String(r.date), pro: String(r.pro), origin: String(r.origin), destination: String(r.destination), status: String(r.status) as LoadStatus,
+      miles: Number(r.loaded_miles ?? 0), company: String(r.company_name ?? ''), truck: r.unit ? String(r.unit) : '',
+      position: r.lat == null || !['booked', 'in_transit'].includes(String(r.status)) ? null : toPosition({ ...r, truck_id: 0 }),
+    };
   }
 
   // FMCSA checks

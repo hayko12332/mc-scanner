@@ -269,8 +269,48 @@ export function DispatchersView({ state, add, save, remove, team }: {
 }
 
 /** Trucks and drivers of the carriers: what each truck grossed this week, its miles and RPM. */
-export function TrucksView({ state, add, update, remove }: {
+export interface DriverActions { link: (truckId: number) => Promise<{ url: string }>; disconnect: (truckId: number) => Promise<unknown> }
+
+const ago = (iso: string) => {
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60_000)
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`
+}
+
+/** The driver's Telegram: a link to send them once; then their status, photos and location come in by themselves. */
+function DriverApp({ t, state, actions }: { t: Truck; state: CrmState; actions: DriverActions }) {
+  const [url, setUrl] = useState('')
+  const [err, setErr] = useState('')
+  const [copied, setCopied] = useState(false)
+  const driver = state.drivers?.find((d) => d.truckId === t.id)
+  const pos = state.positions?.find((p) => p.truckId === t.id)
+  if (driver) return (
+    <div className="tm">
+      <span className="tm-on">✓ {driver.name || 'Driver'} on Telegram{pos ? ` · ${pos.live ? '📍 live, ' : '📍 '}${ago(pos.at)}` : ''}</span>
+      <button className="w-link" onClick={() => { if (confirm('Disconnect this driver’s Telegram from the truck?')) void actions.disconnect(t.id) }}>Disconnect</button>
+    </div>
+  )
+  if (url) {
+    const msg = `Hi${t.driver ? ` ${t.driver.split(' ')[0]}` : ''}, tap this link to connect to our dispatch in Telegram (loads, BOL/POD photos, location): ${url}`
+    return (
+      <div className="tm tm-link">
+        <code title={url}>{url.replace(/^https:\/\//, '')}</code>
+        <button className="w-link" onClick={() => void navigator.clipboard.writeText(msg).then(() => setCopied(true))}>{copied ? 'Copied ✓' : 'Copy message'}</button>
+        {t.phone && <a className="w-link" href={`sms:${t.phone.replace(/[^\d+]/g, '')}?&body=${encodeURIComponent(msg)}`}>Text it</a>}
+      </div>
+    )
+  }
+  return (
+    <div className="tm">
+      <button className="w-link" onClick={() => void actions.link(t.id).then((r) => setUrl(r.url), (e: Error) => setErr(e.message))}>+ Connect driver’s Telegram</button>
+      {err && <span className="tm-wait">{err}</span>}
+    </div>
+  )
+}
+
+export function TrucksView({ state, add, update, remove, drivers }: {
   state: CrmState
+  /** Not in the demo: connect each driver's Telegram. */
+  drivers?: DriverActions
   add: (t: TruckInput) => Promise<unknown>
   update: (t: Truck) => Promise<unknown>
   remove: (id: number) => Promise<unknown>
@@ -328,7 +368,7 @@ export function TrucksView({ state, add, update, remove }: {
                   <EditSelect value={String(t.carrierId ?? '')} label="Carrier" onSave={(x) => save(t, { carrierId: x ? Number(x) : null })}
                     options={[['', '—'], ...state.carriers.map((c): [string, string] => [String(c.id), c.name])]} />
                 </td>
-                <td><EditText value={t.driver} onSave={(x) => save(t, { driver: x })} /></td>
+                <td><EditText value={t.driver} onSave={(x) => save(t, { driver: x })} />{drivers && <DriverApp t={t} state={state} actions={drivers} />}</td>
                 <td><EditText value={t.phone} onSave={(x) => save(t, { phone: x })} /></td>
                 <td className="num">{s.weekLoads}</td>
                 <td className="num">{fmtMiles(s.weekMiles)}</td>

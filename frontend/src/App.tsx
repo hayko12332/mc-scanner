@@ -10,6 +10,7 @@ import { LookupPage } from './pages/LookupPage'
 import { HomePage } from './pages/HomePage'
 import { ScannerPage } from './pages/ScannerPage'
 import { CrmPage } from './pages/CrmPage'
+import { TrackPage } from './pages/TrackPage'
 import { crm, type CrmUser } from './lib/crm'
 import { firstName, MeContext } from './lib/me'
 
@@ -46,6 +47,7 @@ export default function App() {
   const page = isLookup(hash) ? 'lookup'
     : hash.startsWith('#/feedback') ? 'feedback'
     : hash.startsWith('#/crm') ? 'crm'
+    : hash.startsWith('#/track/') ? 'track'
     : hash.startsWith('#/leads') ? 'leads'
     : hash.startsWith('#/scan') ? 'scan'
     : 'home'
@@ -126,7 +128,8 @@ export default function App() {
 
   return (
     <MeContext.Provider value={me}>
-      {page !== 'crm' && (
+      {page === 'track' && <TrackPage token={decodeURIComponent(hash.slice('#/track/'.length).split('?')[0])} />}
+      {page !== 'crm' && page !== 'track' && (
       <header className={`nav ${page === 'home' ? 'nav-light' : ''}`}>
         <div className="wrap nav-inner">
           <a href="#/" className="brand" aria-label="HaulPanel home">
@@ -159,7 +162,7 @@ export default function App() {
       )}
 
       {page === 'crm' && <CrmPage toast={toast.show} tool={boardTool} setTool={openBoardTool} toolSlot={setBoardSlot} />}
-      <main className="wrap" hidden={page === 'crm'}>
+      <main className="wrap" hidden={page === 'crm' || page === 'track'}>
         {page === 'home' && <HomePage backendOk={backendOk} />}
         {/* Lookup and the lead tools live here, or inside the dispatch board when opened from its sidebar (see below). */}
         <div ref={homeSlot} />
@@ -188,7 +191,7 @@ export default function App() {
         toolsNode,
       )}
 
-      {page !== 'crm' && <Footer telegram={telegram} lastLookup={lastLookup} backendOk={backendOk} />}
+      {page !== 'crm' && page !== 'track' && <Footer telegram={telegram} lastLookup={lastLookup} backendOk={backendOk} />}
       <div className={`toast ${toast.message ? 'show' : ''}`}>{toast.message}</div>
     </MeContext.Provider>
   )

@@ -1,5 +1,5 @@
 import type { CompanyCheck } from './company-check.js';
-import type { CrmFile } from './crm.store.js';
+import type { CrmFile, Position } from './crm.store.js';
 
 /** Dispatcher CRM: a workspace (one per user for now) with its dispatchers, carriers and loads. */
 
@@ -102,6 +102,10 @@ export interface CrmState {
   invoices: { loadId: number; number: string; sentTo: string; sentAt: string; remind: boolean; reminders: number }[];
   /** Billing email last used per broker (lower-case broker name → email). */
   brokerEmails: Record<string, string>;
+  /** Trucks whose driver connected the Telegram bot. */
+  drivers: { truckId: number; name: string }[];
+  /** Last known position of each truck (from the driver's Telegram location). */
+  positions: Position[];
 }
 
 /** A row pasted from a spreadsheet; dispatcher and carrier are names that are matched or created. */

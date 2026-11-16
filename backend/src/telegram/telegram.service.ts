@@ -4,13 +4,16 @@ import { AnalyticsService } from '../analytics/analytics.service.js';
 import type { TelegramUser } from '../analytics/analytics.types.js';
 import { RateLimiter } from '../analytics/rate-limiter.js';
 import { config } from '../config.js';
+import { DriverBot, type DriverMessage } from '../crm/driver-bot.js';
 
 interface TgUser { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string; language_code?: string }
 interface TgChat { id: number; type: string; title?: string }
-interface TgMessage { message_id: number; chat: TgChat; from?: TgUser; text?: string; caption?: string; reply_to_message?: TgMessage }
+interface TgMessage extends Omit<DriverMessage, 'chat' | 'from'> { message_id: number; chat: TgChat; from?: TgUser; text?: string; caption?: string; reply_to_message?: TgMessage }
 export interface TgUpdate {
   update_id: number;
   message?: TgMessage;
+  /** Live location updates arrive as edits of the location message. */
+  edited_message?: TgMessage;
   callback_query?: { id: string; from: TgUser; data?: string; message?: TgMessage };
   /** The bot's own membership changed, e.g. it was added to a group. */
   my_chat_member?: { chat: TgChat; from: TgUser; old_chat_member: { status: string }; new_chat_member: { status: string } };
@@ -98,6 +101,18 @@ export class TelegramService implements OnApplicationBootstrap {
   /** The bot's @username, read from Telegram at startup. */
   private username = '';
 
+  /** Drivers connected to a dispatch board report loads, documents and location through this same bot. */
+  private readonly drivers = new DriverBot({
+    call: (method, body) => this.call(method, body),
+    download: async (fileId) => {
+      const f = (await this.call('getFile', { file_id: fileId })) as { file_path?: string };
+      if (!f.file_path) throw new Error('Telegram gave no file path');
+      const res = await fetch(`https://api.telegram.org/file/bot${config.telegramBotToken}/${f.file_path}`, { signal: AbortSignal.timeout(30_000) });
+      if (!res.ok) throw new Error(`file download HTTP ${res.status}`);
+      return Buffer.from(await res.arrayBuffer());
+    },
+  });
+
   constructor(private readonly analytics: AnalyticsService) {}
 
   get enabled() {
@@ -145,7 +160,7 @@ export class TelegramService implements OnApplicationBootstrap {
     await this.call('setWebhook', {
       url: config.publicUrl + WEBHOOK_PATH,
       secret_token: this.webhookSecret,
-      allowed_updates: ['message', 'callback_query', 'my_chat_member'],
+      allowed_updates: ['message', 'edited_message', 'callback_query', 'my_chat_member'],
     });
     await this.call('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Leads', web_app: { url: this.viewUrl('leads') } } });
     await this.call('setMyCommands', {
@@ -169,6 +184,9 @@ export class TelegramService implements OnApplicationBootstrap {
   async handle(update: TgUpdate): Promise<unknown> {
     if (update.callback_query) return this.handleButton(update.callback_query);
     if (update.my_chat_member) return this.handleMembership(update.my_chat_member);
+    const driverMsg = update.message ?? update.edited_message;
+    if (driverMsg && (await this.drivers.handle(driverMsg as DriverMessage, !!update.edited_message))) return;
+    if (update.edited_message) return;
     const msg = update.message;
     if (!msg || !msg.from || msg.from.is_bot) return;
     if (isGroup(msg.chat)) return this.handleGroupMessage(msg);

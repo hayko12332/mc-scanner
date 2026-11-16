@@ -67,6 +67,15 @@ export interface CrmState {
   /** Owner of the board, or a dispatcher invited to it (who sees only their own loads). */
   me?: { role: 'owner' | 'dispatcher'; dispatcherId: number | null }
   team?: Team
+  /** Trucks whose driver connected the Telegram bot, and the last known position of each truck. */
+  drivers?: { truckId: number; name: string }[]
+  positions?: TruckPosition[]
+}
+export interface TruckPosition { truckId: number; lat: number; lon: number; at: string; live: boolean }
+/** What the broker's tracking page shows (no money). */
+export interface TrackingView {
+  date: string; pro: string; origin: string; destination: string; status: LoadStatus; miles: number; company: string; truck: string
+  position: TruckPosition | null; lane: LaneResult | null
 }
 export interface Team {
   members: { userId: number; name: string; email: string; dispatcherId: number | null }[]
@@ -213,6 +222,10 @@ export const crm = {
   /** US cities for what is typed in a lane field: "santa mo" → ["Santa Monica, CA", …]. */
   places: (q: string) => call<string[]>('GET', `/places?${new URLSearchParams({ q })}`),
   uploadFile: upload,
+  driverLink: (truckId: number) => call<{ url: string }>('POST', `/trucks/${truckId}/driver-link`),
+  disconnectDriver: (truckId: number) => call('DELETE', `/trucks/${truckId}/driver`),
+  trackingLink: (loadId: number) => call<{ url: string }>('POST', `/loads/${loadId}/tracking`),
+  track: (token: string) => call<TrackingView>('GET', `/track/${encodeURIComponent(token)}`),
   invite: (dispatcherId: number, email: string) => call('POST', '/invites', { dispatcherId, email }),
   removeInvite: (id: number) => call('DELETE', `/invites/${id}`),
   removeMember: (userId: number) => call('DELETE', `/members/${userId}`),

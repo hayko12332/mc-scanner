@@ -328,6 +328,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           toast={toast}
           changed={() => void reload()}
           demo={demo}
+          tracking={demo ? undefined : crm.trackingLink}
           saveCarrier={(c) => { optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c), `${c.name}’s fee saved`).catch(() => undefined) }}
         />
       )}
@@ -353,6 +354,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           add={(t) => act(() => api.addTruck(t), 'Truck added')}
           update={(t) => optimistic((s) => ({ ...s, trucks: s.trucks.map((x) => (x.id === t.id ? t : x)) }), () => api.updateTruck(t.id, t))}
           remove={(id) => act(() => api.removeTruck(id))}
+          drivers={demo ? undefined : { link: (id) => crm.driverLink(id), disconnect: (id) => act(() => crm.disconnectDriver(id), 'Driver disconnected') }}
         />
       )}
       {!tool && tab === 'dispatchers' && (

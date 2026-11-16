@@ -16,6 +16,7 @@ import type { CodePurpose } from './crm.store.js';
 import type { CompanyInput } from './crm.types.js';
 import { MilesService } from './miles.js';
 import { CompanyCheckService } from './company-check.service.js';
+import { TelegramService } from '../telegram/telegram.service.js';
 import { FILE_KINDS, type FileKind } from './crm.store.js';
 import { buildInvoicePdf, invoiceTotal, type InvoiceData } from './invoice.js';
 import type { Load } from './crm.types.js';
@@ -59,7 +60,7 @@ export class CrmController {
   /** Miles are public (the demo uses them too), so each visitor gets a fair share of the free map services. */
   private readonly milesLimiter = new RateLimiter(150, 10 * 60_000);
 
-  constructor(private readonly checks: CompanyCheckService) {
+  constructor(private readonly checks: CompanyCheckService, private readonly telegram: TelegramService) {
     const pool = db();
     this.store = pool ? new CrmStore(pool) : null;
   }
@@ -555,6 +556,46 @@ export class CrmController {
     });
     const files = await this.store!.filesOf(ws, id, attach);
     return { load, data, files };
+  }
+
+  // Drivers on Telegram and tracking links
+
+  /** A Telegram link for the truck's driver: one tap connects them to this truck in the bot. */
+  @Post('trucks/:id/driver-link')
+  @HttpCode(200)
+  async driverLink(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
+    const { ws } = await this.auth(req);
+    const bot = this.telegram.links().bot;
+    if (!bot) throw new ServiceUnavailableException('The Telegram bot is not available right now');
+    const token = found(await this.store!.createDriverLink(ws, id));
+    return { url: `${bot}?start=drv_${token}` };
+  }
+
+  @Delete('trucks/:id/driver')
+  async disconnectDriver(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
+    const { ws } = await this.auth(req);
+    await this.store!.disconnectDriver(ws, id);
+    return { ok: true };
+  }
+
+  /** The broker's tracking link of a load (always the same link for that load). */
+  @Post('loads/:id/tracking')
+  @HttpCode(200)
+  async trackingLink(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
+    const s = await this.auth(req);
+    await this.loadAccess(s, id);
+    const token = found(await this.store!.trackingToken(s.ws, id));
+    return { url: `${config.publicUrl || 'https://haulpanel.com'}/#/track/${token}` };
+  }
+
+  /** Public tracking page data: lane, status, the truck's last position and the road — no money, no names but the company. */
+  @Get('track/:token')
+  async track(@Req() req: Request, @Param('token') token: string) {
+    if (!this.milesLimiter.take(ipOf(req))) throw new HttpException('Too many requests, try again in a few minutes', 429);
+    const t = await this.need().tracking(text(token, 60));
+    if (!t) throw new NotFoundException('This tracking link is not valid');
+    const lane = await this.milesService.lane(t.origin, t.destination).catch(() => null);
+    return { ...t, lane };
   }
 
   // Loads

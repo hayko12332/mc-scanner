@@ -63,7 +63,7 @@ function Pick({ label, value, options, onSave }: { label: string; value: string;
  * Everything about one load in a side panel: the trip (truck, lane, loaded and empty miles), the pay
  * (rate, accessorials, gross, RPM, dispatch fee) and billing (invoice and payment dates against 30-day terms).
  */
-export function LoadDrawer({ load, state, save, remove, close, miles, lane, check, theme, saveCarrier, docs, toast, changed, demo }: {
+export function LoadDrawer({ load, state, save, remove, close, miles, lane, check, theme, saveCarrier, docs, toast, changed, demo, tracking }: {
   load: Load
   state: CrmState
   save: (l: LoadInput) => void
@@ -80,6 +80,8 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
   /** Reload the board after documents or invoices change. */
   changed: () => void
   demo: boolean
+  /** Makes (or gives back) the broker's tracking link of a load; not in the demo. */
+  tracking?: (loadId: number) => Promise<{ url: string }>
 }) {
   const [busy, setBusy] = useState<'' | 'loaded' | 'empty'>('')
   const brokerCheck = useCheck(load.brokerMc ?? '', 'broker', check, savedCheck(state, load.brokerMc ?? '', 'broker'))
@@ -183,6 +185,7 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
             </div>
             {note && <p className="ld-note">{note}</p>}
             <RouteMap from={load.origin} to={load.destination} theme={theme} lane={lane} />
+            {tracking && <TrackingLink loadId={load.id} make={tracking} toast={toast} hasDriver={!!state.drivers?.some((d) => d.truckId === load.truckId)} />}
           </section>
 
           <section>
@@ -240,6 +243,27 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
           <button className="primary" onClick={close}>Done</button>
         </footer>
       </aside>
+    </div>
+  )
+}
+
+/** The broker's tracking link: copied in one click; it shows the truck on the lane (from the driver's Telegram location). */
+function TrackingLink({ loadId, make, toast, hasDriver }: { loadId: number; make: (id: number) => Promise<{ url: string }>; toast: (m: string) => void; hasDriver: boolean }) {
+  const [url, setUrl] = useState('')
+  const get = async () => {
+    try {
+      const r = await make(loadId)
+      setUrl(r.url)
+      await navigator.clipboard.writeText(r.url).then(() => toast('Tracking link copied — send it to the broker'), () => undefined)
+    } catch (e) {
+      toast((e as Error).message)
+    }
+  }
+  return (
+    <div className="ld-track">
+      <button type="button" onClick={() => void get()}>🔗 Tracking link for the broker</button>
+      {url ? <a href={url} target="_blank" rel="noopener">{url.replace(/^https?:\/\//, '')}</a>
+        : <small>{hasDriver ? 'Shows the truck on this lane, no rates.' : 'Connect the driver’s Telegram in Trucks to show the truck’s location.'}</small>}
     </div>
   )
 }

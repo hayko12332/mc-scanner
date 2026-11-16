@@ -8,5 +8,7 @@ import { TelegramService } from './telegram.service.js';
   imports: [AnalyticsModule],
   controllers: [TelegramController],
   providers: [TelegramService],
+  // The dispatch board makes the driver links (t.me/<bot>?start=drv_…).
+  exports: [TelegramService],
 })
 export class TelegramModule {}
