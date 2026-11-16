@@ -2738,3 +2738,12 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 @media (max-width: 900px) { .w-tool .registry-head { top: 50px; } }
 .w-tool .registry { overflow: clip; }
 .w-tool .registry-head { border-radius: 0; }
+
+/* Signed in: avatar and first name in the site header instead of Log in / sign up. */
+.nav-me { display: inline-flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px 0 5px; border-radius: 99px; color: #e2e8f0; font-size: 14px; font-weight: 600; text-decoration: none; }
+.nav-me:hover { background: rgba(255, 255, 255, 0.08); text-decoration: none; }
+.nav.nav-light .nav-me { color: #0b1220; }
+.nav.nav-light .nav-me:hover { background: #f2f4f7; }
+.nav-me img, .nav-me .avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+.nav-me .avatar { display: grid; place-items: center; background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; font-size: 13px; font-weight: 700; }
+@media (max-width: 600px) { .nav-me { padding: 0 4px; } }

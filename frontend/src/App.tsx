@@ -10,6 +10,8 @@ import { LookupPage } from './pages/LookupPage'
 import { HomePage } from './pages/HomePage'
 import { ScannerPage } from './pages/ScannerPage'
 import { CrmPage } from './pages/CrmPage'
+import { crm, type CrmUser } from './lib/crm'
+import { firstName, MeContext } from './lib/me'
 
 const isLookup = (hash: string) => hash.startsWith('#/lookup')
 
@@ -37,6 +39,7 @@ function useHash() {
 
 export type BoardTool = 'lookup' | 'leads'
 const TOOL_KEY = 'haulpanel.boardTool'
+const ME_KEY = 'haulpanel.me'
 
 export default function App() {
   const { hash, navKey, lastLookup, setLastLookup } = useHash()
@@ -60,6 +63,22 @@ export default function App() {
   useEffect(() => {
     track('page_view', { page })
     scrollTo(0, 0)
+  }, [page])
+
+  // Signed in or not, for the header on every page; checked again on each page change (after signing in or out on the board).
+  // The last answer is remembered so the header shows the right buttons at once, before the server answers.
+  const [me, setMe] = useState<CrmUser | null>(() => {
+    try { return JSON.parse(localStorage.getItem(ME_KEY) || 'null') as CrmUser | null } catch { return null }
+  })
+  useEffect(() => {
+    if (page === 'crm') return
+    let stale = false
+    crm.me().then((r) => {
+      if (stale) return
+      setMe(r.user)
+      try { if (r.user) localStorage.setItem(ME_KEY, JSON.stringify(r.user)); else localStorage.removeItem(ME_KEY) } catch { /* private mode */ }
+    }, () => {})
+    return () => { stale = true }
   }, [page])
 
   // Lookup and New MC leads opened inside the dispatch board (its sidebar "Tools").
@@ -106,7 +125,7 @@ export default function App() {
   }, [toast])
 
   return (
-    <>
+    <MeContext.Provider value={me}>
       {page !== 'crm' && (
       <header className={`nav ${page === 'home' ? 'nav-light' : ''}`}>
         <div className="wrap nav-inner">
@@ -121,10 +140,20 @@ export default function App() {
             <a href="/new-mc-leads" onClick={go('#/leads')} className={page === 'leads' ? 'active' : ''}>New MC leads</a>
             <a href="/mc-scanner" onClick={go('#/scan')} className={`hide-md ${page === 'scan' ? 'active' : ''}`}>MC scanner</a>
           </nav>
-          <div className="nav-cta">
-            <a className="nav-link hide-sm" href="#/crm?login" data-track="header_login">Log in</a>
-            <a className="btn nav-start" href="#/crm?signup" data-track="header_start_free">Start free</a>
-          </div>
+          {me ? (
+            <div className="nav-cta">
+              <a className="nav-me" href="#/crm" title={me.email} data-track="header_me">
+                {me.picture ? <img src={me.picture} alt="" referrerPolicy="no-referrer" /> : <span className="avatar">{firstName(me).slice(0, 1).toUpperCase()}</span>}
+                <span className="hide-sm">{firstName(me)}</span>
+              </a>
+              <a className="btn nav-start" href="#/crm" data-track="header_board">My board</a>
+            </div>
+          ) : (
+            <div className="nav-cta">
+              <a className="nav-link" href="#/crm?login" data-track="header_login">Log in</a>
+              <a className="btn nav-start" href="#/crm?signup" data-track="header_start_free">Free TMS</a>
+            </div>
+          )}
         </div>
       </header>
       )}
@@ -161,6 +190,6 @@ export default function App() {
 
       {page !== 'crm' && <Footer telegram={telegram} lastLookup={lastLookup} backendOk={backendOk} />}
       <div className={`toast ${toast.message ? 'show' : ''}`}>{toast.message}</div>
-    </>
+    </MeContext.Provider>
   )
 }

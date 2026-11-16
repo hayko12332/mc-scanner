@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { track } from '../lib/analytics'
+import { useMe } from '../lib/me'
 import { Icon, type IconName } from '../components/Icon'
 import { ProductShot } from '../components/ProductShot'
 
@@ -136,6 +137,8 @@ function Check({ children }: { children: ReactNode }) {
 
 /** Primary call to action: solid button with an arrow that moves on hover. */
 export function StartButton({ children = 'Start free', big = true }: { children?: ReactNode; big?: boolean }) {
+  // Signed in already: the same button opens your board instead of the sign-up.
+  if (useMe()) return <a className={`hp-btn primary ${big ? '' : 'sm'}`} href="#/crm" data-track="open_board">Open my board<Icon name="arrow" size={16} /></a>
   return <a className={`hp-btn primary ${big ? '' : 'sm'}`} href="#/crm?signup" data-track="start_free">{children}<Icon name="arrow" size={16} /></a>
 }
 /** The live demo board with sample data: try the product without signing up. */

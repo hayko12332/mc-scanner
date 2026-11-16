@@ -150,6 +150,7 @@ export const crm = {
   google: (credential: string) => call<{ user: CrmUser }>('POST', '/auth/google', { credential }),
   devLogin: (name: string) => call<{ user: CrmUser }>('POST', '/auth/dev', { name }),
   logout: () => call<{ ok: true }>('POST', '/auth/logout'),
+  me: () => call<{ user: CrmUser | null }>('GET', '/me'),
   signUp: (v: SignUpInput) => call<AuthResult>('POST', '/auth/signup', v),
   login: (email: string, password: string) => call<AuthResult>('POST', '/auth/login', { email, password }),
   verify: (email: string, code: string) => call<{ user: CrmUser }>('POST', '/auth/verify', { email, code }),

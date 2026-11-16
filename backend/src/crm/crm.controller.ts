@@ -199,6 +199,14 @@ export class CrmController {
     return { ok: true };
   }
 
+  /** Who is signed in, for the site header on every page (never an error: signed out is `{ user: null }`). */
+  @Get('me')
+  async me(@Req() req: Request) {
+    const token = readCookie(req, COOKIE);
+    const s = token && this.store ? await this.store.session(token).catch(() => null) : null;
+    return { user: s ? { id: s.user.id, email: s.user.email, name: s.user.name, picture: s.user.picture } : null };
+  }
+
   @Get('state')
   async state(@Req() req: Request) {
     const { ws, user } = await this.auth(req);

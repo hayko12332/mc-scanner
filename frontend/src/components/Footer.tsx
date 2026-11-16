@@ -1,4 +1,5 @@
 import { Icon, type IconName } from './Icon'
+import { useMe } from '../lib/me'
 
 interface Links { bot: string; group: string; support: string }
 interface Item { label: string; href: string; icon?: IconName; tag?: string; external?: boolean }
@@ -36,6 +37,7 @@ export function Footer({ telegram, backendOk }: { telegram: Links; lastLookup?: 
       ],
     },
   ]
+  const me = useMe()
   const status = backendOk === false
     ? { cls: 'down', text: 'Data service is restarting' }
     : { cls: 'up', text: 'FMCSA data · updated daily' }
@@ -52,7 +54,7 @@ export function Footer({ telegram, backendOk }: { telegram: Links; lastLookup?: 
             <p>The TMS for dispatch companies: loads, trucks, carrier statements and payments — plus company checks by MC or USDOT and new MC leads every day.</p>
             <span className={`footer-status ${status.cls}`}><i />{status.text}</span>
             <div className="footer-actions">
-              <a className="btn primary" href="#/crm?signup">Start free</a>
+              {me ? <a className="btn primary" href="#/crm">Open my board</a> : <a className="btn primary" href="#/crm?signup">Free TMS</a>}
               {telegram.bot && (
                 <a className="btn footer-tg" href={telegram.bot} target="_blank" rel="noopener"><Icon name="send" size={15} />Open in Telegram</a>
               )}
