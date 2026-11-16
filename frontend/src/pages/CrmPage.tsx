@@ -3,6 +3,7 @@ import { CarriersView, DispatchersView, TrucksView } from '../components/crm/Peo
 import { StatementsView } from '../components/crm/StatementsView'
 import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
+import { BoardMap } from '../components/crm/MapView'
 import { CompanySetup, SignIn } from '../components/crm/SignIn'
 import { Icon, type IconName } from '../components/Icon'
 import { BoardSkeleton } from '../components/Skeleton'
@@ -11,7 +12,7 @@ import { crm, CrmError, looksLikePlace, type Company, type CrmConfig, type CrmSt
 import { crmDemo } from '../lib/crmDemo'
 import type { BoardTool } from '../App'
 
-type Tab = 'loads' | 'statements' | 'carriers' | 'trucks' | 'dispatchers'
+type Tab = 'loads' | 'map' | 'statements' | 'carriers' | 'trucks' | 'dispatchers'
 type Theme = 'light' | 'dark'
 
 const THEME_KEY = 'leadhaul.work.theme'
@@ -246,6 +247,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
 
   const items: NavItem[] = [
     ['loads', 'Loads', 'file', state.loads.length],
+    ['map', 'Map', 'map', state.loads.filter((l) => l.status === 'in_transit').length],
     ['statements', 'Statements', 'dollar', state.carriers.filter((c) => c.fee > 0).length],
     ['carriers', 'Carriers', 'building', state.carriers.length],
     ['trucks', 'Trucks', 'truck', state.trucks.length],
@@ -290,6 +292,8 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           remove={() => { setOpenId(null); optimistic((s) => ({ ...s, loads: s.loads.filter((x) => x.id !== openLoad.id) }), () => api.removeLoad(openLoad.id), 'Load deleted').catch(() => undefined) }}
           close={closeLoad}
           miles={api.miles}
+          lane={api.lane}
+          theme={theme}
           saveCarrier={(c) => { optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c), `${c.name}’s fee saved`).catch(() => undefined) }}
         />
       )}
@@ -305,6 +309,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           remove={(id) => act(() => api.removeCarrier(id))}
         />
       )}
+      {!tool && tab === 'map' && <BoardMap state={state} theme={theme} openLoad={setOpenId} points={api.points} />}
       {!tool && tab === 'statements' && <StatementsView state={state} toast={toast} />}
       {!tool && tab === 'trucks' && (
         <TrucksView

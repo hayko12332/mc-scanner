@@ -61,6 +61,8 @@ export type AuthResult = { user: CrmUser; verify?: undefined } | { verify: true;
 
 export interface CrmState { user: CrmUser; company?: Company; dispatchers: Dispatcher[]; carriers: CrmCarrier[]; trucks: Truck[]; loads: Load[] }
 export interface MilesResult { miles: number; estimate: boolean }
+/** A lane on the map: both ends and the road as [lon, lat], miles and driving hours. */
+export interface LaneResult { a: [number, number]; b: [number, number]; miles: number; hours: number; line: [number, number][]; estimate: boolean; truck: boolean }
 
 /** Defaults for the fields a new load doesn't need to fill in. */
 export const LOAD_EXTRAS = {
@@ -172,6 +174,9 @@ export const crm = {
   miles: (from: string, to: string) => call<MilesResult>('GET', `/miles?${new URLSearchParams({ from, to })}`),
   /** US cities for what is typed in a lane field: "santa mo" → ["Santa Monica, CA", …]. */
   places: (q: string) => call<string[]>('GET', `/places?${new URLSearchParams({ q })}`),
+  lane: (from: string, to: string) => call<LaneResult>('GET', `/lane?${new URLSearchParams({ from, to })}`),
+  /** Map points of places, { "Dallas, TX": [lon, lat] | null }. */
+  points: (places: string[]) => call<Record<string, [number, number] | null>>('POST', '/points', { places }),
   addLoad: (l: LoadInput) => call<Load>('POST', '/loads', l),
   updateLoad: (id: number, l: LoadInput) => call<Load>('PATCH', `/loads/${id}`, l),
   removeLoad: (id: number) => call('DELETE', `/loads/${id}`),

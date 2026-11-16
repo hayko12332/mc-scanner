@@ -299,6 +299,25 @@ export class CrmController {
     return r;
   }
 
+  /** A lane for the map in the load panel: both ends, the road line, miles and driving hours. Public like miles. */
+  @Get('lane')
+  async lane(@Req() req: Request, @Query('from') from = '', @Query('to') to = '') {
+    if (!from.trim() || !to.trim() || from.length > 200 || to.length > 200) throw new BadRequestException('Enter both places');
+    if (!this.milesLimiter.take(ipOf(req))) throw new HttpException('Too many map lookups, try again in a few minutes', 429);
+    const r = await this.milesService.lane(from, to).catch(() => null);
+    if (!r) throw new NotFoundException(`Could not find "${from}" or "${to}" on the map`);
+    return r;
+  }
+
+  /** Map points of up to 200 places for the board map: { "Dallas, TX": [lon, lat] | null }. */
+  @Post('points')
+  @HttpCode(200)
+  async points(@Req() req: Request, @Body() body: { places?: unknown }) {
+    const places = [...new Set((Array.isArray(body?.places) ? body.places : []).map((p) => text(p, 200)).filter(Boolean))].slice(0, 200);
+    if (!this.milesLimiter.take(ipOf(req))) throw new HttpException('Too many map lookups, try again in a few minutes', 429);
+    return this.milesService.points(places);
+  }
+
   // Loads
 
   @Post('loads')

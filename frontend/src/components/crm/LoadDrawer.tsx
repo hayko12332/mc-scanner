@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
   addDays, carrierFee, daysBetween, extras, feeLabel, fmtRpm, gross, LOAD_EXTRAS, looksLikePlace, overdueDays, PAY_TERMS_DAYS, rpm, shortDate, STATUSES, today, usd,
-  withStatusDates, type CrmCarrier, type CrmState, type Load, type LoadInput, type LoadStatus, type MilesResult,
+  withStatusDates, type CrmCarrier, type CrmState, type LaneResult, type Load, type LoadInput, type LoadStatus, type MilesResult,
 } from '../../lib/crm'
+import { RouteMap } from './MapView'
 import { place } from './LoadsTable'
 import { PlaceInput } from './PlaceInput'
 
@@ -59,7 +60,7 @@ function Pick({ label, value, options, onSave }: { label: string; value: string;
  * Everything about one load in a side panel: the trip (truck, lane, loaded and empty miles), the pay
  * (rate, accessorials, gross, RPM, dispatch fee) and billing (invoice and payment dates against 30-day terms).
  */
-export function LoadDrawer({ load, state, save, remove, close, miles, saveCarrier }: {
+export function LoadDrawer({ load, state, save, remove, close, miles, lane, theme, saveCarrier }: {
   load: Load
   state: CrmState
   save: (l: LoadInput) => void
@@ -68,6 +69,8 @@ export function LoadDrawer({ load, state, save, remove, close, miles, saveCarrie
   remove: () => void
   close: () => void
   miles: (from: string, to: string) => Promise<MilesResult>
+  lane: (from: string, to: string) => Promise<LaneResult>
+  theme: 'light' | 'dark'
 }) {
   const [busy, setBusy] = useState<'' | 'loaded' | 'empty'>('')
   const [note, setNote] = useState('')
@@ -167,6 +170,7 @@ export function LoadDrawer({ load, state, save, remove, close, miles, saveCarrie
                 action={previous ? <button type="button" className="ld-calc" disabled={busy !== ''} onClick={() => void calc('empty')}>{busy === 'empty' ? '…' : 'Calculate'}</button> : undefined} />
             </div>
             {note && <p className="ld-note">{note}</p>}
+            <RouteMap from={load.origin} to={load.destination} theme={theme} lane={lane} />
           </section>
 
           <section>

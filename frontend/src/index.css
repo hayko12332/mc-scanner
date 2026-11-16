@@ -2747,3 +2747,41 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 .nav-me img, .nav-me .avatar { flex: none; width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
 .nav-me .avatar { display: grid; place-items: center; background: linear-gradient(135deg, #3b82f6, #1d4ed8); color: #fff; font-size: 13px; font-weight: 700; }
 @media (max-width: 600px) { .nav-me { padding: 0 4px; } }
+
+/* Maps: the route in the load panel and the board map (MapLibre + OpenFreeMap tiles). */
+.rm { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface); }
+.rm-map { position: relative; height: 220px; background: var(--surface-2); }
+.rm-msg { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 16px; color: var(--muted); text-align: center; z-index: 1; }
+.rm-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 9px 12px; border-top: 1px solid var(--border); font-size: 12.5px; }
+.rm-foot b { margin-left: auto; font-weight: 600; }
+.rm-foot small { color: var(--muted); }
+.rm-arrow { color: var(--muted); }
+.rm-dot { display: inline-block; width: 8px; height: 8px; margin-right: 5px; border-radius: 50%; vertical-align: 0; }
+.rm-dot.a { background: #16a34a; } .rm-dot.b { background: #dc2626; }
+.work .maplibregl-ctrl-group button { padding: 0; border-radius: 0; }
+.work .maplibregl-ctrl-attrib { font-size: 10px; }
+
+.bm { display: grid; gap: 12px; }
+.bm-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; }
+.bm-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
+.bm-head p { margin: 3px 0 0; color: var(--muted); }
+.bm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.work .bm-chips button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; background: var(--surface); color: var(--muted); }
+.work .bm-chips button.on { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); }
+.bm-chips i { width: 8px; height: 8px; border-radius: 50%; }
+.bm-chips button:not(.on) i { opacity: 0.45; }
+.bm-chips em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bm-map { position: relative; height: min(62vh, 560px); min-height: 320px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
+.bm-tip { position: absolute; left: 12px; bottom: 12px; z-index: 2; display: grid; gap: 2px; max-width: 320px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow-lg); pointer-events: none; }
+.bm-tip span { color: var(--muted); }
+.bm-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.bm-list li + li { border-top: 1px solid var(--border); }
+.work .bm-list button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 14px; border: 0; border-radius: 0; background: none; color: var(--text); text-align: left; }
+.bm-list li.on button, .work .bm-list button:hover { background: var(--row-hover); }
+.bm-list i { flex: none; width: 9px; height: 9px; border-radius: 50%; }
+.bm-lane { display: grid; min-width: 0; flex: 1; }
+.bm-lane b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bm-lane small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bm-rate { font-weight: 600; font-variant-numeric: tabular-nums; }
+.bm-empty { margin: 0; padding: 18px; color: var(--muted); text-align: center; border: 1px dashed var(--border); border-radius: 12px; }
+@media (max-width: 600px) { .bm-map { height: 52vh; } .rm-map { height: 180px; } }

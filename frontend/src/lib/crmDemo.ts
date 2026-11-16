@@ -132,6 +132,8 @@ export const crmDemo = {
   }),
   /** Mileage comes from the real map service; it needs no account. */
   miles: crm.miles,
+  lane: crm.lane,
+  points: crm.points,
   /** Starts the demo over with the sample data. */
   reset: () => { data = seed(); save(data) },
 }

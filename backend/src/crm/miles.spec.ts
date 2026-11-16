@@ -56,3 +56,24 @@ describe('Miles between places', () => {
     expect(await new MilesService(fetcher).miles('Atlanta, GA', 'atlanta ga')).toMatchObject({ miles: 0 });
   });
 });
+
+describe('Lanes for the map', () => {
+  it('gives both ends, the road line, miles and truck-like driving hours', async () => {
+    const fetcher = (async (url: string) => json({
+      code: 'Ok', routes: [{ distance: 783 * 1609.344, duration: 14 * 3600, geometry: { coordinates: [[-96.8, 32.78], [-90.1, 32.3], [-84.39, 33.75]] } }],
+    })) as unknown as typeof fetch;
+    const r = (await new MilesService(fetcher).lane('Dallas, TX', 'Atlanta, GA'))!;
+    expect(r.miles).toBe(783);
+    expect(r.line).toHaveLength(3);
+    expect(r.hours).toBeCloseTo(16.1, 1); // the car router's 14 h, +15% for a truck
+    expect(r.truck).toBe(false);
+    expect(r.a[1]).toBeCloseTo(32.78, 1);
+  });
+
+  it('puts only real places on the board map', async () => {
+    const fetcher = (async () => json([{ lat: '35.1', lon: '-98.4' }])) as unknown as typeof fetch;
+    const pts = await new MilesService(fetcher).points(['Dallas, TX', 'Nowhere, ZZ']);
+    expect(pts['Dallas, TX']).not.toBeNull();
+    expect(pts['Nowhere, ZZ']).toBeNull();
+  });
+});
