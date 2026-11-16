@@ -2831,3 +2831,35 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 .iv-attach input, .iv-remind input { margin-top: 2px; }
 .iv-attach .warn { color: var(--warn); }
 .iv-small { color: var(--muted); font-size: 11.5px; }
+
+/* Reports */
+.rp { display: grid; gap: 14px; }
+.rp-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; }
+.rp-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
+.rp-head p { margin: 3px 0 0; color: var(--muted); }
+.rp-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rp-periods { display: inline-flex; padding: 2px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); }
+.work .rp-periods button { border: 0; background: none; color: var(--muted); padding: 5px 10px; }
+.work .rp-periods button.on { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.rp-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.rp-kpis > div { display: grid; gap: 3px; padding: 13px 16px; }
+.rp-kpis > div + div { border-left: 1px solid var(--border); }
+.rp-kpis span { color: var(--muted); font-size: 12px; }
+.rp-kpis b { font-size: 20px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.rp-kpis small { color: var(--muted); }
+.rp-kpis .bad b, .rp-kpis .bad small { color: var(--bad); }
+.rp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.rp-card { padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); min-width: 0; }
+.rp-card h3 { margin: 0 0 8px; font-size: 13px; }
+.rp-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.rp-table th { padding: 6px 6px; color: var(--muted); font-size: 11.5px; font-weight: 600; text-align: left; border-bottom: 1px solid var(--border); }
+.rp-table td { padding: 7px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.rp-table tr:last-child td { border-bottom: 0; }
+.rp-table .num { text-align: right; white-space: nowrap; }
+.rp-table .strong { font-weight: 600; }
+.rp-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-weight: 600; }
+.rp-name small { color: var(--muted); font-weight: 400; }
+.rp-bar { display: block; height: 3px; margin-top: 5px; border-radius: 99px; background: var(--surface-2); }
+.rp-bar i { display: block; height: 100%; border-radius: 99px; background: var(--accent); opacity: 0.75; }
+.rp-more { margin-top: 6px; }
+@media (max-width: 1100px) { .rp-grid { grid-template-columns: 1fr; } .rp-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .rp-kpis > div { border-top: 1px solid var(--border); border-left: 0 !important; } }

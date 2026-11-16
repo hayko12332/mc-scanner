@@ -4,6 +4,7 @@ import { StatementsView } from '../components/crm/StatementsView'
 import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { BoardMap } from '../components/crm/MapView'
+import { ReportsView } from '../components/crm/ReportsView'
 import { CompanySetup, SignIn } from '../components/crm/SignIn'
 import { Icon, type IconName } from '../components/Icon'
 import { BoardSkeleton } from '../components/Skeleton'
@@ -12,7 +13,7 @@ import { crm, CrmError, looksLikePlace, type Company, type CrmConfig, type CrmSt
 import { crmDemo } from '../lib/crmDemo'
 import type { BoardTool } from '../App'
 
-type Tab = 'loads' | 'map' | 'statements' | 'carriers' | 'trucks' | 'dispatchers'
+type Tab = 'loads' | 'map' | 'statements' | 'reports' | 'carriers' | 'trucks' | 'dispatchers'
 type Theme = 'light' | 'dark'
 
 const THEME_KEY = 'leadhaul.work.theme'
@@ -249,6 +250,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
     ['loads', 'Loads', 'file', state.loads.length],
     ['map', 'Map', 'map', state.loads.filter((l) => l.status === 'in_transit').length],
     ['statements', 'Statements', 'dollar', state.carriers.filter((c) => c.fee > 0).length],
+    ['reports', 'Reports', 'chart', 0],
     ['carriers', 'Carriers', 'building', state.carriers.length],
     ['trucks', 'Trucks', 'truck', state.trucks.length],
     ['dispatchers', 'Dispatchers', 'users', state.dispatchers.length],
@@ -316,6 +318,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
         />
       )}
       {!tool && tab === 'map' && <BoardMap state={state} theme={theme} openLoad={setOpenId} points={api.points} />}
+      {!tool && tab === 'reports' && <ReportsView state={state} />}
       {!tool && tab === 'statements' && <StatementsView state={state} toast={toast} />}
       {!tool && tab === 'trucks' && (
         <TrucksView
