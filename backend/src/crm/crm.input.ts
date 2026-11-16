@@ -49,6 +49,7 @@ export function loadInput(b: Record<string, unknown> = {}): LoadInput {
     lumper: amount(b.lumper),
     invoicedOn: isoDate(b.invoicedOn),
     paidOn: isoDate(b.paidOn),
+    brokerMc: text(b.brokerMc, 20).replace(/\D/g, '').slice(0, 8),
   };
 }
 

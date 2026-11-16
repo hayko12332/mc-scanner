@@ -4,6 +4,8 @@ import {
   withStatusDates, type CrmCarrier, type CrmState, type LaneResult, type Load, type LoadInput, type LoadStatus, type MilesResult,
 } from '../../lib/crm'
 import { RouteMap } from './MapView'
+import { CheckBadge, companyName, savedCheck, useCheck } from './CheckBadge'
+import type { CheckRole, CompanyCheck } from '../../lib/crm'
 import { place } from './LoadsTable'
 import { PlaceInput } from './PlaceInput'
 
@@ -60,7 +62,7 @@ function Pick({ label, value, options, onSave }: { label: string; value: string;
  * Everything about one load in a side panel: the trip (truck, lane, loaded and empty miles), the pay
  * (rate, accessorials, gross, RPM, dispatch fee) and billing (invoice and payment dates against 30-day terms).
  */
-export function LoadDrawer({ load, state, save, remove, close, miles, lane, theme, saveCarrier }: {
+export function LoadDrawer({ load, state, save, remove, close, miles, lane, check, theme, saveCarrier }: {
   load: Load
   state: CrmState
   save: (l: LoadInput) => void
@@ -70,9 +72,11 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, them
   close: () => void
   miles: (from: string, to: string) => Promise<MilesResult>
   lane: (from: string, to: string) => Promise<LaneResult>
+  check: (mc: string, role: CheckRole) => Promise<CompanyCheck>
   theme: 'light' | 'dark'
 }) {
   const [busy, setBusy] = useState<'' | 'loaded' | 'empty'>('')
+  const brokerCheck = useCheck(load.brokerMc ?? '', 'broker', check, savedCheck(state, load.brokerMc ?? '', 'broker'))
   const [note, setNote] = useState('')
   const set = (patch: Partial<LoadInput>) => save({ ...load, ...patch })
   const carrier = state.carriers.find((c) => c.id === load.carrierId)
@@ -156,6 +160,8 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, them
               <Pick label="Dispatcher" value={String(load.dispatcherId ?? '')} onSave={(v) => set({ dispatcherId: v ? Number(v) : null })}
                 options={[['', '—'], ...state.dispatchers.map((d): [string, string] => [String(d.id), `${d.name} · ${d.percent}%`])]} />
               <Field label="Broker" value={load.broker} onSave={(v) => set({ broker: v })} />
+              <Field label="Broker MC" value={load.brokerMc ?? ''} placeholder="To check the broker" onSave={(v) => set({ brokerMc: v.replace(/\D/g, '') })} />
+              {(load.brokerMc ?? '').length >= 3 && <div className="ld-field ld-check"><CheckBadge {...brokerCheck} details /></div>}
               <Field label="PRO# / load #" value={load.pro} onSave={(v) => set({ pro: v })} />
               <PlaceField label="Origin" value={load.origin} recent={places} onSave={(v) => set({ origin: v, loadedMiles: 0 })}
                 hint={load.origin && !looksLikePlace(load.origin) ? <span className="warn">Pick the city from the list or type City, ST</span> : undefined} />
@@ -267,7 +273,7 @@ function useAutoMiles(from: string, to: string, off: boolean, miles: (a: string,
 }
 
 type Draft = {
-  date: string; broker: string; pro: string; origin: string; destination: string; loadedMiles: string; emptyMiles: string
+  date: string; broker: string; brokerMc: string; pro: string; origin: string; destination: string; loadedMiles: string; emptyMiles: string
   rate: string; carrierId: string; truckId: string; dispatcherId: string; notes: string
 }
 
@@ -276,16 +282,17 @@ type Draft = {
  * who hauls it, the rate. Brokers and cities are suggested from earlier loads, loaded miles and the deadhead from the
  * truck's last drop are calculated while you type, and RPM shows before you save.
  */
-export function NewLoadDrawer({ state, defaults, add, close, miles }: {
+export function NewLoadDrawer({ state, defaults, add, close, miles, check }: {
   state: CrmState
   defaults: { carrierId: string; dispatcherId: string }
   add: (l: LoadInput) => Promise<unknown>
   close: () => void
   miles: (from: string, to: string) => Promise<MilesResult>
+  check: (mc: string, role: CheckRole) => Promise<CompanyCheck>
 }) {
   const only = (xs: { id: number }[]) => (xs.length === 1 ? String(xs[0].id) : '')
   const blank = (keep?: Partial<Draft>): Draft => ({
-    date: today(), broker: '', pro: '', origin: '', destination: '', loadedMiles: '', emptyMiles: '', rate: '', notes: '',
+    date: today(), broker: '', brokerMc: '', pro: '', origin: '', destination: '', loadedMiles: '', emptyMiles: '', rate: '', notes: '',
     carrierId: defaults.carrierId || only(state.carriers), truckId: '', dispatcherId: defaults.dispatcherId || only(state.dispatchers), ...keep,
   })
   const [v, setV] = useState<Draft>(() => blank())
@@ -314,6 +321,12 @@ export function NewLoadDrawer({ state, defaults, add, close, miles }: {
     empty: useAutoMiles(drop?.destination ?? '', v.origin, touched.empty, miles, (n) => setV((x) => ({ ...x, emptyMiles: String(n) }))),
   }
 
+  // The broker's MC is checked with FMCSA as it is typed; its name fills the Broker field when that is still empty.
+  const brokerCheck = useCheck(v.brokerMc, 'broker', check, savedCheck(state, v.brokerMc, 'broker'))
+  useEffect(() => {
+    const name = brokerCheck.check?.name
+    if (name) setV((x) => (x.broker.trim() ? x : { ...x, broker: companyName(name) }))
+  }, [brokerCheck.check])
   const carrier = state.carriers.find((c) => String(c.id) === v.carrierId)
   const dispatcher = state.dispatchers.find((d) => String(d.id) === v.dispatcherId)
   const rate = money(v.rate)
@@ -345,7 +358,7 @@ export function NewLoadDrawer({ state, defaults, add, close, miles }: {
     if (!v.broker.trim() && !rate) return setErr('Enter at least the broker or the rate')
     const load: LoadInput = {
       ...LOAD_EXTRAS,
-      date: v.date, broker: v.broker.trim(), pro: v.pro.trim(), origin: v.origin.trim(), destination: v.destination.trim(),
+      date: v.date, broker: v.broker.trim(), brokerMc: v.brokerMc.replace(/\D/g, ''), pro: v.pro.trim(), origin: v.origin.trim(), destination: v.destination.trim(),
       loadedMiles: loaded, emptyMiles: emptyMi, rate, notes: v.notes.trim(), status: 'booked',
       carrierId: v.carrierId ? Number(v.carrierId) : null, truckId, dispatcherId: v.dispatcherId ? Number(v.dispatcherId) : null,
     }
@@ -407,6 +420,8 @@ export function NewLoadDrawer({ state, defaults, add, close, miles }: {
             <h3>Load</h3>
             <div className="ld-grid">
               {input('broker', 'Broker', { placeholder: 'C.H. Robinson', list: 'nl-brokers', ref: first })}
+              {input('brokerMc', 'Broker MC', { placeholder: 'Checked with FMCSA', numeric: true })}
+              {v.brokerMc.replace(/\D/g, '').length >= 3 && <div className="ld-field ld-check"><CheckBadge {...brokerCheck} details /></div>}
               {input('pro', 'Load # / PRO#', { placeholder: 'From the rate con' })}
               {input('rate', 'Rate', { prefix: '$', numeric: true, placeholder: '0' })}
               {input('date', 'Pickup date', { type: 'date' })}

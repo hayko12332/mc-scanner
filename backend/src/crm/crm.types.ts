@@ -1,3 +1,5 @@
+import type { CompanyCheck } from './company-check.js';
+
 /** Dispatcher CRM: a workspace (one per user for now) with its dispatchers, carriers and loads. */
 
 export interface CrmUser {
@@ -76,6 +78,8 @@ export interface Load {
   invoicedOn: string | null;
   /** YYYY-MM-DD the broker paid. */
   paidOn: string | null;
+  /** The broker's MC number (digits), for the FMCSA check. */
+  brokerMc: string;
 }
 
 /** Who uses the workspace: asked at sign-up, like other TMSs do, to set the board up for the business. */
@@ -89,6 +93,8 @@ export interface CrmState {
   carriers: CrmCarrier[];
   trucks: Truck[];
   loads: Load[];
+  /** Latest FMCSA checks of the workspace's carriers and brokers (see company-check.ts). */
+  checks: CompanyCheck[];
 }
 
 /** A row pasted from a spreadsheet; dispatcher and carrier are names that are matched or created. */

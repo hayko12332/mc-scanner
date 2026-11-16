@@ -10,5 +10,7 @@ import { SourceProbeService } from './source-probe.service.js';
 @Module({
   controllers: [CarriersController, LookupController],
   providers: [SocrataClient, CarriersService, InsuranceService, LookupService, SourceProbeService],
+  // The dispatch board checks brokers and carriers with the same lookup.
+  exports: [LookupService],
 })
 export class FmcsaModule {}

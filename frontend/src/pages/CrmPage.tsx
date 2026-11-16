@@ -293,17 +293,19 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           close={closeLoad}
           miles={api.miles}
           lane={api.lane}
+          check={api.check}
           theme={theme}
           saveCarrier={(c) => { optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c), `${c.name}’s fee saved`).catch(() => undefined) }}
         />
       )}
       {creating && (
-        <NewLoadDrawer state={state} defaults={creating} close={closeNew} miles={api.miles}
+        <NewLoadDrawer state={state} defaults={creating} close={closeNew} miles={api.miles} check={api.check}
           add={(l) => addLoad(l).then(() => track('crm_add_load'))} />
       )}
       {!tool && tab === 'carriers' && (
         <CarriersView
           state={state}
+          check={api.check}
           add={(c) => act(() => api.addCarrier(c), 'Carrier added')}
           update={(c) => optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c))}
           remove={(id) => act(() => api.removeCarrier(id))}

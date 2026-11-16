@@ -15,6 +15,7 @@ import { checkPassword, codeHash, emailOk, hashPassword, newCode, normEmail, pas
 import type { CodePurpose } from './crm.store.js';
 import type { CompanyInput } from './crm.types.js';
 import { MilesService } from './miles.js';
+import { CompanyCheckService } from './company-check.service.js';
 import { PlacesService } from './places.js';
 
 const COOKIE = 'lh_crm';
@@ -54,7 +55,7 @@ export class CrmController {
   /** Miles are public (the demo uses them too), so each visitor gets a fair share of the free map services. */
   private readonly milesLimiter = new RateLimiter(150, 10 * 60_000);
 
-  constructor() {
+  constructor(private readonly checks: CompanyCheckService) {
     const pool = db();
     this.store = pool ? new CrmStore(pool) : null;
   }
@@ -241,13 +242,17 @@ export class CrmController {
   @Post('carriers')
   async addCarrier(@Req() req: Request, @Body() body: Record<string, unknown>) {
     const { ws } = await this.auth(req);
-    return this.store!.addCarrier(ws, carrierInput(body));
+    const c = carrierInput(body);
+    this.checkCarrierSoon(ws, c.mc);
+    return this.store!.addCarrier(ws, c);
   }
 
   @Patch('carriers/:id')
   async updateCarrier(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() body: Record<string, unknown>) {
     const { ws } = await this.auth(req);
-    return found(await this.store!.updateCarrier(ws, id, carrierInput(body)));
+    const c = carrierInput(body);
+    this.checkCarrierSoon(ws, c.mc);
+    return found(await this.store!.updateCarrier(ws, id, c));
   }
 
   @Delete('carriers/:id')
@@ -297,6 +302,34 @@ export class CrmController {
     }
     if (!r) throw new NotFoundException(`Could not find "${from}" or "${to}" on the map`);
     return r;
+  }
+
+  /**
+   * FMCSA check of a broker or carrier by MC: authority, bond / insurance, age, revocations, safety rating.
+   * Public like the company lookup; for a signed-in board the result is kept (carriers are then re-checked daily).
+   */
+  @Get('check')
+  async check(@Req() req: Request, @Query('mc') mc = '', @Query('role') role = 'broker') {
+    const digits = mc.replace(/\D/g, '');
+    if (digits.length < 3 || digits.length > 8) throw new BadRequestException('Enter an MC number');
+    if (!this.milesLimiter.take(ipOf(req))) throw new HttpException('Too many checks, try again in a few minutes', 429);
+    let r;
+    try {
+      r = await this.checks.check(digits, role === 'carrier' ? 'carrier' : 'broker');
+    } catch {
+      throw new ServiceUnavailableException('FMCSA is not answering right now, try again in a minute');
+    }
+    if (!r) throw new NotFoundException(`No company with MC ${digits} in FMCSA records`);
+    const s = this.store ? await this.store.session(readCookie(req, COOKIE)).catch(() => null) : null;
+    if (s) await this.store!.saveCheck(s.workspaceId, r).catch(() => undefined);
+    return r;
+  }
+
+  /** Checks a carrier as soon as its MC is saved, so the board shows the result right away. */
+  private checkCarrierSoon(ws: number, mc: string) {
+    const digits = mc.replace(/\D/g, '');
+    if (digits.length < 3 || digits.length > 8) return;
+    void this.checks.check(digits, 'carrier').then((r) => r && this.store!.saveCheck(ws, r)).catch(() => undefined);
   }
 
   /** A lane for the map in the load panel: both ends, the road line, miles and driving hours. Public like miles. */

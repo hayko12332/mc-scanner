@@ -48,7 +48,7 @@ function seed(): DemoData {
     [-3, 2, 3, 1, 'Coyote Logistics', '18840221', 'Dallas, TX', 'Atlanta, GA', 2450, 781, 'delivered', { emptyMiles: 30 }],
     [0, 1, 2, 1, 'Steam Logistics, LLC', '2277332', 'Peru, IL', 'San Luis, AZ', 4300, 1921, 'in_transit', { emptyMiles: 85 }],
     [1, 2, 3, 2, 'Total Quality Logistics', 'TQL-9921045', 'Nashville, TN', 'Orlando, FL', 2100, 686, 'in_transit', {}],
-    [2, 1, 1, 3, 'C.H. Robinson', 'CHR-5530187', 'Kansas City, MO', 'Denver, CO', 1900, 606, 'booked', { emptyMiles: 45 }],
+    [2, 1, 1, 3, 'C.H. Robinson', 'CHR-5530187', 'Kansas City, MO', 'Denver, CO', 1900, 606, 'booked', { emptyMiles: 45, brokerMc: '384859' }],
   ]
   const loads: Load[] = rows
     .filter(([d]) => addDays(week, d) <= today())
@@ -133,6 +133,7 @@ export const crmDemo = {
   /** Mileage comes from the real map service; it needs no account. */
   miles: crm.miles,
   lane: crm.lane,
+  check: crm.check,
   points: crm.points,
   /** Starts the demo over with the sample data. */
   reset: () => { data = seed(); save(data) },

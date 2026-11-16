@@ -43,6 +43,8 @@ export interface Load {
   lumper: number
   invoicedOn: string | null
   paidOn: string | null
+  /** The broker's MC (digits), for the FMCSA check. */
+  brokerMc: string
 }
 export type LoadInput = Omit<Load, 'id'>
 export type CarrierInput = Omit<CrmCarrier, 'id'>
@@ -59,14 +61,20 @@ export interface SignUpInput { name: string; email: string; password: string; co
 /** Sign-in either finishes (user) or needs the emailed code first (verify). */
 export type AuthResult = { user: CrmUser; verify?: undefined } | { verify: true; email: string; user?: undefined }
 
-export interface CrmState { user: CrmUser; company?: Company; dispatchers: Dispatcher[]; carriers: CrmCarrier[]; trucks: Truck[]; loads: Load[] }
+export interface CrmState { user: CrmUser; company?: Company; dispatchers: Dispatcher[]; carriers: CrmCarrier[]; trucks: Truck[]; loads: Load[]; checks?: CompanyCheck[] }
+export type CheckRole = 'broker' | 'carrier'
+/** FMCSA check of a broker or carrier: one verdict and the warning signs behind it. */
+export interface CompanyCheck {
+  mc: number | null; dot: string; name: string; role: CheckRole; level: 'ok' | 'caution' | 'danger' | 'unknown'
+  summary: string; flags: { level: 'caution' | 'danger'; text: string }[]; years: number | null; insurance: number | null; checkedAt: string
+}
 export interface MilesResult { miles: number; estimate: boolean }
 /** A lane on the map: both ends and the road as [lon, lat], miles and driving hours. */
 export interface LaneResult { a: [number, number]; b: [number, number]; miles: number; hours: number; line: [number, number][]; estimate: boolean; truck: boolean }
 
 /** Defaults for the fields a new load doesn't need to fill in. */
 export const LOAD_EXTRAS = {
-  truckId: null, loadedMiles: 0, emptyMiles: 0, detention: 0, layover: 0, tonu: 0, other: 0, lumper: 0, invoicedOn: null, paidOn: null,
+  truckId: null, loadedMiles: 0, emptyMiles: 0, detention: 0, layover: 0, tonu: 0, other: 0, lumper: 0, invoicedOn: null, paidOn: null, brokerMc: '',
 } satisfies Partial<Load>
 
 /** Days a broker has to pay after the invoice before the load counts as overdue. */
@@ -174,6 +182,8 @@ export const crm = {
   miles: (from: string, to: string) => call<MilesResult>('GET', `/miles?${new URLSearchParams({ from, to })}`),
   /** US cities for what is typed in a lane field: "santa mo" → ["Santa Monica, CA", …]. */
   places: (q: string) => call<string[]>('GET', `/places?${new URLSearchParams({ q })}`),
+  /** FMCSA check of an MC as a broker or a carrier. */
+  check: (mc: string, role: CheckRole) => call<CompanyCheck>('GET', `/check?${new URLSearchParams({ mc, role })}`),
   lane: (from: string, to: string) => call<LaneResult>('GET', `/lane?${new URLSearchParams({ from, to })}`),
   /** Map points of places, { "Dallas, TX": [lon, lat] | null }. */
   points: (places: string[]) => call<Record<string, [number, number] | null>>('POST', '/points', { places }),

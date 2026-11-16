@@ -7,6 +7,15 @@ import {
 import { formatPhone } from '../../lib/format'
 import { Icon } from '../Icon'
 import { EditSelect, EditText } from './LoadsTable'
+import { CheckBadge, savedCheck, useCheck } from './CheckBadge'
+import type { CheckRole, CompanyCheck } from '../../lib/crm'
+
+/** A carrier's FMCSA check under its name (re-checked daily on the server; the owner is emailed when it gets worse). */
+function CarrierCheck({ state, mc, run }: { state: CrmState; mc: string; run: (mc: string, role: CheckRole) => Promise<CompanyCheck> }) {
+  const r = useCheck(mc, 'carrier', run, savedCheck(state, mc, 'carrier'))
+  if (mc.replace(/\D/g, '').length < 3) return null
+  return <div className="pv-check"><CheckBadge {...r} /></div>
+}
 
 const blankCarrier: CarrierInput = { name: '', mc: '', dot: '', phone: '', email: '', notes: '', feeType: 'percent', fee: 0, factoring: '' }
 
@@ -44,8 +53,9 @@ const RemoveButton = ({ name, onRemove }: { name: string; onRemove: () => void }
 )
 
 /** Carriers the dispatcher works for: add by MC (filled from FMCSA) or by hand; every cell edits in place. */
-export function CarriersView({ state, add, update, remove }: {
+export function CarriersView({ state, add, update, remove, check }: {
   state: CrmState
+  check: (mc: string, role: CheckRole) => Promise<CompanyCheck>
   add: (c: CarrierInput) => Promise<unknown>
   update: (c: CrmCarrier) => Promise<unknown>
   remove: (id: number) => Promise<unknown>
@@ -117,7 +127,7 @@ export function CarriersView({ state, add, update, remove }: {
             {!rows.length && <tr className="lt-empty"><td colSpan={10}>No carriers yet. Add one by MC above — each carrier works like a tab of your spreadsheet.</td></tr>}
             {rows.map(({ c, t }) => (
               <tr key={c.id} className="lt-row">
-                <td className="pv-name"><EditText value={c.name} onSave={(x) => x && save(c, { name: x })} /></td>
+                <td className="pv-name"><EditText value={c.name} onSave={(x) => x && save(c, { name: x })} /><CarrierCheck state={state} mc={c.mc} run={check} /></td>
                 <td className="pv-muted"><EditText value={c.mc} display={c.mc.replace(/\D/g, '') || undefined} onSave={(x) => save(c, { mc: x })} /></td>
                 <td><EditText value={c.phone} onSave={(x) => save(c, { phone: x })} /></td>
                 <td><EditText value={c.email} onSave={(x) => save(c, { email: x })} /></td>
@@ -135,7 +145,7 @@ export function CarriersView({ state, add, update, remove }: {
           {rows.length > 0 && (
             <tfoot>
               <tr>
-                <td colSpan={6}>{rows.length} {rows.length === 1 ? 'carrier' : 'carriers'} · fee: type “8%” or “$300/wk”</td>
+                <td colSpan={6}>{rows.length} {rows.length === 1 ? 'carrier' : 'carriers'} · fee: type “8%” or “$300/wk” · authority and insurance re-checked daily, you get an email if something changes</td>
                 <td className="num">{state.trucks.filter((tr) => tr.carrierId != null).length}</td>
                 <td className="num">{usd(sum('week'))}</td>
                 <td className="num wk-gross">{usd(sum('month'))}</td>

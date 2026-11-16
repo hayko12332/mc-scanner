@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type pg from 'pg';
+import type { CompanyCheck } from './company-check.js';
 import type { CompanyInput, CrmCarrier, CrmState, CrmUser, Dispatcher, FeeType, ImportRow, Load, LoadStatus, Truck } from './crm.types.js';
 
 const SESSION_DAYS = 60;
@@ -96,6 +97,17 @@ const SCHEMA = `
   ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS company_dot TEXT NOT NULL DEFAULT '';
   ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS company_phone TEXT NOT NULL DEFAULT '';
   ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS fleet_size TEXT NOT NULL DEFAULT '';
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS broker_mc TEXT NOT NULL DEFAULT '';
+  -- FMCSA checks of carriers (re-checked daily, the owner is emailed when one gets worse) and brokers
+  CREATE TABLE IF NOT EXISTS crm_checks (
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    role          TEXT NOT NULL,
+    mc            TEXT NOT NULL,
+    level         TEXT NOT NULL,
+    data          JSONB NOT NULL,
+    checked_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (workspace_id, role, mc)
+  );
   CREATE TABLE IF NOT EXISTS crm_email_codes (
     email       TEXT NOT NULL,
     purpose     TEXT NOT NULL,
@@ -110,12 +122,12 @@ const CARRIER_COLS = 'id, name, mc, dot, phone, email, notes, fee_type, fee, fac
 const TRUCK_COLS = 'id, carrier_id, unit, driver, phone';
 const LOAD_COLS = `id, to_char(load_date, 'YYYY-MM-DD') AS load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, notes,
   status, truck_id, loaded_miles, empty_miles, detention, layover, tonu, other, lumper,
-  to_char(invoiced_on, 'YYYY-MM-DD') AS invoiced_on, to_char(paid_on, 'YYYY-MM-DD') AS paid_on`;
+  to_char(invoiced_on, 'YYYY-MM-DD') AS invoiced_on, to_char(paid_on, 'YYYY-MM-DD') AS paid_on, broker_mc`;
 /** Load columns written by insert/update, in the order of loadValues(). */
 const LOAD_WRITE = ['load_date', 'carrier_id', 'dispatcher_id', 'broker', 'pro', 'origin', 'destination', 'rate', 'notes', 'status',
-  'truck_id', 'loaded_miles', 'empty_miles', 'detention', 'layover', 'tonu', 'other', 'lumper', 'invoiced_on', 'paid_on'];
+  'truck_id', 'loaded_miles', 'empty_miles', 'detention', 'layover', 'tonu', 'other', 'lumper', 'invoiced_on', 'paid_on', 'broker_mc'];
 const loadValues = (l: LoadInput) => [l.date, l.carrierId, l.dispatcherId, l.broker, l.pro, l.origin, l.destination, l.rate, l.notes, l.status,
-  l.truckId, l.loadedMiles, l.emptyMiles, l.detention, l.layover, l.tonu, l.other, l.lumper, l.invoicedOn, l.paidOn];
+  l.truckId, l.loadedMiles, l.emptyMiles, l.detention, l.layover, l.tonu, l.other, l.lumper, l.invoicedOn, l.paidOn, l.brokerMc];
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
@@ -138,7 +150,7 @@ const toLoad = (r: Record<string, unknown>): Load => ({
   truckId: r.truck_id == null ? null : Number(r.truck_id),
   loadedMiles: Number(r.loaded_miles ?? 0), emptyMiles: Number(r.empty_miles ?? 0),
   detention: Number(r.detention ?? 0), layover: Number(r.layover ?? 0), tonu: Number(r.tonu ?? 0), other: Number(r.other ?? 0), lumper: Number(r.lumper ?? 0),
-  invoicedOn: day(r.invoiced_on), paidOn: day(r.paid_on),
+  invoicedOn: day(r.invoiced_on), paidOn: day(r.paid_on), brokerMc: String(r.broker_mc ?? ''),
 });
 
 export type LoadInput = Omit<Load, 'id'>;
@@ -293,16 +305,52 @@ export class CrmStore {
 
   async state(ws: number, user: CrmUser): Promise<CrmState> {
     await this.ready;
-    const [d, c, t, l] = await Promise.all([
+    const [d, c, t, l, k] = await Promise.all([
       this.pool.query('SELECT id, name, percent FROM crm_dispatchers WHERE workspace_id = $1 AND NOT archived ORDER BY name', [ws]),
       this.pool.query(`SELECT ${CARRIER_COLS} FROM crm_carriers WHERE workspace_id = $1 AND NOT archived ORDER BY name`, [ws]),
       this.pool.query(`SELECT ${TRUCK_COLS} FROM crm_trucks WHERE workspace_id = $1 AND NOT archived ORDER BY unit, driver`, [ws]),
       this.pool.query(`SELECT ${LOAD_COLS} FROM crm_loads WHERE workspace_id = $1 ORDER BY load_date DESC, id DESC`, [ws]),
+      this.pool.query('SELECT data FROM crm_checks WHERE workspace_id = $1', [ws]),
     ]);
     return {
       user, company: await this.company(ws),
       dispatchers: d.rows.map(toDispatcher), carriers: c.rows.map(toCarrier), trucks: t.rows.map(toTruck), loads: l.rows.map(toLoad),
+      checks: k.rows.map((r) => r.data as CompanyCheck),
     };
+  }
+
+  // FMCSA checks
+
+  /** Saves a check and returns the one it replaces (to tell whether things got worse). */
+  async saveCheck(ws: number, c: CompanyCheck): Promise<CompanyCheck | null> {
+    if (c.mc == null) return null;
+    await this.ready;
+    const { rows } = await this.pool.query(
+      `WITH old AS (SELECT data FROM crm_checks WHERE workspace_id = $1 AND role = $2 AND mc = $3)
+       INSERT INTO crm_checks (workspace_id, role, mc, level, data, checked_at) VALUES ($1,$2,$3,$4,$5, now())
+       ON CONFLICT (workspace_id, role, mc) DO UPDATE SET level = EXCLUDED.level, data = EXCLUDED.data, checked_at = now()
+       RETURNING (SELECT data FROM old) AS previous`,
+      [ws, c.role, String(c.mc), c.level, JSON.stringify(c)]);
+    return (rows[0]?.previous as CompanyCheck | null) ?? null;
+  }
+
+  /**
+   * Carriers due for their daily FMCSA check (never checked, or more than 20 hours ago), with the owner to tell.
+   * Archived carriers and workspaces without an MC on the carrier are skipped.
+   */
+  async carriersToCheck(limit: number): Promise<{ ws: number; mc: string; carrier: string; email: string; owner: string }[]> {
+    await this.ready;
+    const { rows } = await this.pool.query(
+      `SELECT * FROM (
+         SELECT DISTINCT ON (c.workspace_id, d.mc) c.workspace_id AS ws, d.mc, c.name AS carrier, u.email, u.name AS owner, k.checked_at
+           FROM crm_carriers c
+           CROSS JOIN LATERAL (SELECT regexp_replace(c.mc, '\D', '', 'g') AS mc) d
+           JOIN crm_workspaces w ON w.id = c.workspace_id JOIN crm_users u ON u.id = w.owner_id
+           LEFT JOIN crm_checks k ON k.workspace_id = c.workspace_id AND k.role = 'carrier' AND k.mc = d.mc
+          WHERE NOT c.archived AND d.mc ~ '^[0-9]{3,8}$' AND (k.checked_at IS NULL OR k.checked_at < now() - interval '20 hours')
+          ORDER BY c.workspace_id, d.mc
+       ) due ORDER BY checked_at NULLS FIRST LIMIT $1`, [limit]);
+    return rows.map((r) => ({ ws: Number(r.ws), mc: String(r.mc), carrier: String(r.carrier), email: String(r.email), owner: String(r.owner) }));
   }
 
   // Dispatchers
