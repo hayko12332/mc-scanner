@@ -149,8 +149,12 @@ export class TelegramService implements OnApplicationBootstrap {
       this.logger.warn('TELEGRAM_BOT_TOKEN is set but there is no public https URL (PUBLIC_URL / RENDER_EXTERNAL_URL): bot disabled');
       return;
     }
-    // Don't block startup: Render needs the health check to pass quickly.
-    void this.setup().catch((e: Error) => this.logger.error(`Telegram setup failed: ${e.message}`));
+    // Don't block startup: Render needs the health check to pass quickly. If Telegram is down, try again later.
+    const run = (left: number) => void this.setup().catch((e: Error) => {
+      this.logger.error(`Telegram setup failed: ${e.message}${left ? ' — retrying in 5 minutes' : ''}`);
+      if (left) setTimeout(() => run(left - 1), 5 * 60_000).unref();
+    });
+    run(12);
   }
 
   /** Point the bot at this server, set the "Open" menu button and the command list. */

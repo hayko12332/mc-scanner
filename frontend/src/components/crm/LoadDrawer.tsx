@@ -4,7 +4,8 @@ import {
   withStatusDates, type CrmCarrier, type CrmState, type LaneResult, type Load, type LoadInput, type LoadStatus, type MilesResult,
 } from '../../lib/crm'
 import { RouteMap } from './MapView'
-import { LoadDocs, type DocsApi } from './LoadDocs'
+import { LoadDocs, prepare, type DocsApi } from './LoadDocs'
+import type { RateConFields } from '../../lib/crm'
 import { CheckBadge, companyName, savedCheck, useCheck } from './CheckBadge'
 import type { CheckRole, CompanyCheck } from '../../lib/crm'
 import { place } from './LoadsTable'
@@ -314,14 +315,18 @@ type Draft = {
  * who hauls it, the rate. Brokers and cities are suggested from earlier loads, loaded miles and the deadhead from the
  * truck's last drop are calculated while you type, and RPM shows before you save.
  */
-export function NewLoadDrawer({ state, defaults, add, close, miles, check }: {
+export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }: {
   state: CrmState
   defaults: { carrierId: string; dispatcherId: string }
   add: (l: LoadInput) => Promise<unknown>
   close: () => void
   miles: (from: string, to: string) => Promise<MilesResult>
   check: (mc: string, role: CheckRole) => Promise<CompanyCheck>
+  /** AI reads a rate con into the form (when switched on); the file is then kept with the new load. */
+  ai?: { read: (f: Blob) => Promise<RateConFields>; attach: (loadId: number, f: Blob, name: string) => Promise<unknown> }
 }) {
+  const [rc, setRc] = useState<{ blob: Blob; name: string; note: string; busy: boolean } | null>(null)
+  const rcPicker = useRef<HTMLInputElement>(null)
   const only = (xs: { id: number }[]) => (xs.length === 1 ? String(xs[0].id) : '')
   const blank = (keep?: Partial<Draft>): Draft => ({
     date: today(), broker: '', brokerMc: '', pro: '', origin: '', destination: '', loadedMiles: '', emptyMiles: '', rate: '', notes: '',
@@ -395,13 +400,45 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check }: {
       carrierId: v.carrierId ? Number(v.carrierId) : null, truckId, dispatcherId: v.dispatcherId ? Number(v.dispatcherId) : null,
     }
     const typed = v
-    add(load).catch(() => { setV(typed); setAdded('') })
+    const file = rc && !rc.busy ? rc : null
+    add(load).then((saved) => {
+      const id = (saved as { id?: number } | undefined)?.id
+      if (file && ai && id && id > 0) void ai.attach(id, file.blob, file.name).catch(() => undefined)
+    }, () => { setV(typed); setAdded('') })
+    setRc(null)
     if (!again) return close()
     setAdded(`Added ${load.broker || 'load'}${rate ? ` · ${usd(rate)}` : ''}`)
     setTouched({ loaded: false, empty: false })
     setV(blank({ date: v.date, carrierId: v.carrierId, dispatcherId: v.dispatcherId }))
     first.current?.focus()
   }
+  /** Reads the rate con with AI and fills the form; the carrier, truck and dispatcher you picked stay. */
+  const readRateCon = async (f: File) => {
+    if (!ai) return
+    let prepared: { blob: Blob; name: string }
+    try { prepared = await prepare(f) } catch (e) { return setErr((e as Error).message) }
+    setRc({ ...prepared, note: 'Reading the rate con…', busy: true })
+    try {
+      const r = await ai.read(prepared.blob)
+      setV((x) => ({
+        ...x,
+        broker: r.broker || x.broker, brokerMc: r.brokerMc.replace(/\D/g, '') || x.brokerMc, pro: r.loadNumber || x.pro,
+        date: /^\d{4}-\d{2}-\d{2}$/.test(r.pickupDate) ? r.pickupDate : x.date,
+        origin: r.origin || x.origin, destination: r.destination || x.destination,
+        rate: r.rate ? String(r.rate) : x.rate, loadedMiles: r.miles ? String(Math.round(r.miles)) : x.loadedMiles,
+        notes: [x.notes, r.notes, r.deliveryDate ? `Delivery ${r.deliveryDate}` : '', r.brokerEmail ? `Billing: ${r.brokerEmail}` : ''].filter(Boolean).join(' · ').slice(0, 1000),
+      }))
+      if (r.miles) setTouched((t) => ({ ...t, loaded: true }))
+      setRc({ ...prepared, busy: false, note: r.isRateConfirmation
+        ? `✓ Filled from ${prepared.name} — check the fields; the file is kept with the load`
+        : `⚠ ${prepared.name} doesn’t look like a rate confirmation — check every field` })
+      setErr('')
+    } catch (e) {
+      setRc(null)
+      setErr((e as Error).message)
+    }
+  }
+
   const onKey = (e: ReactKeyboardEvent) => {
     if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') { e.preventDefault(); submit(e.shiftKey) }
   }
@@ -440,6 +477,18 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check }: {
         </header>
 
         <div className="ld-body">
+          {ai && (
+            <div className={`ai-drop ${rc?.busy ? 'busy' : ''}`}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void readRateCon(f) }}>
+              <span className="ai-spark" aria-hidden="true">✦</span>
+              {rc ? <span className="ai-note">{rc.note}</span> : (
+                <span className="ai-note"><b>Fill from the rate con</b> — drop the PDF or a photo here, AI reads broker, load #, lane, dates and rate</span>
+              )}
+              <button type="button" disabled={rc?.busy} onClick={() => rcPicker.current?.click()}>{rc ? 'Another file' : 'Choose file'}</button>
+              <input ref={rcPicker} type="file" hidden accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void readRateCon(f); e.target.value = '' }} />
+            </div>
+          )}
           <section className="ld-sum">
             <div><span>Rate</span><b>{rate ? usd(rate) : '—'}</b></div>
             <div><span>RPM</span><b>{fmtRpm(rpm(rate, loaded))}</b></div>

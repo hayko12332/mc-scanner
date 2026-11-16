@@ -5,6 +5,7 @@ import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { BoardMap } from '../components/crm/MapView'
 import { ReportsView } from '../components/crm/ReportsView'
+import { AskPanel } from '../components/crm/AskPanel'
 import { CompanySetup, SignIn, type InviteInfo } from '../components/crm/SignIn'
 import { Icon, type IconName } from '../components/Icon'
 import { BoardSkeleton } from '../components/Skeleton'
@@ -55,10 +56,12 @@ type NavItem = [Tab, string, IconName, number]
  * Signed in: the TMS layout — a dark sidebar that stays put (your company on top, the sections, tools, and you
  * at the bottom) and one work area that scrolls with the page, so there is a single scroll, never a box inside a box.
  */
-function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, company, demo, onLeave, banner, children, role }: {
+function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, company, demo, onLeave, banner, children, role, onAsk }: {
   theme: Theme; setTheme: (t: Theme) => void; items: NavItem[]; tab: Tab; setTab: (t: Tab) => void
   tool: BoardTool | null; setTool: (t: BoardTool | null) => void
   user: CrmUser; company?: Company; demo: boolean; onLeave: () => void; banner?: ReactNode; children: ReactNode; role?: 'owner' | 'dispatcher'
+  /** Opens "Ask AI" (only when AI is switched on). */
+  onAsk?: () => void
 }) {
   const org = company?.name || (demo ? 'Demo Dispatch LLC' : user.name)
   const initials = org.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('')
@@ -84,6 +87,11 @@ function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, co
           <button title="New MC leads" className={tool === 'leads' ? 'on' : ''} onClick={() => { setTool('leads'); scrollTo(0, 0) }}>
             <Icon name="zap" size={16} /><span>New MC leads</span>
           </button>
+          {onAsk && (
+            <button title="Ask AI about your board" onClick={onAsk}>
+              <span className="w-ai" aria-hidden="true">✦</span><span>Ask AI</span>
+            </button>
+          )}
         </nav>
         <div className="w-side-foot">
           <button className="w-nav-btn" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
@@ -214,7 +222,9 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
     const tempId = -Date.now()
     const saved = await optimistic((s) => ({ ...s, loads: [{ ...l, id: tempId }, ...s.loads] }), () => api.addLoad(l)) as Load
     setState((s) => (s ? { ...s, loads: s.loads.map((x) => (x.id === tempId ? saved : x)) } : s))
+    return saved
   }
+  const [asking, setAsking] = useState(false)
 
   const closeLoad = useCallback(() => setOpenId(null), [])
   const closeNew = useCallback(() => setCreating(null), [])
@@ -286,7 +296,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
 
   return (
     <AppShell theme={theme} setTheme={setTheme} items={items} tab={tab} setTab={setTab} tool={tool} setTool={setTool} user={state.user} company={state.company}
-      demo={demo} onLeave={leave} banner={banner} role={state.me?.role}>
+      demo={demo} onLeave={leave} banner={banner} role={state.me?.role} onAsk={config?.ai && !demo ? () => setAsking(true) : undefined}>
       {tool && <div className={`w-tool w-tool-${tool}`} ref={toolSlot} />}
       {!tool && tab === 'loads' && (
         <LoadsTable
@@ -334,7 +344,11 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
       )}
       {creating && (
         <NewLoadDrawer state={state} defaults={creating} close={closeNew} miles={api.miles} check={api.check}
-          add={(l) => addLoad(l).then(() => track('crm_add_load'))} />
+          add={(l) => addLoad(l).then((saved) => { track('crm_add_load'); return saved })}
+          ai={config?.ai && !demo ? {
+            read: (f) => { track('ai_ratecon'); return crm.aiRateCon(f) },
+            attach: (id, f, name) => crm.uploadFile(id, f, name, 'ratecon').then(() => reload()),
+          } : undefined} />
       )}
       {!tool && tab === 'carriers' && (
         <CarriersView
@@ -347,6 +361,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
       )}
       {!tool && tab === 'map' && <BoardMap state={state} theme={theme} openLoad={setOpenId} points={api.points} />}
       {!tool && tab === 'reports' && <ReportsView state={state} />}
+      {asking && <AskPanel ask={(q, h) => { track('ai_ask'); return crm.aiAsk(q, h) }} close={() => setAsking(false)} />}
       {!tool && tab === 'statements' && <StatementsView state={state} toast={toast} />}
       {!tool && tab === 'trucks' && (
         <TrucksView

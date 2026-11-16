@@ -16,6 +16,7 @@ import type { CodePurpose } from './crm.store.js';
 import type { CompanyInput } from './crm.types.js';
 import { MilesService } from './miles.js';
 import { CompanyCheckService } from './company-check.service.js';
+import { aiEnabled, askBoard, readRateCon, type AskTurn } from './ai.js';
 import { TelegramService } from '../telegram/telegram.service.js';
 import { FILE_KINDS, type FileKind } from './crm.store.js';
 import { buildInvoicePdf, invoiceTotal, type InvoiceData } from './invoice.js';
@@ -57,6 +58,8 @@ export class CrmController {
   /** Emails per address: one every 30 seconds, at most 6 an hour. */
   private readonly mailCooldown = new RateLimiter(1, 30_000);
   private readonly mailHourly = new RateLimiter(6, 3600_000);
+  /** AI calls per board: enough for a busy day, not for running up the bill. */
+  private readonly aiLimiter = new RateLimiter(60, 3600_000);
   /** Miles are public (the demo uses them too), so each visitor gets a fair share of the free map services. */
   private readonly milesLimiter = new RateLimiter(150, 10 * 60_000);
 
@@ -67,7 +70,7 @@ export class CrmController {
 
   @Get('config')
   settings() {
-    return { googleClientId: config.googleClientId, devLogin: config.crmDevLogin, enabled: !!this.store, emailAuth: !!this.store && mailReady() };
+    return { googleClientId: config.googleClientId, devLogin: config.crmDevLogin, enabled: !!this.store, emailAuth: !!this.store && mailReady(), ai: aiEnabled() };
   }
 
   @Post('auth/google')
@@ -218,7 +221,50 @@ export class CrmController {
 
   @Get('state')
   async state(@Req() req: Request) {
+    return this.scopedState(await this.auth(req));
+  }
+
+  // AI (Claude), when ANTHROPIC_API_KEY is set
+
+  /** A rate confirmation (PDF or photo, raw bytes) read into the fields of a new load. */
+  @Post('ai/ratecon')
+  @HttpCode(200)
+  async aiRateCon(@Req() req: Request, @Body() body: unknown) {
+    const { ws } = await this.auth(req);
+    if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
+    if (!Buffer.isBuffer(body) || !body.length) throw new BadRequestException('Send the rate con as application/octet-stream');
+    if (body.length > 10 * 1024 * 1024) throw new BadRequestException('The file is over 10 MB');
+    const type = sniff(body);
+    if (!type) throw new BadRequestException('Send a PDF or a photo (JPEG or PNG)');
+    if (!this.aiLimiter.take(`ws:${ws}`)) throw new HttpException('Too many AI requests this hour, try again later', 429);
+    try {
+      return await readRateCon(body, type, new Date().toISOString().slice(0, 10));
+    } catch (e) {
+      throw new ServiceUnavailableException((e as Error).message);
+    }
+  }
+
+  /** A question about the board, answered from the board's own data (an invited dispatcher's view only has their loads). */
+  @Post('ai/ask')
+  @HttpCode(200)
+  async aiAsk(@Req() req: Request, @Body() b: { question?: string; history?: unknown }) {
     const s = await this.auth(req);
+    if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
+    const question = text(b?.question, 1000);
+    if (!question) throw new BadRequestException('Ask a question');
+    if (!this.aiLimiter.take(`ws:${s.ws}`)) throw new HttpException('Too many AI requests this hour, try again later', 429);
+    const history = (Array.isArray(b?.history) ? b.history : []).slice(-8)
+      .map((t: { role?: string; text?: unknown }): AskTurn => ({ role: t?.role === 'assistant' ? 'assistant' : 'user', text: text(t?.text, 4000) }))
+      .filter((t) => t.text);
+    try {
+      return { answer: await askBoard(boardText(await this.scopedState(s)), history, question) };
+    } catch (e) {
+      throw new ServiceUnavailableException((e as Error).message);
+    }
+  }
+
+  /** The board as this person may see it: the owner sees everything, an invited dispatcher only their own loads. */
+  private async scopedState(s: Scope) {
     const st = await this.store!.state(s.ws, s.user);
     const me = { role: s.role, dispatcherId: s.dispatcherId };
     if (s.role === 'owner') return { ...st, me, team: await this.store!.team(s.ws) };
@@ -688,6 +734,23 @@ export class CrmController {
     });
     return { user };
   }
+}
+
+/** The board as compact text for the AI: one line per load (newest 1500), then carriers, trucks and dispatchers. */
+export function boardText(st: { company: { name: string }; loads: Load[]; carriers: { id: number; name: string; mc: string; feeType: string; fee: number; factoring: string }[];
+  trucks: { id: number; unit: string; driver: string; carrierId: number | null }[]; dispatchers: { id: number; name: string; percent: number }[] }): string {
+  const name = <T extends { id: number }>(xs: T[], id: number | null, f: (x: T) => string) => (id == null ? '' : f(xs.find((x) => x.id === id) ?? ({} as T)) ?? '');
+  const head = 'id|pickup|status|broker|load#|origin|destination|rate|detention|layover|tonu|other|lumper|loaded_mi|empty_mi|carrier|truck|dispatcher|invoiced_on|paid_on';
+  const rows = st.loads.slice(0, 1500).map((l) => [l.id, l.date, l.status, l.broker, l.pro, l.origin, l.destination, l.rate, l.detention, l.layover, l.tonu, l.other, l.lumper,
+    l.loadedMiles, l.emptyMiles, name(st.carriers, l.carrierId, (c) => c.name), name(st.trucks, l.truckId, (t) => t.unit), name(st.dispatchers, l.dispatcherId, (d) => d.name),
+    l.invoicedOn ?? '', l.paidOn ?? ''].map((v) => String(v ?? '').replace(/[|\n]/g, ' ')).join('|'));
+  return [
+    `Company: ${st.company.name || '—'}. Today: ${new Date().toISOString().slice(0, 10)}.`,
+    `LOADS (${st.loads.length}${st.loads.length > 1500 ? ', newest 1500 shown' : ''}):`, head, ...rows, '',
+    'CARRIERS: ' + (st.carriers.map((c) => `${c.name} (MC ${c.mc || '—'}, fee ${c.feeType === 'flat' ? `$${c.fee}/week` : `${c.fee}%`}${c.factoring ? `, factoring ${c.factoring}` : ''})`).join('; ') || 'none'),
+    'TRUCKS: ' + (st.trucks.map((t) => `#${t.unit || '—'} ${t.driver}`).join('; ') || 'none'),
+    'DISPATCHERS: ' + (st.dispatchers.map((d) => `${d.name} ${d.percent}%`).join('; ') || 'none'),
+  ].join('\n');
 }
 
 /** "3,4" → [3, 4] */

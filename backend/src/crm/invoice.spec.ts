@@ -34,3 +34,16 @@ describe('Load invoice', () => {
     expect(out.getTitle()).toBe('Invoice INV-00042');
   });
 });
+
+describe('Board data for the AI assistant', () => {
+  it('is one line per load with names instead of ids', async () => {
+    const { boardText } = await import('./crm.controller.js');
+    const t = boardText({
+      company: { name: 'Acme Dispatch' }, loads: [load],
+      carriers: [{ id: 1, name: 'BEKU Trucking', mc: '123', feeType: 'percent', fee: 8, factoring: 'RTS' }],
+      trucks: [], dispatchers: [],
+    });
+    expect(t).toContain('42|2026-11-10|delivered|Total Quality Logistics|TQL-9921045|Nashville, TN|Orlando, FL|2100|150|0|0|0|80|686|0|BEKU Trucking|||');
+    expect(t).toContain('BEKU Trucking (MC 123, fee 8%, factoring RTS)');
+  });
+});

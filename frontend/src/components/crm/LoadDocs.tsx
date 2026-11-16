@@ -24,7 +24,7 @@ export function guessKind(name: string): FileKind {
 }
 
 /** PDFs as they are; photos made small enough to email (JPEG, longest side 2200 px). */
-async function prepare(file: File): Promise<{ blob: Blob; name: string }> {
+export async function prepare(file: File): Promise<{ blob: Blob; name: string }> {
   if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) return { blob: file, name: file.name }
   if (!file.type.startsWith('image/')) throw new Error('Attach a PDF or a photo (JPEG or PNG)')
   if ((file.type === 'image/jpeg' || file.type === 'image/png') && file.size < 2_500_000) return { blob: file, name: file.name }

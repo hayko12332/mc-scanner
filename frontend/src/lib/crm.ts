@@ -149,7 +149,12 @@ export function carrierFee(c: Pick<CrmCarrier, 'feeType' | 'fee'> | undefined, l
 }
 export const feeLabel = (c: Pick<CrmCarrier, 'feeType' | 'fee'> | undefined) =>
   !c || !c.fee ? 'No fee set' : c.feeType === 'flat' ? `${usd(c.fee)} / week` : `${c.fee}% of gross`
-export interface CrmConfig { googleClientId: string; devLogin: boolean; enabled: boolean; emailAuth?: boolean }
+export interface CrmConfig { googleClientId: string; devLogin: boolean; enabled: boolean; emailAuth?: boolean; ai?: boolean }
+/** A rate confirmation read by AI. */
+export interface RateConFields {
+  isRateConfirmation: boolean; broker: string; brokerMc: string; brokerEmail: string; loadNumber: string; pickupDate: string; deliveryDate: string
+  origin: string; destination: string; rate: number; miles: number; notes: string
+}
 export interface ImportRow {
   date: string; broker: string; pro: string; origin: string; destination: string; rate: number; dispatcher: string; carrier: string
   loadedMiles: number
@@ -176,6 +181,19 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   }
   const data = await res.json().catch(() => null)
   if (!res.ok) throw new CrmError((Array.isArray(data?.message) ? data.message.join('; ') : data?.message) || `HTTP ${res.status}`, res.status)
+  return data as T
+}
+
+/** Sends raw bytes (a PDF or photo) to the API. */
+async function sendBytes<T>(path: string, file: Blob): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`/api/crm${path}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file })
+  } catch {
+    throw new CrmError('Server is not reachable', 0)
+  }
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new CrmError(data?.message || `HTTP ${res.status}`, res.status)
   return data as T
 }
 
@@ -222,6 +240,8 @@ export const crm = {
   /** US cities for what is typed in a lane field: "santa mo" → ["Santa Monica, CA", …]. */
   places: (q: string) => call<string[]>('GET', `/places?${new URLSearchParams({ q })}`),
   uploadFile: upload,
+  aiRateCon: (file: Blob) => sendBytes<RateConFields>('/ai/ratecon', file),
+  aiAsk: (question: string, history: { role: 'user' | 'assistant'; text: string }[]) => call<{ answer: string }>('POST', '/ai/ask', { question, history }),
   driverLink: (truckId: number) => call<{ url: string }>('POST', `/trucks/${truckId}/driver-link`),
   disconnectDriver: (truckId: number) => call('DELETE', `/trucks/${truckId}/driver`),
   trackingLink: (loadId: number) => call<{ url: string }>('POST', `/loads/${loadId}/tracking`),

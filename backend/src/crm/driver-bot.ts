@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { db } from '../db.js';
 import { CrmStore, type DriverInfo, type FileKind } from './crm.store.js';
 import type { Load } from './crm.types.js';
+import { classifyDoc } from './ai.js';
 
 // Drivers use the same Telegram bot as the leads: a dispatcher sends the truck's link (t.me/<bot>?start=drv_<token>),
 // the driver taps it once, and then reports with buttons — loaded, delivered — sends BOL / POD photos (saved to
@@ -140,9 +141,11 @@ export class DriverBot {
     const size = doc?.file_size ?? photo?.file_size ?? 0;
     if (size > MAX_FILE) return this.send(m.chat.id, 'That file is over 10 MB — send it as a photo instead.');
     if (doc && !/^(application\/pdf|image\/(jpeg|png))$/.test(doc.mime_type ?? '')) return this.send(m.chat.id, 'Send a photo or a PDF, please.');
-    const kind = docKind(m.caption ?? doc?.file_name ?? '', load);
+    let kind = docKind(m.caption ?? doc?.file_name ?? '', load);
     try {
       const data = await this.api.download((doc ?? photo)!.file_id);
+      // No caption: AI (when switched on) looks at the photo to tell a BOL from a POD.
+      if (!m.caption && !doc?.file_name) kind = (await classifyDoc(data, doc?.mime_type ?? 'image/jpeg')) ?? kind;
       const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ').replace(':', '-');
       const name = doc?.file_name || `${kind.toUpperCase()} ${load.pro || load.id} ${stamp}.jpg`;
       const mime = doc?.mime_type ?? 'image/jpeg';

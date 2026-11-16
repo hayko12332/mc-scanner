@@ -2894,3 +2894,25 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 .tk-map { position: relative; height: min(60vh, 520px); min-height: 300px; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: var(--surface-2); }
 .tk-foot { margin: 0; color: var(--muted); font-size: 12px; text-align: center; }
 @media (max-width: 600px) { .tk-steps { flex-direction: column; } .tk-card h1 { font-size: 20px; } }
+
+/* AI: rate con drop zone and the "Ask AI" panel */
+.ai-spark { color: #7c3aed; font-weight: 700; }
+.ai-drop { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 14px; padding: 10px 12px; border: 1px dashed color-mix(in srgb, #7c3aed 45%, var(--border)); border-radius: 10px; background: color-mix(in srgb, #7c3aed 6%, var(--surface)); }
+.ai-drop.busy .ai-spark { animation: ck-spin 1.2s linear infinite; display: inline-block; }
+.ai-note { flex: 1; min-width: 200px; font-size: 12.5px; color: var(--text); }
+.work .ai-drop button { background: var(--surface); }
+.w-ai { display: inline-grid; place-items: center; width: 16px; color: #a78bfa; font-size: 14px; }
+.ld.ask { display: flex; flex-direction: column; }
+.ask-body { display: flex; flex-direction: column; gap: 10px; }
+.ask-examples { display: grid; gap: 8px; }
+.ask-examples p { margin: 0 0 4px; color: var(--muted); }
+.work .ask-examples button { justify-content: flex-start; text-align: left; background: var(--surface); padding: 9px 12px; }
+.ask-msg { max-width: 88%; padding: 9px 12px; border-radius: 12px; white-space: pre-wrap; line-height: 1.5; font-size: 13.5px; }
+.ask-msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.ask-msg.assistant { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 4px; }
+.ask-busy { display: flex; gap: 4px; }
+.ask-busy i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: ask-dot 1s infinite ease-in-out; }
+.ask-busy i:nth-child(2) { animation-delay: 0.15s; } .ask-busy i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes ask-dot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+.ask-form { gap: 8px; align-items: flex-end; }
+.ask-form textarea { flex: 1; resize: none; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
