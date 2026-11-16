@@ -13,6 +13,8 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   // Spreadsheet imports into the CRM can be larger than the default 100 kB.
   app.useBodyParser('json', { limit: '5mb' });
+  // Load documents (PDF, photos) are uploaded as raw bytes.
+  app.useBodyParser('raw', { type: 'application/octet-stream', limit: '12mb' });
   app.setGlobalPrefix('api');
   // The site lives on its own domain now: pages opened on the old Render address move there for good.
   // The API stays reachable on both (old bot buttons, keep-alive), and so do Google's verification files.

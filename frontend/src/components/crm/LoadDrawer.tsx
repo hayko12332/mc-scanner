@@ -4,6 +4,7 @@ import {
   withStatusDates, type CrmCarrier, type CrmState, type LaneResult, type Load, type LoadInput, type LoadStatus, type MilesResult,
 } from '../../lib/crm'
 import { RouteMap } from './MapView'
+import { LoadDocs, type DocsApi } from './LoadDocs'
 import { CheckBadge, companyName, savedCheck, useCheck } from './CheckBadge'
 import type { CheckRole, CompanyCheck } from '../../lib/crm'
 import { place } from './LoadsTable'
@@ -62,7 +63,7 @@ function Pick({ label, value, options, onSave }: { label: string; value: string;
  * Everything about one load in a side panel: the trip (truck, lane, loaded and empty miles), the pay
  * (rate, accessorials, gross, RPM, dispatch fee) and billing (invoice and payment dates against 30-day terms).
  */
-export function LoadDrawer({ load, state, save, remove, close, miles, lane, check, theme, saveCarrier }: {
+export function LoadDrawer({ load, state, save, remove, close, miles, lane, check, theme, saveCarrier, docs, toast, changed, demo }: {
   load: Load
   state: CrmState
   save: (l: LoadInput) => void
@@ -74,6 +75,11 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
   lane: (from: string, to: string) => Promise<LaneResult>
   check: (mc: string, role: CheckRole) => Promise<CompanyCheck>
   theme: 'light' | 'dark'
+  docs: DocsApi
+  toast: (m: string) => void
+  /** Reload the board after documents or invoices change. */
+  changed: () => void
+  demo: boolean
 }) {
   const [busy, setBusy] = useState<'' | 'loaded' | 'empty'>('')
   const brokerCheck = useCheck(load.brokerMc ?? '', 'broker', check, savedCheck(state, load.brokerMc ?? '', 'broker'))
@@ -220,6 +226,8 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
               </div>
             )}
           </section>
+
+          <LoadDocs load={load} state={state} api={docs} toast={toast} changed={changed} demo={demo} />
 
           <section>
             <h3>Notes</h3>

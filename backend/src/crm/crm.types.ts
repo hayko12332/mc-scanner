@@ -1,4 +1,5 @@
 import type { CompanyCheck } from './company-check.js';
+import type { CrmFile } from './crm.store.js';
 
 /** Dispatcher CRM: a workspace (one per user for now) with its dispatchers, carriers and loads. */
 
@@ -95,6 +96,12 @@ export interface CrmState {
   loads: Load[];
   /** Latest FMCSA checks of the workspace's carriers and brokers (see company-check.ts). */
   checks: CompanyCheck[];
+  /** Documents of loads (without their contents). */
+  files: CrmFile[];
+  /** Invoices emailed to brokers. */
+  invoices: { loadId: number; number: string; sentTo: string; sentAt: string; remind: boolean; reminders: number }[];
+  /** Billing email last used per broker (lower-case broker name → email). */
+  brokerEmails: Record<string, string>;
 }
 
 /** A row pasted from a spreadsheet; dispatcher and carrier are names that are matched or created. */

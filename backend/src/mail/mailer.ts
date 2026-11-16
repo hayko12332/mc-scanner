@@ -1,7 +1,19 @@
 import { Logger } from '@nestjs/common';
 import { config } from '../config.js';
 
-export interface Mail { to: string; subject: string; text: string; html: string }
+export interface Mail {
+  to: string; subject: string; text: string; html: string
+  /** Display name to send under (the address stays ours), e.g. "BEKU Trucking via HaulPanel". */
+  fromName?: string
+  /** Where replies go (e.g. the dispatcher who sent an invoice). */
+  replyTo?: string
+  cc?: string[]
+  attachments?: { filename: string; content: Uint8Array }[]
+}
+
+/** "HaulPanel <hello@haulpanel.com>" → "hello@haulpanel.com". */
+const address = (from: string) => /<([^>]+)>/.exec(from)?.[1] ?? from;
+const quoted = (name: string) => `"${name.replace(/["\\<>\r\n]/g, '').slice(0, 80)}"`;
 
 const logger = new Logger('Mailer');
 
@@ -15,13 +27,18 @@ export const mailReady = () => !!config.resendApiKey || !config.onRender;
 export async function sendMail(mail: Mail, fetcher: typeof fetch = fetch): Promise<void> {
   if (!config.resendApiKey) {
     if (config.onRender) throw new Error('Email is not set up yet');
-    logger.log(`[dev mail] to ${mail.to}: ${mail.subject}\n${mail.text}`);
+    logger.log(`[dev mail] to ${mail.to}${mail.attachments?.length ? ` (+${mail.attachments.length} attachment)` : ''}: ${mail.subject}\n${mail.text}`);
     return;
   }
   const res = await fetcher('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${config.resendApiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: config.mailFrom, to: [mail.to], subject: mail.subject, text: mail.text, html: mail.html, reply_to: config.mailReplyTo || undefined }),
+    body: JSON.stringify({
+      from: mail.fromName ? `${quoted(mail.fromName)} <${address(config.mailFrom)}>` : config.mailFrom,
+      to: [mail.to], cc: mail.cc?.length ? mail.cc : undefined, subject: mail.subject, text: mail.text, html: mail.html,
+      reply_to: mail.replyTo || config.mailReplyTo || undefined,
+      attachments: mail.attachments?.map((a) => ({ filename: a.filename, content: Buffer.from(a.content).toString('base64') })),
+    }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) {

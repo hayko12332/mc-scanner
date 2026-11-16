@@ -61,7 +61,15 @@ export interface SignUpInput { name: string; email: string; password: string; co
 /** Sign-in either finishes (user) or needs the emailed code first (verify). */
 export type AuthResult = { user: CrmUser; verify?: undefined } | { verify: true; email: string; user?: undefined }
 
-export interface CrmState { user: CrmUser; company?: Company; dispatchers: Dispatcher[]; carriers: CrmCarrier[]; trucks: Truck[]; loads: Load[]; checks?: CompanyCheck[] }
+export interface CrmState {
+  user: CrmUser; company?: Company; dispatchers: Dispatcher[]; carriers: CrmCarrier[]; trucks: Truck[]; loads: Load[]; checks?: CompanyCheck[]
+  files?: CrmFile[]; invoices?: SentInvoice[]; brokerEmails?: Record<string, string>
+}
+export const FILE_KINDS = [['ratecon', 'Rate con'], ['bol', 'BOL'], ['pod', 'POD'], ['invoice', 'Invoice'], ['other', 'Other']] as const
+export type FileKind = (typeof FILE_KINDS)[number][0]
+export interface CrmFile { id: number; loadId: number | null; kind: FileKind; name: string; mime: string; size: number; createdAt: string }
+export interface SentInvoice { loadId: number; number: string; sentTo: string; sentAt: string; remind: boolean; reminders: number }
+export interface InvoiceSend { to: string; cc?: string[]; attach: number[]; remind: boolean; note?: string }
 export type CheckRole = 'broker' | 'carrier'
 /** FMCSA check of a broker or carrier: one verdict and the warning signs behind it. */
 export interface CompanyCheck {
@@ -155,6 +163,21 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   return data as T
 }
 
+/** Uploads one document of a load as raw bytes. */
+async function upload(loadId: number, file: Blob, name: string, kind: FileKind): Promise<CrmFile> {
+  let res: Response
+  try {
+    res = await fetch(`/api/crm/loads/${loadId}/files?${new URLSearchParams({ kind, name })}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file,
+    })
+  } catch {
+    throw new CrmError('Server is not reachable', 0)
+  }
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new CrmError(data?.message || `HTTP ${res.status}`, res.status)
+  return data as CrmFile
+}
+
 export const crm = {
   config: () => call<CrmConfig>('GET', '/config'),
   google: (credential: string) => call<{ user: CrmUser }>('POST', '/auth/google', { credential }),
@@ -182,6 +205,13 @@ export const crm = {
   miles: (from: string, to: string) => call<MilesResult>('GET', `/miles?${new URLSearchParams({ from, to })}`),
   /** US cities for what is typed in a lane field: "santa mo" → ["Santa Monica, CA", …]. */
   places: (q: string) => call<string[]>('GET', `/places?${new URLSearchParams({ q })}`),
+  uploadFile: upload,
+  fileUrl: (id: number) => `/api/crm/files/${id}`,
+  setFileKind: (id: number, kind: FileKind) => call('PATCH', `/files/${id}`, { kind }),
+  removeFile: (id: number) => call('DELETE', `/files/${id}`),
+  invoicePdfUrl: (loadId: number, attach: number[]) => `/api/crm/loads/${loadId}/invoice.pdf?${new URLSearchParams({ attach: attach.join(',') })}`,
+  sendInvoice: (loadId: number, v: InvoiceSend) => call<{ ok: true; number: string }>('POST', `/loads/${loadId}/invoice`, v),
+  setInvoiceReminders: (loadId: number, remind: boolean) => call('PATCH', `/loads/${loadId}/invoice`, { remind }),
   /** FMCSA check of an MC as a broker or a carrier. */
   check: (mc: string, role: CheckRole) => call<CompanyCheck>('GET', `/check?${new URLSearchParams({ mc, role })}`),
   lane: (from: string, to: string) => call<LaneResult>('GET', `/lane?${new URLSearchParams({ from, to })}`),

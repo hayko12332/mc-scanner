@@ -295,6 +295,10 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           lane={api.lane}
           check={api.check}
           theme={theme}
+          docs={api}
+          toast={toast}
+          changed={() => void reload()}
+          demo={demo}
           saveCarrier={(c) => { optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c), `${c.name}’s fee saved`).catch(() => undefined) }}
         />
       )}

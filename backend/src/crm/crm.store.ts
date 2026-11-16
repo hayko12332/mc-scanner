@@ -108,6 +108,36 @@ const SCHEMA = `
     checked_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (workspace_id, role, mc)
   );
+  -- Documents of a load (rate con, BOL, POD, …), kept in the database for now (at most 300 MB per board)
+  CREATE TABLE IF NOT EXISTS crm_files (
+    id            BIGSERIAL PRIMARY KEY,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    load_id       BIGINT REFERENCES crm_loads(id) ON DELETE CASCADE,
+    kind          TEXT NOT NULL DEFAULT 'other',
+    name          TEXT NOT NULL,
+    mime          TEXT NOT NULL,
+    size          INTEGER NOT NULL,
+    data          BYTEA NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  CREATE INDEX IF NOT EXISTS crm_files_ws_load ON crm_files (workspace_id, load_id);
+  -- Invoices emailed to brokers, with optional reminders while unpaid
+  CREATE TABLE IF NOT EXISTS crm_invoices (
+    load_id       BIGINT PRIMARY KEY REFERENCES crm_loads(id) ON DELETE CASCADE,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    number        TEXT NOT NULL,
+    sent_to       TEXT NOT NULL,
+    sent_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    remind        BOOLEAN NOT NULL DEFAULT true,
+    reminders     INTEGER NOT NULL DEFAULT 0,
+    reminded_at   TIMESTAMPTZ
+  );
+  CREATE TABLE IF NOT EXISTS crm_broker_emails (
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    broker        TEXT NOT NULL,
+    email         TEXT NOT NULL,
+    PRIMARY KEY (workspace_id, broker)
+  );
   CREATE TABLE IF NOT EXISTS crm_email_codes (
     email       TEXT NOT NULL,
     purpose     TEXT NOT NULL,
@@ -128,6 +158,16 @@ const LOAD_WRITE = ['load_date', 'carrier_id', 'dispatcher_id', 'broker', 'pro',
   'truck_id', 'loaded_miles', 'empty_miles', 'detention', 'layover', 'tonu', 'other', 'lumper', 'invoiced_on', 'paid_on', 'broker_mc'];
 const loadValues = (l: LoadInput) => [l.date, l.carrierId, l.dispatcherId, l.broker, l.pro, l.origin, l.destination, l.rate, l.notes, l.status,
   l.truckId, l.loadedMiles, l.emptyMiles, l.detention, l.layover, l.tonu, l.other, l.lumper, l.invoicedOn, l.paidOn, l.brokerMc];
+
+export const FILE_KINDS = ['ratecon', 'bol', 'pod', 'invoice', 'other'] as const;
+export type FileKind = (typeof FILE_KINDS)[number];
+export interface CrmFile { id: number; loadId: number | null; kind: FileKind; name: string; mime: string; size: number; createdAt: string }
+const FILE_COLS = 'id, load_id, kind, name, mime, size, created_at';
+const MAX_BOARD_BYTES = 300 * 1024 * 1024;
+const toFile = (r: Record<string, unknown>): CrmFile => ({
+  id: Number(r.id), loadId: r.load_id == null ? null : Number(r.load_id), kind: String(r.kind) as FileKind, name: String(r.name),
+  mime: String(r.mime), size: Number(r.size), createdAt: new Date(r.created_at as string).toISOString(),
+});
 
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 
@@ -305,18 +345,114 @@ export class CrmStore {
 
   async state(ws: number, user: CrmUser): Promise<CrmState> {
     await this.ready;
-    const [d, c, t, l, k] = await Promise.all([
+    const [d, c, t, l, k, f, inv, be] = await Promise.all([
       this.pool.query('SELECT id, name, percent FROM crm_dispatchers WHERE workspace_id = $1 AND NOT archived ORDER BY name', [ws]),
       this.pool.query(`SELECT ${CARRIER_COLS} FROM crm_carriers WHERE workspace_id = $1 AND NOT archived ORDER BY name`, [ws]),
       this.pool.query(`SELECT ${TRUCK_COLS} FROM crm_trucks WHERE workspace_id = $1 AND NOT archived ORDER BY unit, driver`, [ws]),
       this.pool.query(`SELECT ${LOAD_COLS} FROM crm_loads WHERE workspace_id = $1 ORDER BY load_date DESC, id DESC`, [ws]),
       this.pool.query('SELECT data FROM crm_checks WHERE workspace_id = $1', [ws]),
+      this.pool.query(`SELECT ${FILE_COLS} FROM crm_files WHERE workspace_id = $1 ORDER BY id`, [ws]),
+      this.pool.query(`SELECT load_id, number, sent_to, sent_at, remind, reminders FROM crm_invoices WHERE workspace_id = $1`, [ws]),
+      this.pool.query('SELECT broker, email FROM crm_broker_emails WHERE workspace_id = $1', [ws]),
     ]);
     return {
       user, company: await this.company(ws),
       dispatchers: d.rows.map(toDispatcher), carriers: c.rows.map(toCarrier), trucks: t.rows.map(toTruck), loads: l.rows.map(toLoad),
       checks: k.rows.map((r) => r.data as CompanyCheck),
+      files: f.rows.map(toFile),
+      invoices: inv.rows.map((r) => ({
+        loadId: Number(r.load_id), number: String(r.number), sentTo: String(r.sent_to), sentAt: new Date(r.sent_at).toISOString(),
+        remind: !!r.remind, reminders: Number(r.reminders),
+      })),
+      brokerEmails: Object.fromEntries(be.rows.map((r) => [String(r.broker), String(r.email)])),
     };
+  }
+
+  // Files (documents of a load)
+
+  /** Adds a document to a load of this board; null when the load isn't theirs. Throws when the board is full. */
+  async addFile(ws: number, loadId: number, f: { kind: FileKind; name: string; mime: string; data: Buffer }): Promise<CrmFile | null> {
+    const own = await this.pool.query('SELECT 1 FROM crm_loads WHERE workspace_id = $1 AND id = $2', [ws, loadId]);
+    if (!own.rows[0]) return null;
+    const used = await this.pool.query('SELECT coalesce(sum(size), 0)::bigint AS n FROM crm_files WHERE workspace_id = $1', [ws]);
+    if (Number(used.rows[0].n) + f.data.length > MAX_BOARD_BYTES) throw new Error('Your board has no room for more files (300 MB). Delete old documents first.');
+    const { rows } = await this.pool.query(
+      `INSERT INTO crm_files (workspace_id, load_id, kind, name, mime, size, data) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING ${FILE_COLS}`,
+      [ws, loadId, f.kind, f.name, f.mime, f.data.length, f.data]);
+    return toFile(rows[0]);
+  }
+
+  async file(ws: number, id: number): Promise<(CrmFile & { data: Buffer }) | null> {
+    const { rows } = await this.pool.query(`SELECT ${FILE_COLS}, data FROM crm_files WHERE workspace_id = $1 AND id = $2`, [ws, id]);
+    return rows[0] ? { ...toFile(rows[0]), data: rows[0].data as Buffer } : null;
+  }
+
+  async filesOf(ws: number, loadId: number, ids: number[]): Promise<(CrmFile & { data: Buffer })[]> {
+    if (!ids.length) return [];
+    const { rows } = await this.pool.query(
+      `SELECT ${FILE_COLS}, data FROM crm_files WHERE workspace_id = $1 AND load_id = $2 AND id = ANY($3::bigint[]) ORDER BY array_position($3::bigint[], id)`,
+      [ws, loadId, ids]);
+    return rows.map((r) => ({ ...toFile(r), data: r.data as Buffer }));
+  }
+
+  async setFileKind(ws: number, id: number, kind: FileKind) {
+    await this.pool.query('UPDATE crm_files SET kind = $3 WHERE workspace_id = $1 AND id = $2', [ws, id, kind]);
+  }
+
+  async deleteFile(ws: number, id: number) {
+    await this.pool.query('DELETE FROM crm_files WHERE workspace_id = $1 AND id = $2', [ws, id]);
+  }
+
+  // Invoices
+
+  async loadById(ws: number, id: number): Promise<Load | null> {
+    const { rows } = await this.pool.query(`SELECT ${LOAD_COLS} FROM crm_loads WHERE workspace_id = $1 AND id = $2`, [ws, id]);
+    return rows[0] ? toLoad(rows[0]) : null;
+  }
+
+  /** Records a sent invoice, remembers the broker's billing email, and marks the load invoiced today (if it wasn't). */
+  async invoiceSent(ws: number, load: Load, number: string, to: string, remind: boolean, today: string) {
+    await this.pool.query(
+      `INSERT INTO crm_invoices (load_id, workspace_id, number, sent_to, remind) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (load_id) DO UPDATE SET number = EXCLUDED.number, sent_to = EXCLUDED.sent_to, sent_at = now(), remind = EXCLUDED.remind`,
+      [load.id, ws, number, to, remind]);
+    if (load.broker.trim()) {
+      await this.pool.query(
+        `INSERT INTO crm_broker_emails (workspace_id, broker, email) VALUES ($1, lower($2), $3)
+         ON CONFLICT (workspace_id, broker) DO UPDATE SET email = EXCLUDED.email`, [ws, load.broker.trim(), to]);
+    }
+    if (!load.invoicedOn && load.status !== 'paid') {
+      await this.pool.query(`UPDATE crm_loads SET status = 'invoiced', invoiced_on = $3 WHERE workspace_id = $1 AND id = $2`, [ws, load.id, today]);
+    }
+  }
+
+  async setReminders(ws: number, loadId: number, remind: boolean) {
+    await this.pool.query('UPDATE crm_invoices SET remind = $3 WHERE workspace_id = $1 AND load_id = $2', [ws, loadId, remind]);
+  }
+
+  /**
+   * Unpaid invoices past their terms that should get a reminder: at most 3, a week apart. With the board's company
+   * and the owner (replies go to them).
+   */
+  async remindersDue(termsDays: number): Promise<{ ws: number; load: Load; number: string; to: string; reminders: number; ownerEmail: string; ownerName: string }[]> {
+    await this.ready;
+    const { rows } = await this.pool.query(
+      `SELECT i.workspace_id, i.number, i.sent_to, i.reminders, u.email AS owner_email, u.name AS owner_name, v.*
+         FROM crm_invoices i JOIN crm_loads l ON l.id = i.load_id
+         JOIN LATERAL (SELECT ${LOAD_COLS} FROM crm_loads x WHERE x.id = l.id) v ON true
+         JOIN crm_workspaces w ON w.id = i.workspace_id JOIN crm_users u ON u.id = w.owner_id
+        WHERE i.remind AND i.reminders < 3 AND l.status = 'invoiced' AND l.paid_on IS NULL
+          AND l.invoiced_on + $1::int <= current_date
+          AND (i.reminded_at IS NULL OR i.reminded_at < now() - interval '7 days')
+        LIMIT 50`, [termsDays]);
+    return rows.map((r) => ({
+      ws: Number(r.workspace_id), load: toLoad(r), number: String(r.number), to: String(r.sent_to), reminders: Number(r.reminders),
+      ownerEmail: String(r.owner_email), ownerName: String(r.owner_name),
+    }));
+  }
+
+  async reminded(loadId: number) {
+    await this.pool.query('UPDATE crm_invoices SET reminders = reminders + 1, reminded_at = now() WHERE load_id = $1', [loadId]);
   }
 
   // FMCSA checks

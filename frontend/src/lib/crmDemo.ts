@@ -2,8 +2,8 @@
 // seeded with a realistic small dispatch operation so visitors can try everything without an account.
 
 import {
-  addDays, crm, LOAD_EXTRAS, today, weekStart,
-  type CarrierInput, type CrmCarrier, type CrmState, type Dispatcher, type ImportRow, type Load, type LoadInput, type LoadStatus, type Truck,
+  addDays, crm, CrmError, LOAD_EXTRAS, today, weekStart,
+  type CarrierInput, type CrmFile, type CrmCarrier, type CrmState, type Dispatcher, type ImportRow, type Load, type LoadInput, type LoadStatus, type Truck,
   type TruckInput,
 } from './crm'
 
@@ -133,6 +133,14 @@ export const crmDemo = {
   /** Mileage comes from the real map service; it needs no account. */
   miles: crm.miles,
   lane: crm.lane,
+  // Documents and invoices need an account (files are kept on the server).
+  uploadFile: (): Promise<CrmFile> => Promise.reject(new CrmError('Sign in to attach documents — the demo keeps data only in this browser', 0)),
+  fileUrl: crm.fileUrl,
+  setFileKind: () => Promise.resolve({}),
+  removeFile: () => Promise.resolve({}),
+  invoicePdfUrl: () => '',
+  sendInvoice: (): Promise<{ ok: true; number: string }> => Promise.reject(new CrmError('Sign in to email invoices to brokers', 0)),
+  setInvoiceReminders: () => Promise.resolve({}),
   check: crm.check,
   points: crm.points,
   /** Starts the demo over with the sample data. */

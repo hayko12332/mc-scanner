@@ -16,6 +16,10 @@ import type { CodePurpose } from './crm.store.js';
 import type { CompanyInput } from './crm.types.js';
 import { MilesService } from './miles.js';
 import { CompanyCheckService } from './company-check.service.js';
+import { FILE_KINDS, type FileKind } from './crm.store.js';
+import { buildInvoicePdf, invoiceTotal, type InvoiceData } from './invoice.js';
+import type { Load } from './crm.types.js';
+import { emailOk as validEmail } from './password.js';
 import { PlacesService } from './places.js';
 
 const COOKIE = 'lh_crm';
@@ -351,6 +355,118 @@ export class CrmController {
     return this.milesService.points(places);
   }
 
+  // Documents of a load
+
+  /** Upload: raw bytes (application/octet-stream), ?kind=pod&name=POD.pdf&mime=application/pdf. PDF, JPEG or PNG, up to 10 MB. */
+  @Post('loads/:id/files')
+  async addFile(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() body: unknown,
+    @Query('kind') kind = 'other', @Query('name') name = '', @Query('mime') mime = '') {
+    const { ws } = await this.auth(req);
+    if (!Buffer.isBuffer(body) || !body.length) throw new BadRequestException('Send the file as application/octet-stream');
+    if (body.length > 10 * 1024 * 1024) throw new BadRequestException('The file is over 10 MB');
+    const type = sniff(body);
+    if (!type) throw new BadRequestException('Only PDF, JPEG and PNG files can be attached');
+    const k = (FILE_KINDS as readonly string[]).includes(kind) ? (kind as FileKind) : 'other';
+    const clean = text(name, 120).replace(/[\\/:*?"<>|\r\n]+/g, ' ').trim() || `${k}.${type === 'application/pdf' ? 'pdf' : type === 'image/png' ? 'png' : 'jpg'}`;
+    void mime;
+    try {
+      return found(await this.store!.addFile(ws, id, { kind: k, name: clean, mime: type, data: body }));
+    } catch (e) {
+      if (e instanceof NotFoundException) throw e;
+      throw new BadRequestException((e as Error).message);
+    }
+  }
+
+  @Get('files/:id')
+  async getFile(@Req() req: Request, @Res() res: Response, @Param('id', ParseIntPipe) id: number, @Query('download') download = '') {
+    const { ws } = await this.auth(req);
+    const f = found(await this.store!.file(ws, id));
+    res.setHeader('Content-Type', f.mime);
+    res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="${f.name.replace(/[^\x20-\x7E]|"/g, '_')}"`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(f.data);
+  }
+
+  @Patch('files/:id')
+  async updateFile(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() body: { kind?: string }) {
+    const { ws } = await this.auth(req);
+    if (!(FILE_KINDS as readonly string[]).includes(String(body?.kind))) throw new BadRequestException(`Kind must be one of: ${FILE_KINDS.join(', ')}`);
+    await this.store!.setFileKind(ws, id, body.kind as FileKind);
+    return { ok: true };
+  }
+
+  @Delete('files/:id')
+  async deleteFile(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
+    const { ws } = await this.auth(req);
+    await this.store!.deleteFile(ws, id);
+    return { ok: true };
+  }
+
+  // Invoices
+
+  /** The invoice of a load as a PDF, with the chosen documents after it (?attach=3,4). */
+  @Get('loads/:id/invoice.pdf')
+  async invoicePdf(@Req() req: Request, @Res() res: Response, @Param('id', ParseIntPipe) id: number, @Query('attach') attach = '', @Query('download') download = '') {
+    const { ws, user } = await this.auth(req);
+    const { data, files } = await this.invoiceParts(ws, user, id, ids(attach));
+    const pdf = await buildInvoicePdf(data, files);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${download ? 'attachment' : 'inline'}; filename="Invoice-${data.number}.pdf"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(Buffer.from(pdf));
+  }
+
+  /** Emails the invoice (with the chosen documents in the same PDF) to the broker; replies go to the dispatcher. */
+  @Post('loads/:id/invoice')
+  @HttpCode(200)
+  async sendInvoice(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() b: Record<string, unknown>) {
+    const { ws, user } = await this.auth(req);
+    const to = normEmail(String(b.to ?? ''));
+    if (!validEmail(to)) throw new BadRequestException('Enter the broker’s billing email');
+    const cc = (Array.isArray(b.cc) ? b.cc : []).map((x) => normEmail(String(x))).filter(validEmail).slice(0, 3);
+    if (!this.mailHourly.take(`invoice:${ws}`)) throw new HttpException('Too many invoices this hour, try again later', 429);
+    const { load, data, files } = await this.invoiceParts(ws, user, id, (Array.isArray(b.attach) ? b.attach : []).map(Number).filter(Number.isInteger));
+    const pdf = await buildInvoicePdf(data, files);
+    const note = text(b.note, 1000);
+    const lane = `${data.load.origin || '—'} → ${data.load.destination || '—'}`;
+    const total = invoiceTotal(data).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+    const docs = files.map((f) => f.kind === 'pod' ? 'POD' : f.kind === 'bol' ? 'BOL' : f.kind === 'ratecon' ? 'rate confirmation' : f.name);
+    await sendMail({
+      to, cc, fromName: `${data.from.name} via HaulPanel`, replyTo: user.email,
+      subject: `Invoice ${data.number} · Load ${load.pro || load.id} · ${data.from.name}`,
+      text: `Hello,\n\nPlease find attached invoice ${data.number} for load ${load.pro || load.id} (${lane}), ${total}, due ${data.due}.${docs.length ? `\nAttached in the same PDF: ${docs.join(', ')}.` : ''}${note ? `\n\n${note}` : ''}${data.remitTo ? `\n\nPlease remit payment to ${data.remitTo}.` : ''}\n\nThank you,\n${user.name || data.from.name}\n${data.from.name}${data.from.phone ? ` · ${data.from.phone}` : ''}`,
+      html: `<p>Hello,</p><p>Please find attached invoice <b>${esc(data.number)}</b> for load <b>${esc(load.pro || String(load.id))}</b> (${esc(lane)}), <b>${total}</b>, due ${esc(data.due)}.${docs.length ? `<br>Attached in the same PDF: ${esc(docs.join(', '))}.` : ''}</p>${note ? `<p>${esc(note).replace(/\n/g, '<br>')}</p>` : ''}${data.remitTo ? `<p>Please remit payment to <b>${esc(data.remitTo)}</b>.</p>` : ''}<p>Thank you,<br>${esc(user.name || data.from.name)}<br>${esc(data.from.name)}${data.from.phone ? ` · ${esc(data.from.phone)}` : ''}</p>`,
+      attachments: [{ filename: `Invoice-${data.number}.pdf`, content: pdf }],
+    });
+    await this.store!.invoiceSent(ws, load, data.number, to, b.remind !== false, new Date().toISOString().slice(0, 10));
+    return { ok: true, number: data.number };
+  }
+
+  @Patch('loads/:id/invoice')
+  async invoiceReminders(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() b: { remind?: boolean }) {
+    const { ws } = await this.auth(req);
+    await this.store!.setReminders(ws, id, b?.remind !== false);
+    return { ok: true };
+  }
+
+  /** What goes on a load's invoice: the carrier (or this company) bills the broker; the carrier's factoring gets paid. */
+  private async invoiceParts(ws: number, user: CrmUser, id: number, attach: number[]) {
+    const state = await this.store!.state(ws, user);
+    const load = found(state.loads.find((l) => l.id === id) ?? null);
+    const carrier = state.carriers.find((c) => c.id === load.carrierId);
+    const truck = state.trucks.find((t) => t.id === load.truckId);
+    const data = invoiceData(load, {
+      from: carrier
+        ? { name: carrier.name, mc: carrier.mc.replace(/\D/g, ''), phone: carrier.phone, email: carrier.email }
+        : { name: state.company.name || user.name, mc: state.company.mc, phone: state.company.phone, email: user.email },
+      remitTo: carrier?.factoring || undefined, truck: truck?.unit, driver: truck?.driver,
+      billEmail: state.brokerEmails[load.broker.trim().toLowerCase()],
+    });
+    const files = await this.store!.filesOf(ws, id, attach);
+    return { load, data, files };
+  }
+
   // Loads
 
   @Post('loads')
@@ -422,6 +538,41 @@ export class CrmController {
     });
     return { user };
   }
+}
+
+/** "3,4" → [3, 4] */
+const ids = (s: string) => s.split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 20);
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+/** What a file really is, from its first bytes (not from what the browser says). */
+function sniff(b: Buffer): 'application/pdf' | 'image/jpeg' | 'image/png' | null {
+  if (b.subarray(0, 5).toString('latin1') === '%PDF-') return 'application/pdf';
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  return null;
+}
+
+export const PAY_TERMS_DAYS = 30;
+
+/** The invoice of one load: number, dates (net 30 from the invoice date), parties and charges. */
+export function invoiceData(load: Load, o: { from: InvoiceData['from']; remitTo?: string; truck?: string; driver?: string; billEmail?: string }, today = new Date()): InvoiceData {
+  const date = load.invoicedOn ?? today.toISOString().slice(0, 10);
+  const due = new Date(date + 'T12:00:00Z');
+  due.setUTCDate(due.getUTCDate() + PAY_TERMS_DAYS);
+  const lines = [
+    { label: 'Linehaul', amount: load.rate },
+    { label: 'Detention', amount: load.detention },
+    { label: 'Layover', amount: load.layover },
+    { label: 'Truck order not used (TONU)', amount: load.tonu },
+    { label: 'Other charges', amount: load.other },
+    { label: 'Lumper (reimbursement, receipt attached)', amount: load.lumper },
+  ].filter((l) => l.amount > 0);
+  return {
+    number: `INV-${String(load.id).padStart(5, '0')}`, date, due: due.toISOString().slice(0, 10), termsDays: PAY_TERMS_DAYS,
+    from: o.from, remitTo: o.remitTo, billTo: { name: load.broker, mc: load.brokerMc || undefined, email: o.billEmail },
+    load: { pro: load.pro, pickupDate: load.date, origin: load.origin, destination: load.destination, miles: load.loadedMiles, truck: o.truck, driver: o.driver },
+    lines: lines.length ? lines : [{ label: 'Linehaul', amount: 0 }],
+  };
 }
 
 function found<T>(v: T | null): T {
