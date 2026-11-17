@@ -22,11 +22,15 @@ export type Card =
   | { type: 'link'; label: string; url: string }
   | { type: 'note'; text: string };
 
-export interface DisplayItem { role: 'user' | 'assistant'; text?: string; file?: string; cards?: Card[]; pending?: string[] }
+/** One message in the chat; `steps` says what the assistant did to get there ("Searched loads · 12 found"). */
+export interface DisplayItem { role: 'user' | 'assistant'; text?: string; file?: string; cards?: Card[]; pending?: string[]; steps?: string[] }
 export interface PendingAction { id: string; tool: string; input: Record<string, unknown>; summary: string; status: 'pending' | 'done' | 'declined' | 'failed'; result?: string }
 
 export interface Thread {
   id: string;
+  /** The first question, shown in the chat history. */
+  title?: string;
+  createdAt?: string;
   messages: Msg[];
   display: DisplayItem[];
   pending: PendingAction[];
@@ -36,7 +40,21 @@ export interface Thread {
   file?: { name: string; mime: string; data: string } | null;
 }
 
-export const newThread = (): Thread => ({ id: randomUUID(), messages: [], display: [], pending: [], readResults: [], file: null });
+export const newThread = (): Thread => ({ id: randomUUID(), createdAt: new Date().toISOString(), messages: [], display: [], pending: [], readResults: [], file: null });
+
+/** What the assistant did, in a few words, for the activity line above its answer. */
+function stepLabel(name: string, i: Record<string, unknown>, data: unknown): string {
+  const d = (data ?? {}) as Record<string, unknown>;
+  if (d.error) return `⚠ ${String(d.error).slice(0, 80)}`;
+  if (name === 'find_loads') return `Searched loads · ${d.count ?? 0} found`;
+  if (name === 'summarize') return `Totaled ${i.group_by && i.group_by !== 'none' ? `by ${String(i.group_by)}` : 'the period'}`;
+  if (name === 'get_load') return `Opened load #${String(i.id)}`;
+  if (name === 'check_company') return `Checked MC ${String(i.mc)} in FMCSA`;
+  if (name === 'lookup_company') return `Looked up “${String(i.query)}” in FMCSA`;
+  if (name === 'route_miles') return `Routed ${String(i.from)} → ${String(i.to)}`;
+  if (name === 'tracking_link') return 'Made a tracking link';
+  return name.replace(/_/g, ' ');
+}
 
 /** What the assistant may use: the board as this person sees it and the board's own actions. */
 export interface AgentCtx {
@@ -391,7 +409,7 @@ async function loop(ctx: AgentCtx, t: Thread, board: string) {
     }
     t.messages.push({ role: 'assistant', content: r.content });
     const text = r.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n').trim();
-    const item: DisplayItem = { role: 'assistant', ...(text ? { text } : {}), cards: [] };
+    const item: DisplayItem = { role: 'assistant', ...(text ? { text } : {}), cards: [], steps: [] };
     if (r.stop_reason === 'refusal') {
       t.display.push({ role: 'assistant', text: 'I can’t help with that one — ask me about your loads, money, carriers, trucks or dispatchers.' });
       return;
@@ -405,11 +423,14 @@ async function loop(ctx: AgentCtx, t: Thread, board: string) {
     const results: ToolResult[] = [];
     for (const u of uses.filter((x) => !WRITE_TOOLS.has(x.name))) {
       try {
-        const out = await runRead(ctx, st, u.name, (u.input ?? {}) as Record<string, unknown>);
+        const input = (u.input ?? {}) as Record<string, unknown>;
+        const out = await runRead(ctx, st, u.name, input);
         results.push(asResult(u.id, out.data));
+        item.steps!.push(stepLabel(u.name, input, out.data));
         if (out.card) item.cards!.push(out.card);
       } catch (e) {
         results.push(asResult(u.id, { error: (e as Error).message }, true));
+        item.steps!.push(`⚠ ${u.name.replace(/_/g, ' ')} failed`);
       }
     }
     const writes = uses.filter((x) => WRITE_TOOLS.has(x.name));
@@ -420,7 +441,7 @@ async function loop(ctx: AgentCtx, t: Thread, board: string) {
       t.display.push(item);
       return;
     }
-    if (item.text || item.cards!.length) t.display.push(item);
+    if (item.text || item.cards!.length || item.steps!.length) t.display.push(item);
     t.messages.push({ role: 'user', content: results });
   }
   t.display.push({ role: 'assistant', text: 'That took too many steps — try asking in smaller parts.' });
@@ -455,6 +476,7 @@ export async function chat(ctx: AgentCtx, t: Thread, board: string, input: ChatI
   blocks.push({ type: 'text', text: input.text || (input.file ? 'Here is a document.' : '…') });
   t.messages.push({ role: 'user', content: blocks });
   t.display.push({ role: 'user', text: input.text, ...(input.file ? { file: input.file.name } : {}) });
+  t.title ??= (input.text || input.file?.name || 'New chat').slice(0, 80);
   await loop(ctx, t, board);
 }
 

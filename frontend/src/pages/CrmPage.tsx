@@ -5,7 +5,7 @@ import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { BoardMap } from '../components/crm/MapView'
 import { ReportsView } from '../components/crm/ReportsView'
-import { AskPanel } from '../components/crm/AskPanel'
+import { AiWorkspace } from '../components/crm/AiWorkspace'
 import { CompanySetup, SignIn, type InviteInfo } from '../components/crm/SignIn'
 import { Icon, type IconName } from '../components/Icon'
 import { BoardSkeleton } from '../components/Skeleton'
@@ -14,7 +14,7 @@ import { crm, CrmError, looksLikePlace, type Company, type CrmConfig, type CrmSt
 import { crmDemo } from '../lib/crmDemo'
 import type { BoardTool } from '../App'
 
-type Tab = 'loads' | 'map' | 'statements' | 'reports' | 'carriers' | 'trucks' | 'dispatchers'
+type Tab = 'ai' | 'loads' | 'map' | 'statements' | 'reports' | 'carriers' | 'trucks' | 'dispatchers'
 type Theme = 'light' | 'dark'
 
 const THEME_KEY = 'leadhaul.work.theme'
@@ -56,13 +56,20 @@ type NavItem = [Tab, string, IconName, number]
  * Signed in: the TMS layout — a dark sidebar that stays put (your company on top, the sections, tools, and you
  * at the bottom) and one work area that scrolls with the page, so there is a single scroll, never a box inside a box.
  */
-function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, company, demo, onLeave, banner, children, role, onAsk }: {
+function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, company, demo, onLeave, banner, children, role, onAskBar }: {
   theme: Theme; setTheme: (t: Theme) => void; items: NavItem[]; tab: Tab; setTab: (t: Tab) => void
   tool: BoardTool | null; setTool: (t: BoardTool | null) => void
   user: CrmUser; company?: Company; demo: boolean; onLeave: () => void; banner?: ReactNode; children: ReactNode; role?: 'owner' | 'dispatcher'
-  /** Opens "Ask AI" (only when AI is switched on). */
-  onAsk?: () => void
+  /** The "Ask AI" bar on top of every section (only when AI is on): sends the question to the AI Assistant. */
+  onAskBar?: (text: string) => void
 }) {
+  const bar = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!onAskBar) return
+    const onKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); bar.current?.focus() } }
+    addEventListener('keydown', onKey)
+    return () => removeEventListener('keydown', onKey)
+  }, [onAskBar])
   const org = company?.name || (demo ? 'Demo Dispatch LLC' : user.name)
   const initials = org.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('')
   return (
@@ -75,7 +82,7 @@ function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, co
         </div>
         <nav className="w-nav" aria-label="Sections">
           {items.map(([id, label, icon, n]) => (
-            <button key={id} title={label} className={!tool && tab === id ? 'on' : ''} aria-current={!tool && tab === id ? 'page' : undefined}
+            <button key={id} title={label} className={`${!tool && tab === id ? 'on' : ''} ${id === 'ai' ? 'w-nav-ai' : ''}`} aria-current={!tool && tab === id ? 'page' : undefined}
               onClick={() => { setTool(null); setTab(id); scrollTo(0, 0) }}>
               <Icon name={icon} size={16} /><span>{label}</span>{n > 0 && <em>{n}</em>}
             </button>
@@ -87,11 +94,7 @@ function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, co
           <button title="New MC leads" className={tool === 'leads' ? 'on' : ''} onClick={() => { setTool('leads'); scrollTo(0, 0) }}>
             <Icon name="zap" size={16} /><span>New MC leads</span>
           </button>
-          {onAsk && (
-            <button title="Ask AI about your board" onClick={onAsk}>
-              <span className="w-ai" aria-hidden="true">✦</span><span>Ask AI</span>
-            </button>
-          )}
+
         </nav>
         <div className="w-side-foot">
           <button className="w-nav-btn" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
@@ -108,7 +111,14 @@ function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, co
       </aside>
       <main className="w-main">
         {banner}
-        <div className="w-body">{children}</div>
+        {onAskBar && (tool || tab !== 'ai') && (
+          <form className="w-askbar" onSubmit={(e) => { e.preventDefault(); const v = bar.current?.value.trim(); if (v) { onAskBar(v); bar.current!.value = '' } }}>
+            <span className="w-askbar-ico" aria-hidden="true">✦</span>
+            <input ref={bar} placeholder="Ask AI or tell it what to do — “mark the TQL load paid”, “send invoices for delivered loads”…" aria-label="Ask AI" />
+            <kbd>⌘K</kbd>
+          </form>
+        )}
+        <div className={`w-body ${!tool && tab === 'ai' ? 'w-body-ai' : ''}`}>{children}</div>
       </main>
     </div>
   )
@@ -224,7 +234,9 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
     setState((s) => (s ? { ...s, loads: s.loads.map((x) => (x.id === tempId ? saved : x)) } : s))
     return saved
   }
-  const [asking, setAsking] = useState(false)
+  const [aiPrompt, setAiPrompt] = useState<{ text: string; send: boolean } | null>(null)
+  const [aiLoad, setAiLoad] = useState<number | null>(null)
+  const askAi = (text: string, send = true, loadId: number | null = null) => { setAiLoad(loadId); setAiPrompt({ text, send }); setTool(null); setOpenId(null); setTab('ai'); scrollTo(0, 0) }
 
   const closeLoad = useCallback(() => setOpenId(null), [])
   const closeNew = useCallback(() => setCreating(null), [])
@@ -283,7 +295,9 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
 
   const openLoad = openId == null ? null : state.loads.find((l) => l.id === openId) ?? null
 
+  const aiOn = !!config?.ai && !demo
   const items: NavItem[] = [
+    ...(aiOn ? [['ai', 'AI Assistant', 'spark', 0] as NavItem] : []),
     ['loads', 'Loads', 'file', state.loads.length],
     ['map', 'Map', 'map', state.loads.filter((l) => l.status === 'in_transit').length],
     ['statements', 'Statements', 'dollar', state.carriers.filter((c) => c.fee > 0).length],
@@ -296,7 +310,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
 
   return (
     <AppShell theme={theme} setTheme={setTheme} items={items} tab={tab} setTab={setTab} tool={tool} setTool={setTool} user={state.user} company={state.company}
-      demo={demo} onLeave={leave} banner={banner} role={state.me?.role} onAsk={config?.ai && !demo ? () => setAsking(true) : undefined}>
+      demo={demo} onLeave={leave} banner={banner} role={state.me?.role} onAskBar={aiOn ? (t) => askAi(t) : undefined}>
       {tool && <div className={`w-tool w-tool-${tool}`} ref={toolSlot} />}
       {!tool && tab === 'loads' && (
         <LoadsTable
@@ -339,6 +353,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           changed={() => void reload()}
           demo={demo}
           tracking={demo ? undefined : crm.trackingLink}
+          onAskAi={aiOn ? () => askAi('', false, openLoad.id) : undefined}
           saveCarrier={(c) => { optimistic((s) => ({ ...s, carriers: s.carriers.map((x) => (x.id === c.id ? c : x)) }), () => api.updateCarrier(c.id, c), `${c.name}’s fee saved`).catch(() => undefined) }}
         />
       )}
@@ -361,8 +376,10 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
       )}
       {!tool && tab === 'map' && <BoardMap state={state} theme={theme} openLoad={setOpenId} points={api.points} />}
       {!tool && tab === 'reports' && <ReportsView state={state} />}
-      {asking && <AskPanel state={state} loadId={openId} close={() => setAsking(false)} changed={() => void reload()}
-        openLoad={(id) => { setAsking(false); setTool(null); setOpenId(id) }} />}
+      {!tool && tab === 'ai' && aiOn && (
+        <AiWorkspace state={state} theme={theme} openLoad={setOpenId} changed={() => void reload()} prompt={aiPrompt} onPromptUsed={() => setAiPrompt(null)}
+          contextLoadId={aiLoad} firstName={state.user.name.split(' ')[0] || 'there'} />
+      )}
       {!tool && tab === 'statements' && <StatementsView state={state} toast={toast} />}
       {!tool && tab === 'trucks' && (
         <TrucksView

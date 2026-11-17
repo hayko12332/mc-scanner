@@ -701,6 +701,18 @@ export class CrmStore {
     return (rows[0]?.data as Thread | undefined) ?? null;
   }
 
+  /** The person's recent chats, newest first, for the history list. */
+  async aiThreads(ws: number, userId: number): Promise<{ id: string; title: string; updatedAt: string }[]> {
+    const { rows } = await this.pool.query(
+      `SELECT id, coalesce(data->>'title', 'Chat') AS title, updated_at FROM crm_ai_threads WHERE workspace_id = $1 AND user_id = $2
+        ORDER BY updated_at DESC LIMIT 30`, [ws, userId]);
+    return rows.map((r) => ({ id: String(r.id), title: String(r.title), updatedAt: new Date(r.updated_at).toISOString() }));
+  }
+
+  async deleteAiThread(ws: number, userId: number, id: string) {
+    await this.pool.query('DELETE FROM crm_ai_threads WHERE id = $1 AND workspace_id = $2 AND user_id = $3', [id, ws, userId]);
+  }
+
   async saveAiThread(ws: number, userId: number, t: Thread) {
     await this.pool.query(
       `INSERT INTO crm_ai_threads (id, workspace_id, user_id, data) VALUES ($1,$2,$3,$4)

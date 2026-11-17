@@ -158,9 +158,9 @@ export type AiCard =
   | { type: 'route'; from: string; to: string; miles: number; hours: number }
   | { type: 'link'; label: string; url: string }
   | { type: 'note'; text: string }
-export interface AiItem { role: 'user' | 'assistant'; text?: string; file?: string; cards?: AiCard[]; pending?: string[] }
+export interface AiItem { role: 'user' | 'assistant'; text?: string; file?: string; cards?: AiCard[]; pending?: string[]; steps?: string[] }
 export interface AiAction { id: string; tool: string; summary: string; status: 'pending' | 'done' | 'declined' | 'failed' }
-export interface AiView { threadId: string; items: AiItem[]; pending: AiAction[] }
+export interface AiView { threadId: string; title?: string; items: AiItem[]; pending: AiAction[] }
 /** A rate confirmation read by AI. */
 export interface RateConFields {
   isRateConfirmation: boolean; broker: string; brokerMc: string; brokerEmail: string; loadNumber: string; pickupDate: string; deliveryDate: string
@@ -255,6 +255,8 @@ export const crm = {
   aiChat: (v: { threadId?: string; text: string; file?: { name: string; data: string }; loadId?: number | null }) => call<AiView>('POST', '/ai/chat', v),
   aiDecide: (threadId: string, actionId: string, approve: boolean) => call<AiView>('POST', '/ai/decide', { threadId, actionId, approve }),
   aiThread: (id: string) => call<AiView>('GET', `/ai/thread/${encodeURIComponent(id)}`),
+  aiThreads: () => call<{ id: string; title: string; updatedAt: string }[]>('GET', '/ai/threads'),
+  aiDeleteThread: (id: string) => call('DELETE', `/ai/thread/${encodeURIComponent(id)}`),
   driverLink: (truckId: number) => call<{ url: string }>('POST', `/trucks/${truckId}/driver-link`),
   disconnectDriver: (truckId: number) => call('DELETE', `/trucks/${truckId}/driver`),
   trackingLink: (loadId: number) => call<{ url: string }>('POST', `/loads/${loadId}/tracking`),

@@ -64,7 +64,7 @@ function Pick({ label, value, options, onSave }: { label: string; value: string;
  * Everything about one load in a side panel: the trip (truck, lane, loaded and empty miles), the pay
  * (rate, accessorials, gross, RPM, dispatch fee) and billing (invoice and payment dates against 30-day terms).
  */
-export function LoadDrawer({ load, state, save, remove, close, miles, lane, check, theme, saveCarrier, docs, toast, changed, demo, tracking }: {
+export function LoadDrawer({ load, state, save, remove, close, miles, lane, check, theme, saveCarrier, docs, toast, changed, demo, tracking, onAskAi }: {
   load: Load
   state: CrmState
   save: (l: LoadInput) => void
@@ -83,6 +83,8 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
   demo: boolean
   /** Makes (or gives back) the broker's tracking link of a load; not in the demo. */
   tracking?: (loadId: number) => Promise<{ url: string }>
+  /** Opens the AI Assistant about this load (when AI is on). */
+  onAskAi?: () => void
 }) {
   const [busy, setBusy] = useState<'' | 'loaded' | 'empty'>('')
   const brokerCheck = useCheck(load.brokerMc ?? '', 'broker', check, savedCheck(state, load.brokerMc ?? '', 'broker'))
@@ -142,7 +144,10 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
             <h2>{load.broker || 'Load'}</h2>
             <p>{place(load.origin) || '—'} <span>→</span> {place(load.destination) || '—'}</p>
           </div>
-          <button className="ld-x" aria-label="Close" onClick={close}>×</button>
+          <span className="ld-head-r">
+            {onAskAi && <button className="ld-ai" onClick={onAskAi} title="Ask the AI Assistant about this load">✦ Ask AI</button>}
+            <button className="ld-x" aria-label="Close" onClick={close}>×</button>
+          </span>
         </header>
 
         <div className="ld-body">

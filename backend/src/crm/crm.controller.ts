@@ -299,6 +299,20 @@ export class CrmController {
     return aiView(t);
   }
 
+  /** The person's recent chats for the history list. */
+  @Get('ai/threads')
+  async aiThreads(@Req() req: Request) {
+    const s = await this.auth(req);
+    return this.store!.aiThreads(s.ws, s.user.id);
+  }
+
+  @Delete('ai/thread/:id')
+  async aiDeleteThread(@Req() req: Request, @Param('id') id: string) {
+    const s = await this.auth(req);
+    await this.store!.deleteAiThread(s.ws, s.user.id, text(id, 60));
+    return { ok: true };
+  }
+
   @Get('ai/thread/:id')
   async aiThread(@Req() req: Request, @Param('id') id: string) {
     const s = await this.auth(req);
@@ -831,7 +845,7 @@ export function boardText(st: { company: { name: string }; loads: Load[]; carrie
 
 /** What the chat panel shows: the conversation and the actions waiting for a decision. */
 function aiView(t: Thread) {
-  return { threadId: t.id, items: t.display, pending: t.pending.map(({ id, tool, summary, status }) => ({ id, tool, summary, status })) };
+  return { threadId: t.id, title: t.title ?? 'New chat', items: t.display, pending: t.pending.map(({ id, tool, summary, status }) => ({ id, tool, summary, status })) };
 }
 
 /** "3,4" → [3, 4] */
