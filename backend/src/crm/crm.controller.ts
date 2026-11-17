@@ -16,7 +16,10 @@ import type { CodePurpose } from './crm.store.js';
 import type { CompanyInput } from './crm.types.js';
 import { MilesService } from './miles.js';
 import { CompanyCheckService } from './company-check.service.js';
-import { aiEnabled, askBoard, readRateCon, type AskTurn } from './ai.js';
+import { aiEnabled, readRateCon } from './ai.js';
+import { boardContext, chat, decide, newThread, type AgentCtx, type Thread } from './ai-agent.js';
+import { LookupService } from '../fmcsa/lookup.service.js';
+import { parseLookupQuery } from '../fmcsa/lookup.query.js';
 import { TelegramService } from '../telegram/telegram.service.js';
 import { FILE_KINDS, type FileKind } from './crm.store.js';
 import { buildInvoicePdf, invoiceTotal, type InvoiceData } from './invoice.js';
@@ -63,7 +66,7 @@ export class CrmController {
   /** Miles are public (the demo uses them too), so each visitor gets a fair share of the free map services. */
   private readonly milesLimiter = new RateLimiter(150, 10 * 60_000);
 
-  constructor(private readonly checks: CompanyCheckService, private readonly telegram: TelegramService) {
+  constructor(private readonly checks: CompanyCheckService, private readonly telegram: TelegramService, private readonly lookup: LookupService) {
     const pool = db();
     this.store = pool ? new CrmStore(pool) : null;
   }
@@ -244,23 +247,91 @@ export class CrmController {
     }
   }
 
-  /** A question about the board, answered from the board's own data (an invited dispatcher's view only has their loads). */
-  @Post('ai/ask')
+  /**
+   * Ask AI: the assistant works the board with tools (finds and totals loads, checks MCs, miles) and proposes
+   * changes that run only after the user confirms them. The conversation is kept per user (crm_ai_threads).
+   * Body: { threadId?, text, file?: { name, mime, data (base64) }, loadId? }.
+   */
+  @Post('ai/chat')
   @HttpCode(200)
-  async aiAsk(@Req() req: Request, @Body() b: { question?: string; history?: unknown }) {
+  async aiChat(@Req() req: Request, @Body() b: { threadId?: string; text?: string; file?: { name?: string; data?: string }; loadId?: number }) {
     const s = await this.auth(req);
     if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
-    const question = text(b?.question, 1000);
-    if (!question) throw new BadRequestException('Ask a question');
+    const textIn = text(b?.text, 2000);
+    let file: { name: string; mime: string; data: Buffer } | null = null;
+    if (b?.file?.data) {
+      const data = Buffer.from(String(b.file.data), 'base64');
+      const mime = sniff(data);
+      if (!mime) throw new BadRequestException('Send a PDF or a photo (JPEG or PNG)');
+      if (data.length > 8 * 1024 * 1024) throw new BadRequestException('The file is over 8 MB');
+      file = { name: text(b.file.name, 120) || 'document', mime, data };
+    }
+    if (!textIn && !file) throw new BadRequestException('Write a message');
     if (!this.aiLimiter.take(`ws:${s.ws}`)) throw new HttpException('Too many AI requests this hour, try again later', 429);
-    const history = (Array.isArray(b?.history) ? b.history : []).slice(-8)
-      .map((t: { role?: string; text?: unknown }): AskTurn => ({ role: t?.role === 'assistant' ? 'assistant' : 'user', text: text(t?.text, 4000) }))
-      .filter((t) => t.text);
+    const t = (b?.threadId && (await this.store!.aiThread(s.ws, s.user.id, text(b.threadId, 60)))) || newThread();
+    if (t.messages.length > 120) throw new BadRequestException('This chat is long — start a new chat');
+    const ctx = this.agentCtx(s);
     try {
-      return { answer: await askBoard(boardText(await this.scopedState(s)), history, question) };
+      await chat(ctx, t, boardContext(await ctx.state(), s), { text: textIn, file, loadId: Number.isInteger(b?.loadId) ? b.loadId : null });
     } catch (e) {
+      await this.store!.saveAiThread(s.ws, s.user.id, t);
       throw new ServiceUnavailableException((e as Error).message);
     }
+    await this.store!.saveAiThread(s.ws, s.user.id, t);
+    return aiView(t);
+  }
+
+  /** The user confirms (or declines) one action the assistant proposed. */
+  @Post('ai/decide')
+  @HttpCode(200)
+  async aiDecide(@Req() req: Request, @Body() b: { threadId?: string; actionId?: string; approve?: boolean }) {
+    const s = await this.auth(req);
+    if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
+    const t = found(await this.store!.aiThread(s.ws, s.user.id, text(b?.threadId, 60)));
+    const ctx = this.agentCtx(s);
+    try {
+      await decide(ctx, t, boardContext(await ctx.state(), s), text(b?.actionId, 100), b?.approve === true);
+    } catch (e) {
+      await this.store!.saveAiThread(s.ws, s.user.id, t);
+      throw new ServiceUnavailableException((e as Error).message);
+    }
+    await this.store!.saveAiThread(s.ws, s.user.id, t);
+    return aiView(t);
+  }
+
+  @Get('ai/thread/:id')
+  async aiThread(@Req() req: Request, @Param('id') id: string) {
+    const s = await this.auth(req);
+    return aiView(found(await this.store!.aiThread(s.ws, s.user.id, text(id, 60))));
+  }
+
+  /** What the assistant may do: the board as this person sees it, and the same actions the board has (same rules). */
+  private agentCtx(s: Scope): AgentCtx {
+    const mine = <T extends { dispatcherId: number | null }>(l: T): T => (s.role === 'owner' ? l : { ...l, dispatcherId: s.dispatcherId });
+    return {
+      state: async () => this.scopedState(s),
+      check: (mc, role) => this.checks.check(mc, role),
+      lookup: async (q) => {
+        const parsed = parseLookupQuery(q, 'auto');
+        if (!parsed) return [];
+        const r = await this.lookup.lookup(q, parsed);
+        return r.profiles.slice(0, 5).map((p) => ({
+          name: p.legalName, dba: p.dbaName, mc: p.mc, dot: p.dot, usdot_status: p.usdotStatus, state: p.state, phone: p.phone, email: p.email,
+          power_units: p.powerUnits, drivers: p.drivers, added_on: p.addedOn, safety_rating: p.safetyRating,
+          authority: p.authority ? { common: p.authority.common, contract: p.authority.contract, broker: p.authority.broker, bipd_on_file: p.authority.bipdOnFile, bond_on_file: p.authority.bondOnFile } : null,
+        }));
+      },
+      lane: async (a, z) => { const r = await this.milesService.lane(a, z); return r && { miles: r.miles, hours: r.hours }; },
+      createLoad: (l) => this.store!.addLoad(s.ws, mine(l)),
+      updateLoad: async (id, l) => { await this.loadAccess(s, id); return this.store!.updateLoad(s.ws, id, mine(l)); },
+      sendInvoice: (id, to, attach) => this.loadAccess(s, id).then(() => this.emailInvoice(s, id, to, [], attach, true, '')),
+      addCarrier: async (c) => { if (s.role !== 'owner') throw new Error('Only the owner can add carriers here'); this.checkCarrierSoon(s.ws, c.mc); return this.store!.addCarrier(s.ws, c); },
+      trackingLink: async (id) => {
+        await this.loadAccess(s, id);
+        return `${config.publicUrl || 'https://haulpanel.com'}/#/track/${found(await this.store!.trackingToken(s.ws, id))}`;
+      },
+      attachFile: async (id, name, mime, data) => { await this.loadAccess(s, id); return this.store!.addFile(s.ws, id, { kind: 'ratecon', name, mime, data }); },
+    };
   }
 
   /** The board as this person may see it: the owner sees everything, an invited dispatcher only their own loads. */
@@ -556,14 +627,19 @@ export class CrmController {
   async sendInvoice(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() b: Record<string, unknown>) {
     const scope = await this.auth(req);
     await this.loadAccess(scope, id);
-    const { ws, user } = scope;
-    const to = normEmail(String(b.to ?? ''));
-    if (!validEmail(to)) throw new BadRequestException('Enter the broker’s billing email');
     const cc = (Array.isArray(b.cc) ? b.cc : []).map((x) => normEmail(String(x))).filter(validEmail).slice(0, 3);
+    const attach = (Array.isArray(b.attach) ? b.attach : []).map(Number).filter(Number.isInteger);
+    return { ok: true, ...(await this.emailInvoice(scope, id, String(b.to ?? ''), cc, attach, b.remind !== false, text(b.note, 1000))) };
+  }
+
+  /** Builds the invoice PDF (with the chosen documents) and emails it to the broker; replies go to the dispatcher. */
+  private async emailInvoice(scope: Scope, id: number, toRaw: string, cc: string[], attach: number[], remind: boolean, note: string) {
+    const { ws, user } = scope;
+    const to = normEmail(toRaw);
+    if (!validEmail(to)) throw new BadRequestException('Enter the broker’s billing email');
     if (!this.mailHourly.take(`invoice:${ws}`)) throw new HttpException('Too many invoices this hour, try again later', 429);
-    const { load, data, files } = await this.invoiceParts(ws, user, id, (Array.isArray(b.attach) ? b.attach : []).map(Number).filter(Number.isInteger));
+    const { load, data, files } = await this.invoiceParts(ws, user, id, attach);
     const pdf = await buildInvoicePdf(data, files);
-    const note = text(b.note, 1000);
     const lane = `${data.load.origin || '—'} → ${data.load.destination || '—'}`;
     const total = invoiceTotal(data).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
     const docs = files.map((f) => f.kind === 'pod' ? 'POD' : f.kind === 'bol' ? 'BOL' : f.kind === 'ratecon' ? 'rate confirmation' : f.name);
@@ -574,8 +650,8 @@ export class CrmController {
       html: `<p>Hello,</p><p>Please find attached invoice <b>${esc(data.number)}</b> for load <b>${esc(load.pro || String(load.id))}</b> (${esc(lane)}), <b>${total}</b>, due ${esc(data.due)}.${docs.length ? `<br>Attached in the same PDF: ${esc(docs.join(', '))}.` : ''}</p>${note ? `<p>${esc(note).replace(/\n/g, '<br>')}</p>` : ''}${data.remitTo ? `<p>Please remit payment to <b>${esc(data.remitTo)}</b>.</p>` : ''}<p>Thank you,<br>${esc(user.name || data.from.name)}<br>${esc(data.from.name)}${data.from.phone ? ` · ${esc(data.from.phone)}` : ''}</p>`,
       attachments: [{ filename: `Invoice-${data.number}.pdf`, content: pdf }],
     });
-    await this.store!.invoiceSent(ws, load, data.number, to, b.remind !== false, new Date().toISOString().slice(0, 10));
-    return { ok: true, number: data.number };
+    await this.store!.invoiceSent(ws, load, data.number, to, remind, new Date().toISOString().slice(0, 10));
+    return { number: data.number };
   }
 
   @Patch('loads/:id/invoice')
@@ -751,6 +827,11 @@ export function boardText(st: { company: { name: string }; loads: Load[]; carrie
     'TRUCKS: ' + (st.trucks.map((t) => `#${t.unit || '—'} ${t.driver}`).join('; ') || 'none'),
     'DISPATCHERS: ' + (st.dispatchers.map((d) => `${d.name} ${d.percent}%`).join('; ') || 'none'),
   ].join('\n');
+}
+
+/** What the chat panel shows: the conversation and the actions waiting for a decision. */
+function aiView(t: Thread) {
+  return { threadId: t.id, items: t.display, pending: t.pending.map(({ id, tool, summary, status }) => ({ id, tool, summary, status })) };
 }
 
 /** "3,4" → [3, 4] */

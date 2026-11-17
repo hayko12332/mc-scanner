@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import type pg from 'pg';
 import type { CompanyCheck } from './company-check.js';
+import type { Thread } from './ai-agent.js';
 import type { CompanyInput, CrmCarrier, CrmState, CrmUser, Dispatcher, FeeType, ImportRow, Load, LoadStatus, Truck } from './crm.types.js';
 
 const SESSION_DAYS = 60;
@@ -186,6 +187,14 @@ const SCHEMA = `
     load_id       BIGINT UNIQUE NOT NULL REFERENCES crm_loads(id) ON DELETE CASCADE,
     token         TEXT NOT NULL,
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+  );
+  -- Ask AI conversations (one per chat, per user)
+  CREATE TABLE IF NOT EXISTS crm_ai_threads (
+    id            TEXT PRIMARY KEY,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    user_id       BIGINT NOT NULL REFERENCES crm_users(id) ON DELETE CASCADE,
+    data          JSONB NOT NULL,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
   );
   CREATE TABLE IF NOT EXISTS crm_email_codes (
     email       TEXT NOT NULL,
@@ -682,6 +691,21 @@ export class CrmStore {
       miles: Number(r.loaded_miles ?? 0), company: String(r.company_name ?? ''), truck: r.unit ? String(r.unit) : '',
       position: r.lat == null || !['booked', 'in_transit'].includes(String(r.status)) ? null : toPosition({ ...r, truck_id: 0 }),
     };
+  }
+
+  // Ask AI conversations
+
+  async aiThread(ws: number, userId: number, id: string): Promise<Thread | null> {
+    if (!id) return null;
+    const { rows } = await this.pool.query('SELECT data FROM crm_ai_threads WHERE id = $1 AND workspace_id = $2 AND user_id = $3', [id, ws, userId]);
+    return (rows[0]?.data as Thread | undefined) ?? null;
+  }
+
+  async saveAiThread(ws: number, userId: number, t: Thread) {
+    await this.pool.query(
+      `INSERT INTO crm_ai_threads (id, workspace_id, user_id, data) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now() WHERE crm_ai_threads.workspace_id = $2 AND crm_ai_threads.user_id = $3`,
+      [t.id, ws, userId, JSON.stringify(t)]);
   }
 
   // FMCSA checks

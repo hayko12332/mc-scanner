@@ -361,7 +361,8 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
       )}
       {!tool && tab === 'map' && <BoardMap state={state} theme={theme} openLoad={setOpenId} points={api.points} />}
       {!tool && tab === 'reports' && <ReportsView state={state} />}
-      {asking && <AskPanel ask={(q, h) => { track('ai_ask'); return crm.aiAsk(q, h) }} close={() => setAsking(false)} />}
+      {asking && <AskPanel state={state} loadId={openId} close={() => setAsking(false)} changed={() => void reload()}
+        openLoad={(id) => { setAsking(false); setTool(null); setOpenId(id) }} />}
       {!tool && tab === 'statements' && <StatementsView state={state} toast={toast} />}
       {!tool && tab === 'trucks' && (
         <TrucksView

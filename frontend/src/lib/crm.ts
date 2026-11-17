@@ -150,6 +150,17 @@ export function carrierFee(c: Pick<CrmCarrier, 'feeType' | 'fee'> | undefined, l
 export const feeLabel = (c: Pick<CrmCarrier, 'feeType' | 'fee'> | undefined) =>
   !c || !c.fee ? 'No fee set' : c.feeType === 'flat' ? `${usd(c.fee)} / week` : `${c.fee}% of gross`
 export interface CrmConfig { googleClientId: string; devLogin: boolean; enabled: boolean; emailAuth?: boolean; ai?: boolean }
+/** Ask AI: the conversation as the panel shows it. */
+export type AiCard =
+  | { type: 'loads'; title: string; ids: number[] }
+  | { type: 'table'; title: string; columns: string[]; rows: (string | number)[][] }
+  | { type: 'check'; check: CompanyCheck }
+  | { type: 'route'; from: string; to: string; miles: number; hours: number }
+  | { type: 'link'; label: string; url: string }
+  | { type: 'note'; text: string }
+export interface AiItem { role: 'user' | 'assistant'; text?: string; file?: string; cards?: AiCard[]; pending?: string[] }
+export interface AiAction { id: string; tool: string; summary: string; status: 'pending' | 'done' | 'declined' | 'failed' }
+export interface AiView { threadId: string; items: AiItem[]; pending: AiAction[] }
 /** A rate confirmation read by AI. */
 export interface RateConFields {
   isRateConfirmation: boolean; broker: string; brokerMc: string; brokerEmail: string; loadNumber: string; pickupDate: string; deliveryDate: string
@@ -241,7 +252,9 @@ export const crm = {
   places: (q: string) => call<string[]>('GET', `/places?${new URLSearchParams({ q })}`),
   uploadFile: upload,
   aiRateCon: (file: Blob) => sendBytes<RateConFields>('/ai/ratecon', file),
-  aiAsk: (question: string, history: { role: 'user' | 'assistant'; text: string }[]) => call<{ answer: string }>('POST', '/ai/ask', { question, history }),
+  aiChat: (v: { threadId?: string; text: string; file?: { name: string; data: string }; loadId?: number | null }) => call<AiView>('POST', '/ai/chat', v),
+  aiDecide: (threadId: string, actionId: string, approve: boolean) => call<AiView>('POST', '/ai/decide', { threadId, actionId, approve }),
+  aiThread: (id: string) => call<AiView>('GET', `/ai/thread/${encodeURIComponent(id)}`),
   driverLink: (truckId: number) => call<{ url: string }>('POST', `/trucks/${truckId}/driver-link`),
   disconnectDriver: (truckId: number) => call('DELETE', `/trucks/${truckId}/driver`),
   trackingLink: (loadId: number) => call<{ url: string }>('POST', `/loads/${loadId}/tracking`),

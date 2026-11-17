@@ -8,9 +8,9 @@ import type { FileKind } from './crm.store.js';
 // photo, and answer the owner's questions about their own board. Switched on by ANTHROPIC_API_KEY (Render env);
 // without it every feature stays hidden and nothing is sent anywhere.
 
-const MODEL = 'claude-opus-5-5';
+export const MODEL = 'claude-opus-5-5';
 /** If a request is declined by a safety classifier, the API retries it on a fallback model by itself. */
-const BETAS: Anthropic.Beta.AnthropicBeta[] = ['server-side-fallback-2026-07-01'];
+export const BETAS: Anthropic.Beta.AnthropicBeta[] = ['server-side-fallback-2026-07-01'];
 
 export const aiEnabled = () => !!process.env.ANTHROPIC_API_KEY;
 
@@ -35,7 +35,7 @@ const DocType = z.object({
 });
 
 let client: Anthropic | null = null;
-const api = () => (client ??= new Anthropic({ maxRetries: 2, timeout: 120_000 }));
+export const api = () => (client ??= new Anthropic({ maxRetries: 2, timeout: 120_000 }));
 /** Tests swap in a client with a fake fetch. */
 export const setAiClient = (c: Anthropic | null) => { client = c; };
 const logger = new Logger('AI');
@@ -48,7 +48,7 @@ function fileBlock(data: Buffer, mime: string): Anthropic.Beta.BetaContentBlockP
 }
 
 /** Turns API errors into messages a dispatcher can act on. */
-function friendly(e: unknown): Error {
+export function friendly(e: unknown): Error {
   if (e instanceof Anthropic.RateLimitError) return new Error('AI is busy right now, try again in a minute');
   if (e instanceof Anthropic.AuthenticationError) return new Error('AI is not set up correctly (API key)');
   if (e instanceof Anthropic.BadRequestError) { logger.warn(`AI request: ${e.message}`); return new Error('AI could not read this file'); }

@@ -2916,3 +2916,52 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 @keyframes ask-dot { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
 .ask-form { gap: 8px; align-items: flex-end; }
 .ask-form textarea { flex: 1; resize: none; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+
+/* Ask AI: cards, actions to confirm, composer */
+.ld.ask { width: min(620px, 100vw); }
+.ld.ask.drag { outline: 2px dashed #7c3aed; outline-offset: -8px; }
+.ask-head-r { display: flex; align-items: center; gap: 6px; }
+.ask-start p { margin: 0 0 10px; color: var(--muted); line-height: 1.5; }
+.ask-sugg { display: grid; gap: 6px; }
+.work .ask-sugg button { justify-content: flex-start; text-align: left; padding: 9px 12px; background: var(--surface); }
+.ask-ai { display: grid; gap: 8px; align-self: stretch; }
+.ask-msg p { margin: 0 0 6px; } .ask-msg p:last-child { margin-bottom: 0; }
+.ask-msg ul, .ask-msg ol { margin: 4px 0 6px; padding-left: 20px; }
+.ask-msg code { padding: 1px 5px; border-radius: 4px; background: var(--surface); font-size: 12px; }
+.ask-msg .ask-h { font-weight: 700; }
+.ask-msg.assistant { max-width: 100%; white-space: normal; }
+.ask-file { display: block; margin-bottom: 4px; font-size: 12px; opacity: 0.9; }
+.ask-card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.ask-card-h { padding: 8px 12px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 12.5px; background: var(--surface-2); }
+.ask-card-empty { margin: 0; padding: 10px 12px; color: var(--muted); }
+.ask-loads { margin: 0; padding: 0; list-style: none; }
+.ask-loads li + li { border-top: 1px solid var(--border); }
+.work .ask-loads button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: 0; border-radius: 0; background: none; color: var(--text); text-align: left; }
+.work .ask-loads button:hover { background: var(--row-hover); }
+.ask-l-main { display: grid; flex: 1; min-width: 0; }
+.ask-l-main b, .ask-l-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-l-main small, .ask-l-r small { color: var(--muted); font-size: 11.5px; }
+.ask-l-r { display: grid; text-align: right; font-variant-numeric: tabular-nums; }
+.ask-more { margin: 6px 12px 8px; }
+.ask-table-wrap { overflow-x: auto; }
+.ask-table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.ask-table th, .ask-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.ask-table th { color: var(--muted); font-weight: 600; font-size: 11.5px; }
+.ask-table .num { text-align: right; }
+.ask-table tr:last-child td { border-bottom: 0; }
+.ask-route, .ask-note { padding: 9px 12px; font-size: 13px; }
+.ask-note { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.ask-card .ck-box { padding: 10px 12px; }
+.ask-action { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, #7c3aed 40%, var(--border)); border-radius: 10px; background: color-mix(in srgb, #7c3aed 6%, var(--surface)); }
+.ask-action-t { flex: 1; min-width: 220px; font-size: 13px; font-weight: 500; }
+.ask-action-b { display: flex; gap: 6px; margin-left: auto; }
+.ask-action em { font-style: normal; font-size: 12.5px; color: var(--muted); }
+.ask-action.done { border-color: transparent; background: var(--ok-soft); } .ask-action.done em { color: var(--ok); }
+.ask-action.declined { opacity: 0.6; } .ask-action.failed em { color: var(--bad); }
+.ask-busy span { margin-left: 6px; color: var(--muted); font-size: 12.5px; }
+.ask-err { margin: 0; color: var(--bad); font-size: 12.5px; }
+.ask-form { flex-direction: column; align-items: stretch; }
+.ask-compose { display: flex; align-items: flex-end; gap: 8px; }
+.work .ask-clip { padding: 7px 9px; background: var(--surface); font-size: 15px; }
+.ask-chip { display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border-radius: 99px; background: var(--surface-2); font-size: 12px; }
+.work .ask-chip button { padding: 0 6px; border: 0; background: none; color: var(--muted); }
