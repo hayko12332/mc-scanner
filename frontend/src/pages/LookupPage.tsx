@@ -121,6 +121,14 @@ export function LookupPage({ hash, copy, navigate, embedded }: { hash: string; c
   const [result, setResult] = useState<LookupResult | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // FMCSA's open-data API sometimes takes 20–40 s; say so instead of a silent spinner.
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    setSlow(false)
+    if (!loading) return
+    const t = setTimeout(() => setSlow(true), 6000)
+    return () => clearTimeout(t)
+  }, [loading])
 
   // The URL is the source of truth, so contact links, back/forward and shared links all work.
   useEffect(() => {
@@ -203,6 +211,12 @@ export function LookupPage({ hash, copy, navigate, embedded }: { hash: string; c
       </section>
 
       {!q && <WhatYouGet />}
+      {loading && slow && (
+        <p className="result-summary muted" role="status">
+          FMCSA is answering slowly right now — still searching, this can take up to a minute. Searches you have
+          already made open instantly.
+        </p>
+      )}
       {loading && !result && <CompanySkeleton />}
 
       {error && <p className="panel error">{error}</p>}

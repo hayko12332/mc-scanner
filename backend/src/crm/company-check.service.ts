@@ -28,7 +28,8 @@ export class CompanyCheckService implements OnApplicationBootstrap, OnModuleDest
     if (hit && Date.now() - hit.at < 30 * 60_000) return hit.check;
     const parsed = parseLookupQuery(digits, 'mc');
     if (!parsed) return null;
-    const result = await this.lookup.lookup(digits, parsed);
+    // Monitoring needs current data: a saved search result older than this cache is asked again.
+    const result = await this.lookup.lookup(digits, parsed, { maxAgeMs: 30 * 60_000 });
     const profile = pickProfile(result.profiles, Number(digits));
     const check = profile ? checkCompany(profile, role) : null;
     this.cache.set(key, { at: Date.now(), check });
