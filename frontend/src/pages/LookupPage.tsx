@@ -9,6 +9,7 @@ import { track } from '../lib/analytics'
 import { entityLabel } from '../lib/carrier'
 import { formatPhone } from '../lib/format'
 import { checkSafer } from '../lib/safer'
+import { describeQuery, parseLookupQuery } from '../lib/lookupQuery'
 import type { CarrierProfile, LookupResult, LookupType, SaferChecked } from '../types'
 
 const TYPES: { value: LookupType; label: string }[] = [
@@ -104,6 +105,19 @@ function ProfileCard({ p, expanded, onCopy }: { p: CarrierProfile; expanded: boo
   )
 }
 
+/** Says what the search box will look for (MC, USDOT, email or phone) as the person types, and while it searches. */
+function SearchHint({ input, type, loading, q, qType }: { input: string; type: LookupType; loading: boolean; q: string; qType: LookupType }) {
+  const running = loading ? parseLookupQuery(q, qType) : null
+  if (running) return <p className="search-hint busy" role="status"><span className="spinner" /> Searching FMCSA by {describeQuery(running)}…</p>
+  if (!input.trim()) return <p className="search-hint">Type an MC, USDOT, email or phone — we detect which one it is.</p>
+  const p = parseLookupQuery(input, type)
+  if (!p) {
+    const want = type === 'auto' ? 'an MC, USDOT, email or 10-digit phone' : type === 'dot' ? 'a USDOT number' : type === 'mc' ? 'an MC number' : type === 'email' ? 'an email' : 'a 10-digit phone'
+    return <p className="search-hint bad">This doesn’t look like {want}.</p>
+  }
+  return <p className="search-hint ok">Will search by <b>{describeQuery(p)}</b>{p.kinds.length > 1 ? ' — a bare number can be either; pick MC or USDOT below to narrow it' : ''}</p>
+}
+
 function readHash(hash: string): { q: string; type: LookupType } {
   const params = new URLSearchParams(hash.split('?')[1] ?? '')
   const type = params.get('type') as LookupType | null
@@ -186,6 +200,7 @@ export function LookupPage({ hash, copy, navigate, embedded }: { hash: string; c
               {loading ? <><span className="spinner" /> Searching…</> : <>Search<Icon name="arrow" size={16} /></>}
             </button>
           </form>
+          <SearchHint input={input} type={inputType} loading={loading} q={q} qType={type} />
           <div className="search-meta">
             <div className="segmented" role="radiogroup" aria-label="Search as">
               {TYPES.map((t) => (
