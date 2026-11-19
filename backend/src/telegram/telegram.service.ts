@@ -361,8 +361,7 @@ export class TelegramService implements OnApplicationBootstrap {
     const keyboard = {
       inline_keyboard: [
         [{ text: '⚡ Get new MC leads', web_app: { url: this.viewUrl('leads') } }],
-        [{ text: '🔎 Check a company · MC · USDOT · email · phone', web_app: { url: this.viewUrl('lookup') } }],
-        [{ text: '🌐 Website', url: this.siteUrl }],
+        [{ text: '🔎 Check a company', web_app: { url: this.viewUrl('lookup') } }, { text: '🌐 Website', url: this.siteUrl }],
         [{ text: '✨ Features', callback_data: 'features' }, { text: '💡 Suggest a feature', callback_data: 'suggest' }],
         ...(this.supportEnabled ? [[{ text: '🆘 Support — ask a question', callback_data: 'support' }]] : []),
         ...this.groupRow(),
