@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { StoredEvent } from './analytics.types.js';
-import { device, flag, OwnerNotifier } from './owner-notifier.js';
+import { device, flag, OwnerNotifier, searchedBy } from './owner-notifier.js';
 
 const OWNER = 111;
 const ANDROID = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 Chrome/150 Mobile Safari/537.36';
@@ -44,12 +44,20 @@ describe('OwnerNotifier', () => {
   it('reports the first scan and lookup of a visitor only once', () => {
     const { n } = notifier();
     const scan = ev('scan_start', { from: '986552', to: null });
-    const lookup = ev('lookup', { q: '986552', results: 2 });
+    const lookup = ev('lookup', { q: '986552', type: 'auto', kinds: 'mc+dot', results: 2 });
     expect(n.siteAlerts([scan, lookup], false)).toEqual([
       expect.stringContaining('скан с MC 986552'),
-      expect.stringContaining('Ищет компанию: 986552 (найдено: 2)'),
+      expect.stringContaining('Ищет компанию по MC или USDOT: 986552 (найдено: 2)'),
     ]);
     expect(n.siteAlerts([scan, lookup], false)).toEqual([]);
+  });
+
+  it('says what a lookup searched by: email, phone, MC or USDOT', () => {
+    expect(searchedBy({ kinds: 'email' })).toBe('по email');
+    expect(searchedBy({ kinds: 'phone' })).toBe('по телефону');
+    expect(searchedBy({ kinds: 'dot', type: 'dot' })).toBe('по USDOT');
+    expect(searchedBy({ type: 'mc' })).toBe('по MC'); // older events had no kinds
+    expect(searchedBy({})).toBe('');
   });
 
   it('never reports the owner, by browser or by Telegram account', () => {

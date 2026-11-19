@@ -11,6 +11,14 @@ export interface NotifierOptions {
 }
 
 /** Actions reported once per visitor (per server run), besides the first visit itself. */
+/** "по MC или USDOT", "по email", "по телефону" — from what the page searched (kinds) or the type the person picked. */
+export function searchedBy(p: Record<string, unknown>): string {
+  const name: Record<string, string> = { mc: 'MC', dot: 'USDOT', email: 'email', phone: 'телефону' };
+  const kinds = String(p.kinds ?? '').split('+').map((k) => name[k]).filter(Boolean);
+  const picked = p.type && p.type !== 'auto' ? name[String(p.type)] : '';
+  return kinds.length ? `по ${kinds.join(' или ')}` : picked ? `по ${picked}` : '';
+}
+
 const FIRST_ACTIONS = new Set(['leads_start', 'scan_start', 'lookup', 'csv_export', 'crm_signup', 'crm_verified', 'crm_demo', 'demo_video']);
 const MAX_REMEMBERED = 5000;
 
@@ -76,7 +84,7 @@ export class OwnerNotifier {
       if (!FIRST_ACTIONS.has(e.event) || !this.remember(`${e.visitorId}:${e.event}`)) continue;
       const p = e.props;
       if (e.event === 'scan_start') texts.push(`▶️ Запустил скан с MC ${p.from}${p.to ? ` до ${p.to}` : ''}\n${who(e)}`);
-      if (e.event === 'lookup') texts.push(`🔎 Ищет компанию: ${p.q} (найдено: ${p.results})\n${who(e)}`);
+      if (e.event === 'lookup') texts.push(`🔎 Ищет компанию ${searchedBy(p)}: ${p.q} (найдено: ${p.results})\n${who(e)}`);
       if (e.event === 'leads_start') texts.push(`⚡ Загружает New MC leads за ${p.days} дн.\n${who(e)}`);
       if (e.event === 'csv_export') texts.push(`⬇️ Экспорт ${String(p.format ?? 'csv').toUpperCase()}: ${p.rows} перевозчиков\n${who(e)}`);
       if (e.event === 'crm_signup') texts.push(`🆕 Регистрация в Dispatch: ${p.company || 'без названия'}${p.mc ? ` (MC ${p.mc})` : ''} — ждёт код из письма\n${who(e)}`);
