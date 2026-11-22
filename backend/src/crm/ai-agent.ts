@@ -5,6 +5,8 @@ import type { CompanyCheck } from './company-check.js';
 import type { CarrierInput, LoadInput } from './crm.store.js';
 import type { CrmCarrier, CrmState, Load, LoadStatus } from './crm.types.js';
 import { LOAD_STATUSES } from './crm.types.js';
+import { rankTrucks, type TruckSpot } from './inbox/match.js';
+import { PlacesService } from './places.js';
 
 // The AI is the board's main screen: it works the board with tools (loads, totals, FMCSA checks, miles), shows
 // results as cards, and does the work itself. Board changes (new load, status, money, new carrier) run right away
@@ -88,6 +90,7 @@ function runningLabel(name: string, i: Record<string, unknown>): string {
   if (name === 'route_miles') return `Routing ${String(i.from)} → ${String(i.to)}`;
   if (name === 'tracking_link') return 'Making a tracking link';
   if (name === 'fleet_status') return 'Checking where the trucks are';
+  if (name === 'match_trucks') return i.load_id ? `Matching trucks to load #${String(i.load_id)}` : 'Matching trucks to loads';
   if (name === 'create_load') return 'Adding the load';
   if (name === 'update_load') return `Updating load #${String(i.id)}`;
   if (name === 'add_carrier') return `Adding carrier ${String(i.name ?? '')}`;
@@ -108,6 +111,7 @@ function stepDone(name: string, i: Record<string, unknown>, data: unknown): { la
   if (name === 'lookup_company') return { label: `Looked up “${String(i.query)}” in FMCSA`, detail: `${(d.results as unknown[] | undefined)?.length ?? 0} found` };
   if (name === 'route_miles') return { label: `Routed ${String(i.from)} → ${String(i.to)}`, detail: d.miles ? `${Number(d.miles).toLocaleString('en-US')} mi · ~${Math.round(Number(d.hours))} h` : undefined };
   if (name === 'tracking_link') return { label: 'Made a tracking link' };
+  if (name === 'match_trucks') return { label: 'Matched trucks', detail: Array.isArray(d.loads) ? `${d.loads.length} ${d.loads.length === 1 ? 'load' : 'loads'}` : undefined };
   if (name === 'fleet_status') return { label: 'Checked the fleet', detail: Array.isArray(d.trucks) ? `${d.trucks.length} ${d.trucks.length === 1 ? 'truck' : 'trucks'}` : undefined };
   if (name === 'create_load') return { label: 'Added the load', detail: str(i.broker) && `${str(i.broker)} · ${str(i.origin)} → ${str(i.destination)}` };
   if (name === 'update_load') return { label: `Updated load #${String(i.id)}`, detail: Object.keys(i).filter((k) => k !== 'id').map((k) => k.replace(/_/g, ' ')).join(', ') };
@@ -199,6 +203,11 @@ const TOOL_DEFS: Anthropic.Beta.BetaTool[] = [
     input_schema: obj({ truck: { type: 'string', description: 'Unit number or driver name; empty = all trucks' } }),
   },
   {
+    name: 'match_trucks',
+    description: 'Which truck fits a load best. For every truck: empty miles to the pickup (estimate) from where it is now (ELD or driver’s Telegram), from where its current load delivers, or — with no live location — from its last delivery; when it is free; driver’s hours left. Give load_id, or leave it out for every booked load without a truck. Shown as a table card. To put the truck on the load, call update_load with truck.',
+    input_schema: obj({ load_id: N }),
+  },
+  {
     name: 'tracking_link',
     description: 'The broker tracking link of a load (a page for the broker with the truck on the lane, no money). Only when the user asks for a link to share; to show a map here, use route_miles.',
     input_schema: obj({ load_id: N }, ['load_id']),
@@ -265,7 +274,7 @@ export function invalidInput(name: string, input: unknown): string | null {
   return null;
 }
 
-const SYSTEM = `You are HaulPanel's assistant inside a dispatch company's TMS board. The TMS adds a <board_summary> to the user's message whenever the board changes (company, today's date, who the user is, carriers, trucks, dispatchers); it is accurate, and the newest one is current. You work the board for the user: find and total their loads, check brokers and carriers with FMCSA, look up companies, get miles and routes on a map, build tables and charts, see where trucks are and their drivers' hours (connected ELD or Telegram), make broker tracking links, read rate cons and other documents, and do the work (create or change loads, mark paid, add carriers, send invoices to brokers or factoring, email brokers about loads). Before saying you can't do something, check the tools: if a tool does it, use it.
+const SYSTEM = `You are HaulPanel's assistant inside a dispatch company's TMS board. The TMS adds a <board_summary> to the user's message whenever the board changes (company, today's date, who the user is, carriers, trucks, dispatchers); it is accurate, and the newest one is current. You work the board for the user: find and total their loads, check brokers and carriers with FMCSA, look up companies, get miles and routes on a map, build tables and charts, see where trucks are and their drivers' hours (connected ELD or Telegram), pick the best truck for a load, make broker tracking links, read rate cons and other documents, and do the work (create or change loads, mark paid, add carriers, send invoices to brokers or factoring, email brokers about loads). Before saying you can't do something, check the tools: if a tool does it, use it.
 
 Rules:
 - Get every number from the tools; never guess or invent loads, amounts or companies. If the data isn't there, say what's missing.
@@ -273,7 +282,7 @@ Rules:
 - Invoices: if the load's carrier uses a factoring company, the packet goes to the factor (send_to_factoring), not to the broker, unless the user says otherwise.
 - Load boards: you cannot search DAT, Truckstop or other load boards yourself and must never say you did. When the user pastes postings or sends a screenshot of a load board, read every posting (broker, email, lane, date, rate, ref #) and write each broker with email_broker; use fleet_status to say where the truck is and when it's empty if it helps. Postings without an email: list them with their phone so the user can call.
 - Don't narrate before using tools ("Let me check…"); the user sees each step live. Write the answer once the work is done.
-- Start the answer with one bold line that says the result ("**3 invoices ready — $6,450.**"), then the 1–3 key numbers or reasons, then what to do next if useful. Tool results appear to the user as cards (load lists, tables, charts, checks, maps); don't repeat them row by row. You can show maps and charts: route_miles draws a lane on a map, fleet_status shows where the trucks are, summarize with a group_by draws a bar chart. Never say you can't draw or show a map, chart or graph.
+- Start the answer with one bold line that says the result ("**3 invoices ready — $6,450.**"), then the 1–3 key numbers or reasons, then what to do next if useful. Tool results appear to the user as cards (load lists, tables, charts, checks, maps); don't repeat them row by row. You can show maps and charts: route_miles draws a lane on a map, fleet_status shows where the trucks are, summarize with a group_by draws a bar chart, match_trucks ranks the trucks for a load. Never say you can't draw or show a map, chart or graph.
 - Gross = rate + detention + layover + TONU + other (lumper is a reimbursement). RPM = gross / loaded miles; all-in includes empty miles. Overdue = invoiced over 30 days ago and unpaid. Weeks run Monday–Sunday.
 - If a rate confirmation (PDF or photo) is sent, read it and call create_load with what it says; mention anything unclear.
 - Be brief and practical, like an experienced dispatcher. Answer in the language the user writes in.`;
@@ -465,6 +474,7 @@ async function runRead(ctx: AgentCtx, st: St, name: string, i: Record<string, un
   }
   if (name === 'summarize') return summarize(st, i);
   if (name === 'fleet_status') return fleetStatus(st, i);
+  if (name === 'match_trucks') return matchTrucks(st, i);
   if (name === 'get_load') {
     const l = st.loads.find((x) => x.id === num(i.id));
     if (!l) return { data: { error: `No load #${String(i.id)} on this board` } };
@@ -804,6 +814,55 @@ const ago = (at: string | null | undefined) => {
 };
 
 /** Every truck: last known place (ELD or Telegram), speed, driver's HOS clocks and the load it's on. */
+const places = new PlacesService();
+/** A load's delivery day, estimated from its pickup and miles (about 500 a day). */
+const deliveryDay = (l: Load) => addDays(l.date, Math.max(1, Math.ceil((l.loadedMiles || 500) / 500)));
+
+/** Each truck as the matcher needs it: live position, the load it's on, its last drop. */
+function truckSpots(st: St): TruckSpot[] {
+  return st.trucks.map((t) => {
+    const e = st.eld?.find((u) => u.truckId === t.id && u.lat != null && u.at);
+    const p = st.positions?.find((x) => x.truckId === t.id);
+    const useEld = !!e && (!p || e.at! >= p.at);
+    const cur = currentLoad(st.loads, t.id);
+    const last = st.loads.filter((l) => l.truckId === t.id && ['delivered', 'invoiced', 'paid'].includes(l.status)).sort((a, b) => b.date.localeCompare(a.date))[0];
+    return {
+      id: t.id, unit: t.unit, driver: e?.driver || t.driver,
+      at: useEld ? { lat: e!.lat!, lon: e!.lon!, when: ago(e!.at), source: 'ELD' } : p ? { lat: p.lat, lon: p.lon, when: ago(p.at), source: 'driver’s Telegram' } : null,
+      current: cur ? { id: cur.id, place: places.find(cur.destination), name: cur.destination, date: deliveryDay(cur) } : null,
+      lastDrop: last ? { place: places.find(last.destination), name: last.destination, date: deliveryDay(last) } : null,
+      driveLeftMin: e?.hos?.driveLeftMin ?? null,
+    };
+  });
+}
+
+/** Which truck fits each load (one load, or every booked load without a truck). */
+function matchTrucks(st: St, i: Record<string, unknown>): { data: unknown; card?: Card } {
+  const id = num(i.load_id);
+  const loads = id ? st.loads.filter((l) => l.id === id) : st.loads.filter((l) => l.status === 'booked' && l.truckId == null).slice(0, 10);
+  if (id && !loads.length) return { data: { error: `No load #${id} on this board` } };
+  if (!loads.length) return { data: { loads: [], note: 'Every booked load already has a truck.' } };
+  if (!st.trucks.length) return { data: { error: 'There are no trucks on the board yet — add them on the Trucks page.' } };
+  const spots = truckSpots(st);
+  const out = loads.map((l) => {
+    const pickup = places.find(l.origin);
+    const ranked = rankTrucks({ id: l.id, pickup, date: l.date }, spots);
+    return {
+      load: { id: l.id, load_number: l.pro, broker: l.broker, lane: `${l.origin} → ${l.destination}`, pickup_date: l.date, current_truck: names(st).truck(l.truckId) || null },
+      pickup_found: !!pickup,
+      trucks: ranked.map((c) => ({ truck: c.unit ? `#${c.unit}` : `truck ${c.truckId}`, driver: c.driver, empty_miles_to_pickup: c.deadhead, from: c.from, free_on: c.freeOn, drive_left: hm(c.driveLeftMin) || null, can_make_pickup: c.fits, note: c.note })),
+    };
+  });
+  const rows = out.flatMap((o) => o.trucks.slice(0, 3).map((t, k) => [
+    k === 0 ? `#${o.load.load_number || o.load.id} ${o.load.lane}` : '', `${t.truck} ${t.driver}`.trim(),
+    t.empty_miles_to_pickup == null ? '—' : `~${t.empty_miles_to_pickup.toLocaleString('en-US')} mi`, t.from || '—', t.can_make_pickup ? (t.free_on ? `from ${t.free_on}` : 'now') : `busy until ${t.free_on}`, t.drive_left ?? '—',
+  ]));
+  return {
+    data: { loads: out, how: 'Empty miles are straight-line × 1.2 estimates. Trucks without a live location are placed at their current load’s delivery or their last delivery.' },
+    card: { type: 'table', title: `Trucks for ${out.length === 1 ? `load #${out[0].load.load_number || out[0].load.id}` : `${out.length} loads`}`, columns: ['Load', 'Truck', 'Empty to pickup', 'From', 'Free', 'Drive left'], rows },
+  };
+}
+
 function fleetStatus(st: St, i: Record<string, unknown>): { data: unknown; card?: Card } {
   const q = lc(str(i.truck).replace(/^#/, ''));
   const trucks = st.trucks.filter((t) => !q || lc(t.unit) === q || lc(t.unit).includes(q) || lc(t.driver).includes(q));

@@ -87,3 +87,48 @@ export function inquiry(p: PostingFields, m: Match | null, co: { name: string; m
     body: `Hello${first ? ` ${first}` : ''},\n\nIs your load ${lane}${date}${p.ref ? ` (ref ${p.ref})` : ''}${p.equipment ? `, ${p.equipment}` : ''} still available?${truck}${rate}\n\nThank you,\n${[me, co.name, co.mc && `MC ${co.mc}`, co.phone].filter(Boolean).join('\n')}`,
   };
 }
+
+/** A truck for one load (the AI's "which truck fits"): where it would start from, empty miles, when it's free. */
+export interface Candidate {
+  truckId: number;
+  unit: string;
+  driver: string;
+  /** Empty miles to the pickup (estimate), null when the truck's whereabouts are unknown. */
+  deadhead: number | null;
+  from: string;
+  /** The day it's free (delivery of its current load), or null if it's free now. */
+  freeOn: string | null;
+  driveLeftMin: number | null;
+  /** False when it can't make the pickup (its current load delivers after the pickup day). */
+  fits: boolean;
+  note: string;
+}
+
+export interface TruckSpot {
+  id: number; unit: string; driver: string;
+  /** Live position (ELD or the driver's Telegram) and how old it is. */
+  at: (Pt & { when: string; source: string }) | null;
+  /** The load it's on now (in transit, or the next booked one). */
+  current: { id: number; place: Pt | null; name: string; date: string } | null;
+  /** Its last delivered load's drop, a guess of where it is when nothing else is known. */
+  lastDrop: { place: Pt | null; name: string; date: string } | null;
+  driveLeftMin: number | null;
+}
+
+/** Every truck for a load, best first: free trucks by empty miles, then busy ones that can't make it, then unknown. */
+export function rankTrucks(load: { id: number; pickup: Pt | null; date: string }, trucks: TruckSpot[]): Candidate[] {
+  const out = trucks.map((t): Candidate => {
+    const base = { truckId: t.id, unit: t.unit, driver: t.driver, driveLeftMin: t.driveLeftMin };
+    const cur = t.current && t.current.id !== load.id ? t.current : null;
+    const miles = (p: Pt | null) => (p && load.pickup ? Math.round(straightMiles(p, load.pickup) * ROAD) : null);
+    if (cur) {
+      const fits = !load.date || cur.date <= load.date;
+      return { ...base, deadhead: miles(cur.place), from: `delivery in ${cur.name}`, freeOn: cur.date, fits, note: fits ? `on load #${cur.id} until ${cur.date}` : `busy on load #${cur.id} until ${cur.date}, after this pickup` };
+    }
+    if (t.at) return { ...base, deadhead: miles(t.at), from: `${t.at.source} location`, freeOn: null, fits: true, note: `location ${t.at.when}` };
+    if (t.lastDrop) return { ...base, deadhead: miles(t.lastDrop.place), from: `last delivery in ${t.lastDrop.name} (${t.lastDrop.date})`, freeOn: null, fits: true, note: 'no live location: estimated from its last delivery' };
+    return { ...base, deadhead: null, from: '', freeOn: null, fits: true, note: 'no location and no past loads' };
+  });
+  const rank = (c: Candidate) => (!c.fits ? 2 : c.deadhead == null ? 1 : 0);
+  return out.sort((a, b) => rank(a) - rank(b) || (a.deadhead ?? 1e9) - (b.deadhead ?? 1e9));
+}

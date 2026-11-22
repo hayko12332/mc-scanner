@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fit, inquiry, postingKey, type TruckNow } from './match.js';
+import { rankTrucks, type TruckSpot, fit, inquiry, postingKey, type TruckNow } from './match.js';
 import { htmlText, type PostingFields } from './read-email.js';
 
 const P = (x: Partial<PostingFields>): PostingFields => ({
@@ -94,5 +94,24 @@ describe('fetching a received email from Resend', () => {
     expect(e.attachments[0]).toMatchObject({ filename: 'rc.pdf', contentType: 'application/pdf' });
     expect(e.attachments[0].content.toString()).toBe('%PDF');
     expect(calls[0]).toBe('https://api.resend.com/emails/receiving/e1');
+  });
+});
+
+describe('rankTrucks', () => {
+  const dallas = { lat: 32.78, lon: -96.8 }, houston = { lat: 29.76, lon: -95.37 }, atlanta = { lat: 33.75, lon: -84.39 };
+  const spot = (x: Partial<TruckSpot> & { id: number }): TruckSpot => ({ unit: String(x.id), driver: '', at: null, current: null, lastDrop: null, driveLeftMin: null, ...x });
+  it('puts free trucks first by empty miles, then unknown, then trucks busy past the pickup', () => {
+    const r = rankTrucks({ id: 9, pickup: dallas, date: '2026-11-25' }, [
+      spot({ id: 1, lastDrop: { place: atlanta, name: 'Atlanta, GA', date: '2026-11-20' } }),
+      spot({ id: 2, at: { ...houston, when: '5 min ago', source: 'ELD' } }),
+      spot({ id: 3 }),
+      spot({ id: 4, current: { id: 7, place: dallas, name: 'Dallas, TX', date: '2026-11-27' } }),
+      spot({ id: 5, current: { id: 8, place: dallas, name: 'Dallas, TX', date: '2026-11-24' } }),
+    ]);
+    expect(r.map((c) => c.truckId)).toEqual([5, 2, 1, 3, 4]);
+    expect(r[0]).toMatchObject({ deadhead: 0, freeOn: '2026-11-24', fits: true });
+    expect(r[1].deadhead).toBeGreaterThan(250);
+    expect(r[2].note).toMatch(/last delivery/);
+    expect(r[4]).toMatchObject({ fits: false });
   });
 });
