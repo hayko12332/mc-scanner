@@ -418,7 +418,8 @@ function Briefing({ state, firstName, owner, ask, importData }: { state: CrmStat
     const transit = state.loads.filter((l) => l.status === 'in_transit')
     const noTruck = state.loads.filter((l) => l.status === 'booked' && l.truckId == null)
     const ws = weekStart(now)
-    const week = state.loads.filter((l) => l.date >= ws)
+    // This week only (Mon–Sun): loads booked for next week don't count yet.
+    const week = state.loads.filter((l) => l.date >= ws && l.date <= addDays(ws, 6))
     const weekGross = week.reduce((s, l) => s + gross(l), 0)
     const miles = week.reduce((s, l) => s + l.loadedMiles, 0)
     const unpaid = state.loads.filter((l) => l.status === 'invoiced').reduce((s, l) => s + gross(l) + l.lumper, 0)

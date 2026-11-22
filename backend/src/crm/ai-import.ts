@@ -142,7 +142,7 @@ const TableMap = z.object({
   date_order: z.enum(['MDY', 'DMY', 'YMD']).describe('How dates like 03/04/2026 are written in this table (US is MDY)'),
   statuses: z.array(z.object({ value: z.string(), status: z.enum(LOAD_STATUSES) })).describe('Every distinct status word seen in the status column mapped to booked / in_transit / delivered / invoiced / paid'),
 });
-type TableMap = z.infer<typeof TableMap>;
+export type TableMap = z.infer<typeof TableMap>;
 
 const LoadZ = z.object({
   date: z.string().describe('Pickup date YYYY-MM-DD or empty'), broker: z.string(), broker_mc: z.string(), load_number: z.string(),
@@ -161,13 +161,14 @@ const DocExtract = z.object({
 type DocExtract = z.infer<typeof DocExtract>;
 
 /** The first rows of a table → which column is what (the low-cost model reads only a sample). */
-async function mapTable(t: Table, fileName: string): Promise<TableMap> {
-  const sample = t.rows.slice(0, 25).map((r, i) => `${i}\t${r.map((c) => clean(c, 60)).join('\t')}`).join('\n');
+export async function mapTable(t: Table, fileName: string): Promise<TableMap> {
+  // Each cell carries its column number, so the row number in front can't be taken for column 0.
+  const sample = t.rows.slice(0, 25).map((r, i) => `row ${i}: ${r.map((c, j) => `[${j}] ${clean(c, 60)}`).join('  ')}`).join('\n');
   try {
     const r = await api().beta.messages.parse({
       model: FAST_MODEL, max_tokens: 3000,
       output_config: { effort: 'low', format: betaZodOutputFormat(TableMap) },
-      messages: [{ role: 'user', content: `A truck dispatch company is moving its data into a TMS. This is a sample of a table from the file "${fileName}"${t.source ? `, sheet "${t.source}"` : ''} (${t.rows.length} rows in all). Each line is: row index, then the cells separated by tabs (column 0, 1, 2…).\n\n${sample}\n\nSay what one row is and which column holds which field. Leave out columns you are not sure about.` }],
+      messages: [{ role: 'user', content: `A truck dispatch company is moving its data into a TMS. This is a sample of a table from the file "${fileName}"${t.source ? `, sheet "${t.source}"` : ''} (${t.rows.length} rows in all). Each line is one row; every cell is written as [column number] value, starting from [0].\n\n${sample}\n\nSay what one row is and which column holds which field. Leave out columns you are not sure about. In a load log, a \"Company\", \"Company Name\", \"Customer\" or \"Shipper/Broker\" column is the broker (who pays for the load) unless the sheet clearly lists carriers; a column of people's first names next to the rate (often titled with initials) is the dispatcher.` }],
     });
     if (r.stop_reason === 'refusal' || !r.parsed_output) throw new Error('AI could not read this table');
     return r.parsed_output;
@@ -230,10 +231,40 @@ export function toDate(v: unknown, order: 'MDY' | 'DMY' | 'YMD' = 'MDY'): string
   return null;
 }
 
-const place = (city: string, state: string) => [clean(city, 80), clean(state, 20).toUpperCase()].filter(Boolean).join(', ');
+const place = (city: string, state: string) => cityState([clean(city, 80), clean(state, 20).toUpperCase()].filter(Boolean).join(', '));
+
+const STATES = new Set('AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY AB BC MB NB NL NS ON PE QC SK'.split(' '));
+
+/** "FISHERSVILLE, VA 22939", "LOVELAND CO 80537", "Peru, IL, 61354" → "Fishersville, VA", "Loveland, CO", "Peru, IL" (maps and miles need "City, ST"). */
+export function cityState(v: string): string {
+  const s = clean(v, 120).replace(/[\s,]*\b\d{5}(-\d{4})?\s*$/, '').replace(/[\s,]+$/, '');
+  const m = /^(.*?[^\s,])[\s,]+([A-Za-z]{2})$/.exec(s);
+  if (!m || !STATES.has(m[2].toUpperCase())) return s;
+  const city = m[1] === m[1].toUpperCase() ? m[1].toLowerCase().replace(/(^|[\s.'-])([a-z])/g, (_x, a: string, b: string) => a + b.toUpperCase()) : m[1];
+  return `${city.replace(/,$/, '')}, ${m[2].toUpperCase()}`;
+}
+
+/**
+ * The AI can still be one column off. A date column must hold dates and a rate/miles column numbers: if shifting
+ * every column by one fits the rows clearly better, the shifted map is used.
+ */
+export function fixOffset(t: Table, map: TableMap): TableMap {
+  const body = t.rows.slice(map.header_row >= 0 ? map.header_row + 1 : 0, (map.header_row >= 0 ? map.header_row + 1 : 0) + 200);
+  const col = (f: Field) => map.columns.find((x) => x.field === f)?.column;
+  const checks: [number, (v: string) => boolean][] = [];
+  for (const f of ['date', 'invoiced_on', 'paid_on'] as Field[]) { const c = col(f); if (c != null) checks.push([c, (v) => !!toDate(v, map.date_order)]); }
+  for (const f of ['rate', 'loaded_miles', 'mc', 'dot', 'fee_percent', 'dispatcher_percent'] as Field[]) { const c = col(f); if (c != null) checks.push([c, (v) => /\d/.test(v) && money(v) > 0]); }
+  if (!checks.length) return map;
+  const score = (off: number) => body.reduce((n, r) => n + checks.filter(([c, ok]) => ok(clean(r[c + off] ?? '', 80))).length, 0);
+  const base = score(0);
+  const [best, s] = [-1, 1].map((o) => [o, score(o)] as const).sort((a, b) => b[1] - a[1])[0];
+  if (s <= base * 1.5 || s - base < 2) return map;
+  return { ...map, columns: map.columns.map((x) => ({ ...x, column: x.column + best })).filter((x) => x.column >= 0) };
+}
 
 /** Every row of a mapped table as records. */
-export function rowsToRecords(t: Table, map: TableMap, source: string) {
+export function rowsToRecords(t: Table, mapped: TableMap, source: string) {
+  const map = fixOffset(t, mapped);
   const at = (r: string[], f: Field) => { const c = map.columns.find((x) => x.field === f)?.column; return c == null || c < 0 ? '' : clean(r[c] ?? '', 300); };
   const has = (f: Field) => map.columns.some((x) => x.field === f);
   const statusOf = new Map(map.statuses.map((s) => [lc(s.value), s.status]));
@@ -241,8 +272,8 @@ export function rowsToRecords(t: Table, map: TableMap, source: string) {
   const out = { loads: [] as PlanLoad[], carriers: [] as PlanCarrier[], trucks: [] as PlanTruck[], dispatchers: [] as PlanDispatcher[], brokers: [] as PlanBroker[] };
   for (const r of body) {
     if (map.kind === 'loads') {
-      const origin = at(r, 'origin') || place(at(r, 'origin_city'), at(r, 'origin_state'));
-      const destination = at(r, 'destination') || place(at(r, 'destination_city'), at(r, 'destination_state'));
+      const origin = at(r, 'origin') ? cityState(at(r, 'origin')) : place(at(r, 'origin_city'), at(r, 'origin_state'));
+      const destination = at(r, 'destination') ? cityState(at(r, 'destination')) : place(at(r, 'destination_city'), at(r, 'destination_state'));
       const date = toDate(at(r, 'date'), map.date_order);
       const rate = money(at(r, 'rate'));
       if (!date || (!origin && !destination && !rate && !at(r, 'broker'))) continue;
@@ -283,7 +314,7 @@ function docToRecords(d: DocExtract, source: string) {
       if (!date && !l.origin && !l.rate) return [];
       const status: LoadStatus = l.status === 'unknown' ? 'booked' : l.status;
       return [{
-        date: date ?? today(), broker: clean(l.broker), brokerMc: digits(l.broker_mc, 8), pro: clean(l.load_number, 60), origin: clean(l.origin), destination: clean(l.destination),
+        date: date ?? today(), broker: clean(l.broker), brokerMc: digits(l.broker_mc, 8), pro: clean(l.load_number, 60), origin: cityState(l.origin), destination: cityState(l.destination),
         rate: Math.max(0, money(l.rate)), loadedMiles: Math.round(Math.max(0, l.loaded_miles)), emptyMiles: 0, carrier: clean(l.carrier), truck: clean(l.truck).replace(/^#/, ''),
         dispatcher: clean(l.dispatcher), status, invoicedOn: status === 'invoiced' || status === 'paid' ? date : null, paidOn: status === 'paid' ? date : null, notes: clean(l.notes, 300), source,
       }];

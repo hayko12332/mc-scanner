@@ -170,7 +170,7 @@ const TOOL_DEFS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: 'summarize',
-    description: 'Totals for a period, optionally grouped: gross, loads, loaded and empty miles, RPM, deadhead %, dispatcher pay. Use for "how much did we make", "top brokers", "per dispatcher", "per week" questions. Shown to the user as a table card.',
+    description: 'Totals for a period, optionally grouped: gross, loads, loaded and empty miles, RPM, deadhead %, dispatcher pay. Use for "how much did we make", "top brokers", "per dispatcher", "per week" questions, and whenever the user wants a chart or graph. Shown to the user as a table card, totals tiles and — when grouped — a bar chart.',
     input_schema: obj({ from: D, to: D, group_by: { type: 'string', enum: ['none', 'dispatcher', 'carrier', 'broker', 'truck', 'lane', 'week', 'status'] } }, ['group_by']),
   },
   {
@@ -265,7 +265,7 @@ export function invalidInput(name: string, input: unknown): string | null {
   return null;
 }
 
-const SYSTEM = `You are HaulPanel's assistant inside a dispatch company's TMS board. The TMS adds a <board_summary> to the user's message whenever the board changes (company, today's date, who the user is, carriers, trucks, dispatchers); it is accurate, and the newest one is current. You work the board for the user: find and total their loads, check brokers and carriers with FMCSA, get miles, and prepare actions (create or change loads, mark paid, send invoices, add carriers).
+const SYSTEM = `You are HaulPanel's assistant inside a dispatch company's TMS board. The TMS adds a <board_summary> to the user's message whenever the board changes (company, today's date, who the user is, carriers, trucks, dispatchers); it is accurate, and the newest one is current. You work the board for the user: find and total their loads, check brokers and carriers with FMCSA, look up companies, get miles and routes on a map, build tables and charts, see where trucks are and their drivers' hours (connected ELD or Telegram), make broker tracking links, read rate cons and other documents, and do the work (create or change loads, mark paid, add carriers, send invoices to brokers or factoring, email brokers about loads). Before saying you can't do something, check the tools: if a tool does it, use it.
 
 Rules:
 - Get every number from the tools; never guess or invent loads, amounts or companies. If the data isn't there, say what's missing.
@@ -273,7 +273,7 @@ Rules:
 - Invoices: if the load's carrier uses a factoring company, the packet goes to the factor (send_to_factoring), not to the broker, unless the user says otherwise.
 - Load boards: you cannot search DAT, Truckstop or other load boards yourself and must never say you did. When the user pastes postings or sends a screenshot of a load board, read every posting (broker, email, lane, date, rate, ref #) and write each broker with email_broker; use fleet_status to say where the truck is and when it's empty if it helps. Postings without an email: list them with their phone so the user can call.
 - Don't narrate before using tools ("Let me check…"); the user sees each step live. Write the answer once the work is done.
-- Start the answer with one bold line that says the result ("**3 invoices ready — $6,450.**"), then the 1–3 key numbers or reasons, then what to do next if useful. Tool results appear to the user as cards (load lists, tables, charts, checks, maps); don't repeat them row by row. You can show maps: route_miles draws a lane on a map, fleet_status shows where the trucks are. Never say you can't draw or show a map.
+- Start the answer with one bold line that says the result ("**3 invoices ready — $6,450.**"), then the 1–3 key numbers or reasons, then what to do next if useful. Tool results appear to the user as cards (load lists, tables, charts, checks, maps); don't repeat them row by row. You can show maps and charts: route_miles draws a lane on a map, fleet_status shows where the trucks are, summarize with a group_by draws a bar chart. Never say you can't draw or show a map, chart or graph.
 - Gross = rate + detention + layover + TONU + other (lumper is a reimbursement). RPM = gross / loaded miles; all-in includes empty miles. Overdue = invoiced over 30 days ago and unpaid. Weeks run Monday–Sunday.
 - If a rate confirmation (PDF or photo) is sent, read it and call create_load with what it says; mention anything unclear.
 - Be brief and practical, like an experienced dispatcher. Answer in the language the user writes in.`;
@@ -350,7 +350,8 @@ function summarize(st: St, i: Record<string, unknown>): { data: unknown; card: C
     const pay = g.reduce((s, l) => s + (l.dispatcherId != null ? (gross(l) * (pct.get(l.dispatcherId) ?? 0)) / 100 : 0), 0);
     return { group: k, ...t, deadhead_pct: t.loaded_miles + t.empty_miles ? Math.round((t.empty_miles / (t.loaded_miles + t.empty_miles)) * 100) : 0, dispatcher_pay: Math.round(pay) };
   }).sort((a, b) => (by === 'week' ? b.group.localeCompare(a.group) : b.gross - a.gross));
-  const period = `${isDate(i.from) ? i.from : 'start'} – ${isDate(i.to) ? i.to : 'today'}`;
+  // Without dates every load counts, booked ones ahead included, so the label must not say "today".
+  const period = !isDate(i.from) && !isDate(i.to) ? 'all loads' : `${isDate(i.from) ? i.from : 'first load'} – ${isDate(i.to) ? i.to : 'latest load'}`;
   const all = totals(ls);
   const extra: Card[] = [{
     type: 'kpis', items: [
@@ -809,7 +810,7 @@ function fleetStatus(st: St, i: Record<string, unknown>): { data: unknown; card?
   const rows = trucks.map((t) => {
     const e = st.eld?.find((u) => u.truckId === t.id);
     const p = st.positions?.find((x) => x.truckId === t.id);
-    const load = st.loads.find((l) => l.truckId === t.id && (l.status === 'in_transit' || l.status === 'booked'));
+    const load = currentLoad(st.loads, t.id);
     const newest = e?.at && (!p || e.at >= p.at) ? 'eld' : p ? 'telegram' : null;
     return {
       truck: t.unit ? `#${t.unit}` : '—', driver: e?.driver || t.driver,
@@ -841,7 +842,13 @@ export async function undo(ctx: AgentCtx, t: Thread, actionId: string): Promise<
   return a;
 }
 
-/** Short board context for the system prompt (names only; numbers come from the tools). */
+/** The load a truck is on now: the one in transit, else the next booked one (earliest pickup). */
+export function currentLoad<T extends Pick<Load, 'truckId' | 'status' | 'date'>>(loads: T[], truckId: number): T | undefined {
+  const mine = loads.filter((l) => l.truckId === truckId);
+  return mine.find((l) => l.status === 'in_transit') ?? mine.filter((l) => l.status === 'booked').sort((a, b) => a.date.localeCompare(b.date))[0];
+}
+
+/** Short board summary, sent with the user's message when it changes (names only; numbers come from the tools). */
 export function boardContext(st: St, me: { role: string }): string {
   return [
     `Company: ${st.company.name || '—'}. Today: ${today()}. The user is the ${me.role === 'dispatcher' ? 'dispatcher (sees only their own loads)' : 'owner of the board'}.`,

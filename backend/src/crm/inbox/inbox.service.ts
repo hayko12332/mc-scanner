@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { config } from '../../config.js';
 import { db } from '../../db.js';
 import { sendMail } from '../../mail/mailer.js';
+import { currentLoad } from '../ai-agent.js';
 import { aiEnabled, readRateCon } from '../ai.js';
 import { CrmStore } from '../crm.store.js';
 import type { CrmUser, Load } from '../crm.types.js';
@@ -175,7 +176,7 @@ export class InboxService {
       const p = st.positions.find((x) => x.truckId === t.id);
       const useEld = !!e?.at && e.lat != null && (!p || e.at >= p.at);
       const at = useEld ? { lat: e!.lat!, lon: e!.lon! } : p ? { lat: p.lat, lon: p.lon } : null;
-      const load = st.loads.find((l) => l.truckId === t.id && (l.status === 'in_transit' || l.status === 'booked'));
+      const load = currentLoad(st.loads, t.id);
       const dest = load ? this.places.find(load.destination) : null;
       const days = load ? Math.max(1, Math.ceil((load.loadedMiles || 500) / 500)) : 0;
       return {
