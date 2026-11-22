@@ -60,6 +60,8 @@ export interface Thread {
   notes?: string[];
   /** A file sent in this chat (e.g. a rate con), attached to the load the assistant creates from it. */
   file?: { name: string; mime: string; data: string } | null;
+  /** The board summary last sent in this chat (a new one is appended only when it changed). */
+  board?: string;
 }
 
 export const newThread = (): Thread => ({ id: randomUUID(), createdAt: new Date().toISOString(), messages: [], display: [], pending: [], actions: [], readResults: [], file: null });
@@ -263,7 +265,7 @@ export function invalidInput(name: string, input: unknown): string | null {
   return null;
 }
 
-const SYSTEM = `You are HaulPanel's assistant inside a dispatch company's TMS board. You work the board for the user: find and total their loads, check brokers and carriers with FMCSA, get miles, and prepare actions (create or change loads, mark paid, send invoices, add carriers).
+const SYSTEM = `You are HaulPanel's assistant inside a dispatch company's TMS board. The TMS adds a <board_summary> to the user's message whenever the board changes (company, today's date, who the user is, carriers, trucks, dispatchers); it is accurate, and the newest one is current. You work the board for the user: find and total their loads, check brokers and carriers with FMCSA, get miles, and prepare actions (create or change loads, mark paid, send invoices, add carriers).
 
 Rules:
 - Get every number from the tools; never guess or invent loads, amounts or companies. If the data isn't there, say what's missing.
@@ -581,18 +583,40 @@ function emailPreview(st: St, i: Record<string, unknown>): PendingAction['previe
 const asResult = (id: string, data: unknown, isError = false): ToolResult =>
   ({ type: 'tool_result', tool_use_id: id, content: JSON.stringify(data).slice(0, 60_000), ...(isError ? { is_error: true } : {}) });
 
+/**
+ * The board summary changes between messages, so it never goes in the top-level system prompt: the model's thinking
+ * blocks are bound to everything before them, and an edited prefix gets the request rejected. It rides in the user's
+ * message instead (only when it changed), so the history only ever grows. (A mid-conversation system message was
+ * tried; Haiku 5.5 did not use it.)
+ */
+function boardBlock(t: Thread, board: string): Anthropic.Beta.BetaTextBlockParam[] {
+  if (t.board === board) return [];
+  t.board = board;
+  return [{ type: 'text', text: `<board_summary source="TMS">\n${board}\n</board_summary>` }];
+}
+
+/** Chats saved before addBoard (or edited by a bug) carry thinking blocks bound to another prefix: drop them once. */
+const boundElsewhere = (e: unknown) => e instanceof Error && 'status' in e && e.status === 400 && /bound to a different conversation/.test(e.message);
+function stripThinking(t: Thread) {
+  t.messages = t.messages.map((m) => (m.role === 'assistant' && Array.isArray(m.content)
+    ? { ...m, content: m.content.filter((b) => b.type !== 'thinking' && b.type !== 'redacted_thinking') }
+    : m)).filter((m) => m.role !== 'assistant' || !Array.isArray(m.content) || m.content.length > 0);
+}
+
 /** The model's turn, streamed: text goes to the screen as it is written. Retries a turn whose tool input didn't parse. */
-async function turn(t: Thread, board: string, emit: Emit, signal?: AbortSignal): Promise<Anthropic.Beta.BetaMessage> {
+async function turn(t: Thread, emit: Emit, signal?: AbortSignal): Promise<Anthropic.Beta.BetaMessage> {
+  let stripped = false;
   for (let attempt = 0; ; attempt++) {
     const stream = api().beta.messages.stream({
       ...modelParams(), max_tokens: 8000, output_config: { effort: 'medium' },
-      system: [{ type: 'text', text: SYSTEM }, { type: 'text', text: board, cache_control: { type: 'ephemeral' } }],
+      system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
       tools: TOOLS, messages: t.messages,
     }, { signal });
     stream.on('text', (delta) => emit({ type: 'text', delta }));
     try {
       return await stream.finalMessage();
     } catch (e) {
+      if (!stripped && !signal?.aborted && boundElsewhere(e)) { stripThinking(t); stripped = true; attempt--; continue; }
       // Only a tool input that could not be parsed is worth asking again; API errors and a stop go up.
       if (signal?.aborted || e instanceof Error && 'status' in e || attempt >= 2) throw e;
     }
@@ -600,7 +624,7 @@ async function turn(t: Thread, board: string, emit: Emit, signal?: AbortSignal):
 }
 
 /** The model's turns until it answers or an email waits for the user's OK. Everything is shown live through `emit`. */
-async function loop(ctx: AgentCtx, t: Thread, board: string, emit: Emit, signal?: AbortSignal) {
+async function loop(ctx: AgentCtx, t: Thread, emit: Emit, signal?: AbortSignal) {
   t.actions ??= [];
   const item: DisplayItem = { role: 'assistant', cards: [], steps: [], actions: [] };
   t.display.push(item);
@@ -620,7 +644,7 @@ async function loop(ctx: AgentCtx, t: Thread, board: string, emit: Emit, signal?
     let r: Anthropic.Beta.BetaMessage;
     try {
       if (texts.length) emit({ type: 'text', delta: '\n\n' });
-      r = await turn(t, board, emit, signal);
+      r = await turn(t, emit, signal);
     } catch (e) {
       if (signal?.aborted) {
         // Keep the conversation valid for the next message: the stopped turn becomes a short assistant reply.
@@ -736,11 +760,12 @@ export async function chat(ctx: AgentCtx, t: Thread, board: string, input: ChatI
     t.file = { name: input.file.name, mime: input.file.mime, data: b64 };
   }
   if (input.loadId) blocks.push({ type: 'text', text: `(Context: the user has load #${input.loadId} open on the board.)` });
+  blocks.push(...boardBlock(t, board));
   blocks.push({ type: 'text', text: input.text || (input.file ? 'Here is a document.' : '…') });
   t.messages.push({ role: 'user', content: blocks });
   t.display.push({ role: 'user', text: input.text, ...(input.file ? { file: input.file.name } : {}) });
   t.title ??= (input.text || input.file?.name || 'New chat').slice(0, 80);
-  await loop(ctx, t, board, emit, signal);
+  await loop(ctx, t, emit, signal);
 }
 
 /** The user answered an email waiting for their OK; once all are answered, the assistant continues. */
@@ -766,8 +791,8 @@ export async function decide(ctx: AgentCtx, t: Thread, board: string, actionId: 
   if (t.pending.some((x) => x.status === 'pending')) return;
   // Answered emails stay in the chat with how they ended (sent, not sent, failed).
   (t.actions ??= []).push(...t.pending);
-  t.messages.push({ role: 'user', content: closePending(t) });
-  await loop(ctx, t, board, emit, signal);
+  t.messages.push({ role: 'user', content: [...closePending(t), ...boardBlock(t, board)] });
+  await loop(ctx, t, emit, signal);
 }
 
 const hm = (min: number | null | undefined) => (min == null ? '' : `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`);
