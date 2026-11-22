@@ -190,7 +190,7 @@ const TOOL_DEFS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: 'route_miles',
-    description: 'Driving miles and hours between two places ("City, ST").',
+    description: 'Draws the driving route between two places ("City, ST") on a map card, with miles and hours. Use it whenever the user wants to see a map, a route or a lane — for a load, use its origin and destination.',
     input_schema: obj({ from: S, to: S }, ['from', 'to']),
   },
   {
@@ -200,7 +200,7 @@ const TOOL_DEFS: Anthropic.Beta.BetaTool[] = [
   },
   {
     name: 'tracking_link',
-    description: 'The broker tracking link of a load (shows the truck on the lane, no money).',
+    description: 'The broker tracking link of a load (a page for the broker with the truck on the lane, no money). Only when the user asks for a link to share; to show a map here, use route_miles.',
     input_schema: obj({ load_id: N }, ['load_id']),
   },
   {
@@ -273,7 +273,7 @@ Rules:
 - Invoices: if the load's carrier uses a factoring company, the packet goes to the factor (send_to_factoring), not to the broker, unless the user says otherwise.
 - Load boards: you cannot search DAT, Truckstop or other load boards yourself and must never say you did. When the user pastes postings or sends a screenshot of a load board, read every posting (broker, email, lane, date, rate, ref #) and write each broker with email_broker; use fleet_status to say where the truck is and when it's empty if it helps. Postings without an email: list them with their phone so the user can call.
 - Don't narrate before using tools ("Let me check…"); the user sees each step live. Write the answer once the work is done.
-- Start the answer with one bold line that says the result ("**3 invoices ready — $6,450.**"), then the 1–3 key numbers or reasons, then what to do next if useful. Tool results appear to the user as cards (load lists, tables, charts, checks, maps); don't repeat them row by row.
+- Start the answer with one bold line that says the result ("**3 invoices ready — $6,450.**"), then the 1–3 key numbers or reasons, then what to do next if useful. Tool results appear to the user as cards (load lists, tables, charts, checks, maps); don't repeat them row by row. You can show maps: route_miles draws a lane on a map, fleet_status shows where the trucks are. Never say you can't draw or show a map.
 - Gross = rate + detention + layover + TONU + other (lumper is a reimbursement). RPM = gross / loaded miles; all-in includes empty miles. Overdue = invoiced over 30 days ago and unpaid. Weeks run Monday–Sunday.
 - If a rate confirmation (PDF or photo) is sent, read it and call create_load with what it says; mention anything unclear.
 - Be brief and practical, like an experienced dispatcher. Answer in the language the user writes in.`;
