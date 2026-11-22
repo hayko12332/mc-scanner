@@ -8,9 +8,21 @@ import type { FileKind } from './crm.store.js';
 // photo, and answer the owner's questions about their own board. Switched on by ANTHROPIC_API_KEY (Render env);
 // without it every feature stays hidden and nothing is sent anywhere.
 
-export const MODEL = 'claude-opus-5-5';
-/** If a request is declined by a safety classifier, the API retries it on a fallback model by itself. */
-export const BETAS: Anthropic.Beta.AnthropicBeta[] = ['server-side-fallback-2026-07-01'];
+/**
+ * Models, chosen to keep the bill small. Everything runs on Haiku (the low-cost model) by default; AI_MODEL on the
+ * server switches the assistant and document reading to a stronger model (e.g. claude-sonnet-5-5) without a code
+ * change. Quick single reads (rate cons, document type, spreadsheet columns) always use Haiku.
+ */
+export const MODEL = process.env.AI_MODEL?.trim() || 'claude-haiku-5-5';
+export const FAST_MODEL = 'claude-haiku-5-5';
+const BETAS: Anthropic.Beta.AnthropicBeta[] = ['server-side-fallback-2026-07-01'];
+/**
+ * The model and, where it exists, the server-side fallback (a request declined by a safety classifier is retried on
+ * another model by the API itself). Haiku has no fallback, so nothing extra is sent for it.
+ */
+export function modelParams(model = MODEL): { model: string; betas?: Anthropic.Beta.AnthropicBeta[]; fallbacks?: 'default' } {
+  return /^claude-(sonnet|opus|fable)/.test(model) ? { model, betas: BETAS, fallbacks: 'default' } : { model };
+}
 
 export const aiEnabled = () => !!process.env.ANTHROPIC_API_KEY;
 
@@ -60,7 +72,7 @@ export function friendly(e: unknown): Error {
 export async function readRateCon(data: Buffer, mime: string, today: string): Promise<RateConFields> {
   try {
     const r = await api().beta.messages.parse({
-      model: MODEL, max_tokens: 4000, betas: BETAS, fallbacks: 'default',
+      model: FAST_MODEL, max_tokens: 4000,
       output_config: { effort: 'medium', format: betaZodOutputFormat(RateCon) },
       messages: [{
         role: 'user',
@@ -82,7 +94,7 @@ export async function classifyDoc(data: Buffer, mime: string): Promise<FileKind 
   if (!aiEnabled()) return null;
   try {
     const r = await api().beta.messages.parse({
-      model: MODEL, max_tokens: 1000, betas: BETAS, fallbacks: 'default',
+      model: FAST_MODEL, max_tokens: 1000,
       output_config: { effort: 'low', format: betaZodOutputFormat(DocType) },
       messages: [{ role: 'user', content: [fileBlock(data, mime), { type: 'text', text: 'A truck driver sent this. Which trucking document is it?' }] }],
     });
@@ -101,7 +113,7 @@ const ASK_SYSTEM = `You are the assistant inside HaulPanel, a TMS for truck disp
 export async function askBoard(board: string, history: AskTurn[], question: string): Promise<string> {
   try {
     const r = await api().beta.messages.create({
-      model: MODEL, max_tokens: 4000, betas: BETAS, fallbacks: 'default',
+      ...modelParams(), max_tokens: 4000,
       output_config: { effort: 'medium' },
       system: [{ type: 'text', text: ASK_SYSTEM }, { type: 'text', text: board, cache_control: { type: 'ephemeral' } }],
       messages: [

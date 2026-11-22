@@ -215,7 +215,7 @@ export function BoardMap({ state, theme, openLoad, points }: {
       <div className="bm-head">
         <div>
           <h2>Map</h2>
-          <p>{onMap.length} {onMap.length === 1 ? 'load' : 'loads'} on the map{missing > 0 ? ` · ${missing} without City, ST` : ''}{state.positions?.length ? ` · ${state.positions.length} ${state.positions.length === 1 ? 'truck' : 'trucks'} from drivers’ Telegram` : ''}. Click a lane to open the load.</p>
+          <p>{onMap.length} {onMap.length === 1 ? 'load' : 'loads'} on the map{missing > 0 ? ` · ${missing} without City, ST` : ''}{state.positions?.length ? ` · ${state.positions.length} ${state.positions.length === 1 ? 'truck' : 'trucks'} from ${state.eld?.length ? 'your ELD and drivers’ Telegram' : 'drivers’ Telegram'}` : ''}. Click a lane to open the load.</p>
         </div>
         <div className="bm-chips" role="group" aria-label="Statuses shown">
           {STATUSES.map((s) => (

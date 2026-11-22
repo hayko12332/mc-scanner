@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { afterEach, describe, expect, it } from 'vitest';
-import { askBoard, readRateCon, setAiClient } from './ai.js';
+import { askBoard, modelParams, readRateCon, setAiClient } from './ai.js';
 
 const fields = {
   isRateConfirmation: true, broker: 'Total Quality Logistics', brokerMc: '411443', brokerEmail: 'ap@tql.com', loadNumber: 'TQL-1',
@@ -28,10 +28,10 @@ describe('AI on the board', () => {
     const r = await readRateCon(Buffer.from('%PDF-1.4'), 'application/pdf', '2026-11-17');
     expect(r).toEqual(fields);
     const body = sent[0] as { model: string; messages: { content: { type: string; source?: { media_type: string } }[] }[]; output_config: { format: { type: string } }; fallbacks: string };
-    expect(body.model).toBe('claude-opus-5-5');
+    expect(body.model).toBe('claude-haiku-5-5'); // quick reads use the low-cost model
     expect(body.messages[0].content[0]).toMatchObject({ type: 'document', source: { media_type: 'application/pdf' } });
     expect(body.output_config.format.type).toBe('json_schema');
-    expect(body.fallbacks).toBe('default');
+    expect(body.fallbacks).toBeUndefined(); // Haiku has no server-side fallback
   });
 
   it('answers from the board data, which is cached in the system prompt', async () => {
@@ -40,5 +40,10 @@ describe('AI on the board', () => {
     const body = sent[0] as { system: { cache_control?: unknown }[]; messages: unknown[] };
     expect(body.system[1].cache_control).toEqual({ type: 'ephemeral' });
     expect(body.messages).toHaveLength(3);
+  });
+
+  it('sends the server-side fallback only to models that have one', () => {
+    expect(modelParams('claude-haiku-5-5')).toEqual({ model: 'claude-haiku-5-5' });
+    expect(modelParams('claude-sonnet-5-5')).toMatchObject({ model: 'claude-sonnet-5-5', fallbacks: 'default' });
   });
 });

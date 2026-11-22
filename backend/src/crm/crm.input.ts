@@ -57,6 +57,12 @@ function feeType(v: unknown): FeeType {
   return (FEE_TYPES as readonly unknown[]).includes(v) ? (v as FeeType) : 'percent';
 }
 
+function factoringEmail(v: unknown): string {
+  const e = text(v, 120).toLowerCase();
+  if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)) throw new BadRequestException('Factoring email doesn’t look right');
+  return e;
+}
+
 export function carrierInput(b: Record<string, unknown> = {}): CarrierInput {
   const name = text(b.name);
   if (!name) throw new BadRequestException('Carrier name is required');
@@ -66,6 +72,8 @@ export function carrierInput(b: Record<string, unknown> = {}): CarrierInput {
   return {
     name, mc: text(b.mc, 20), dot: text(b.dot, 20), phone: text(b.phone, 40), email: text(b.email, 120), notes: text(b.notes, 1000),
     feeType: type, fee, factoring: text(b.factoring, 120),
+    // Left out = unchanged (older screens don't send it).
+    ...(b.factoringEmail === undefined ? {} : { factoringEmail: factoringEmail(b.factoringEmail) }),
   };
 }
 

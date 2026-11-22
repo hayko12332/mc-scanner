@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../../api'
 import {
-  addDays, feeLabel, fmtMiles, fmtRpm, gross, rpm, today, usd, weekStart,
+  addDays, dutyLabel, feeLabel, fmtMiles, fmtRpm, gross, hoursLeft, rpm, today, usd, weekStart,
   type CarrierInput, type CrmCarrier, type CrmState, type Dispatcher, type FeeType, type Truck, type TruckInput,
 } from '../../lib/crm'
 import { formatPhone } from '../../lib/format'
@@ -307,6 +307,25 @@ function DriverApp({ t, state, actions }: { t: Truck; state: CrmState; actions: 
   )
 }
 
+/** What the truck's ELD says now: where it is, and the driver's duty status and hours left. */
+function EldLine({ t, state }: { t: Truck; state: CrmState }) {
+  const u = state.eld?.find((x) => x.truckId === t.id)
+  if (!u) return null
+  const low = u.hos?.driveLeftMin != null && u.hos.driveLeftMin < 120
+  return (
+    <div className="tm tm-eld">
+      <span className="tm-on" title={`${u.provider === 'samsara' ? 'Samsara' : 'Motive'} · vehicle ${u.name}`}>
+        📍 {u.address || 'Location unknown'}{u.at ? ` · ${ago(u.at)}` : ''}{u.speedMph ? ` · ${Math.round(u.speedMph)} mph` : ''}
+      </span>
+      {u.hos && (
+        <span className={`tm-hos ${low ? 'low' : ''}`}>
+          {dutyLabel(u.hos.status) || 'HOS'}{u.hos.driveLeftMin != null && ` · ${hoursLeft(u.hos.driveLeftMin)} drive`}{u.hos.cycleLeftMin != null && ` · ${hoursLeft(u.hos.cycleLeftMin)} cycle`}
+        </span>
+      )}
+    </div>
+  )
+}
+
 export function TrucksView({ state, add, update, remove, drivers }: {
   state: CrmState
   /** Not in the demo: connect each driver's Telegram. */
@@ -348,8 +367,8 @@ export function TrucksView({ state, add, update, remove, drivers }: {
       <div className="lt-scroll">
         <table className="lt-table pv-table">
           <colgroup>
-            <col style={{ width: '10%' }} /><col style={{ width: '17%' }} /><col /><col style={{ width: '13%' }} />
-            <col style={{ width: '8%' }} /><col style={{ width: '9%' }} /><col style={{ width: '10%' }} /><col style={{ width: '8%' }} /><col style={{ width: '10%' }} /><col style={{ width: '48px' }} />
+            <col style={{ width: '8%' }} /><col style={{ width: '14%' }} /><col /><col style={{ width: '11%' }} />
+            <col style={{ width: '6%' }} /><col style={{ width: '7%' }} /><col style={{ width: '9%' }} /><col style={{ width: '7%' }} /><col style={{ width: '9%' }} /><col style={{ width: '48px' }} />
           </colgroup>
           <thead>
             <tr>
@@ -368,7 +387,7 @@ export function TrucksView({ state, add, update, remove, drivers }: {
                   <EditSelect value={String(t.carrierId ?? '')} label="Carrier" onSave={(x) => save(t, { carrierId: x ? Number(x) : null })}
                     options={[['', '—'], ...state.carriers.map((c): [string, string] => [String(c.id), c.name])]} />
                 </td>
-                <td><EditText value={t.driver} onSave={(x) => save(t, { driver: x })} />{drivers && <DriverApp t={t} state={state} actions={drivers} />}</td>
+                <td><EditText value={t.driver} onSave={(x) => save(t, { driver: x })} /><EldLine t={t} state={state} />{drivers && !state.eld?.some((u) => u.truckId === t.id) && <DriverApp t={t} state={state} actions={drivers} />}</td>
                 <td><EditText value={t.phone} onSave={(x) => save(t, { phone: x })} /></td>
                 <td className="num">{s.weekLoads}</td>
                 <td className="num">{fmtMiles(s.weekMiles)}</td>

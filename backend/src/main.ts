@@ -10,9 +10,10 @@ import { indexHtml, SEO_PAGES, seoHtml } from './seo.js';
 const DIST = fileURLToPath(new URL('../../frontend/dist', import.meta.url));
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  // Spreadsheet imports into the CRM can be larger than the default 100 kB.
-  app.useBodyParser('json', { limit: '5mb' });
+  // rawBody: webhooks (Resend receiving) are checked against the exact bytes that were signed.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  // Spreadsheet imports and AI file uploads (base64) can be larger than the default 100 kB.
+  app.useBodyParser('json', { limit: '40mb' });
   // Load documents (PDF, photos) are uploaded as raw bytes.
   app.useBodyParser('raw', { type: 'application/octet-stream', limit: '12mb' });
   app.setGlobalPrefix('api');

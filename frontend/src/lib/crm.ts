@@ -8,6 +8,8 @@ export interface CrmCarrier {
   /** Dispatch fee: a percent of each load's gross, or a flat amount per week. */
   feeType: FeeType; fee: number
   factoring: string
+  /** Where the factoring company takes invoice packets. */
+  factoringEmail?: string
 }
 export interface Truck { id: number; carrierId: number | null; unit: string; driver: string; phone: string }
 export const STATUSES = [
@@ -70,7 +72,32 @@ export interface CrmState {
   /** Trucks whose driver connected the Telegram bot, and the last known position of each truck. */
   drivers?: { truckId: number; name: string }[]
   positions?: TruckPosition[]
+  /** Vehicles from a connected ELD (Samsara / Motive). */
+  eld?: EldUnit[]
 }
+export type EldProvider = 'samsara' | 'motive'
+export interface EldHos { status: string; driveLeftMin: number | null; shiftLeftMin: number | null; cycleLeftMin: number | null; breakLeftMin: number | null }
+export interface EldUnit {
+  provider: EldProvider; vehicleId: string; name: string; truckId: number | null; linked: 'auto' | 'manual' | 'none'
+  lat: number | null; lon: number | null; at: string | null; speedMph: number | null; address: string; driver: string; hos: EldHos | null
+}
+export interface Connection { provider: string; region: string; label: string; status: 'ok' | 'error'; error: string; connectedAt: string; syncedAt: string | null; invoices?: number }
+export interface Integrations { ready: boolean; providers: EldProvider[]; quickbooks: boolean; connections: Connection[]; units: EldUnit[] }
+/** "11h00" from minutes; '' when unknown. */
+export const hoursLeft = (min: number | null | undefined) => (min == null ? '' : `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`)
+export const dutyLabel = (s: string) => ({ off_duty: 'Off duty', sleeper: 'Sleeper', driving: 'Driving', on_duty: 'On duty', yard_move: 'Yard move', personal_conveyance: 'Personal conveyance' } as Record<string, string>)[s] ?? ''
+export interface Posting {
+  broker: string; contact: string; email: string; phone: string; origin: string; destination: string; pickup_date: string
+  equipment: string; weight_lbs: number; rate: number; miles: number; ref: string; notes: string
+}
+export interface PostingFit {
+  loadedMiles: number; rpm: number; ok: boolean; why: string
+  best: { truckId: number; unit: string; driver: string; deadhead: number; from: string; driveLeftMin: number | null } | null
+}
+export interface PostingRow { id: number; createdAt: string; status: 'new' | 'emailed' | 'dismissed'; emailedAt: string | null; emailedAuto: boolean; data: Posting; fit: PostingFit }
+export interface InboxMessage { id: number; receivedAt: string; from: string; subject: string; kind: string; summary: string; postings: number; loadId: number | null; note: string }
+export interface InboxSettings { autoEmail: boolean; minRpm: number; maxDeadhead: number; dailyCap: number }
+export interface InboxView { enabled: boolean; ai: boolean; address: string; settings: InboxSettings; postings: PostingRow[]; messages: InboxMessage[] }
 export interface TruckPosition { truckId: number; lat: number; lon: number; at: string; live: boolean }
 /** What the broker's tracking page shows (no money). */
 export interface TrackingView {
@@ -149,7 +176,7 @@ export function carrierFee(c: Pick<CrmCarrier, 'feeType' | 'fee'> | undefined, l
 }
 export const feeLabel = (c: Pick<CrmCarrier, 'feeType' | 'fee'> | undefined) =>
   !c || !c.fee ? 'No fee set' : c.feeType === 'flat' ? `${usd(c.fee)} / week` : `${c.fee}% of gross`
-export interface CrmConfig { googleClientId: string; devLogin: boolean; enabled: boolean; emailAuth?: boolean; ai?: boolean }
+export interface CrmConfig { googleClientId: string; devLogin: boolean; enabled: boolean; emailAuth?: boolean; ai?: boolean; loadAlerts?: boolean }
 /** Ask AI: the conversation as the panel shows it. */
 export type AiCard =
   | { type: 'loads'; title: string; ids: number[] }
@@ -158,9 +185,37 @@ export type AiCard =
   | { type: 'route'; from: string; to: string; miles: number; hours: number }
   | { type: 'link'; label: string; url: string }
   | { type: 'note'; text: string }
-export interface AiItem { role: 'user' | 'assistant'; text?: string; file?: string; cards?: AiCard[]; pending?: string[]; steps?: string[] }
-export interface AiAction { id: string; tool: string; summary: string; status: 'pending' | 'done' | 'declined' | 'failed' }
-export interface AiView { threadId: string; title?: string; items: AiItem[]; pending: AiAction[] }
+  | { type: 'kpis'; items: { label: string; value: string; sub?: string }[] }
+  | { type: 'bars'; title: string; rows: { label: string; value: number; text: string }[] }
+/** One thing the assistant did (old chats stored plain text). */
+export interface AiStep { label: string; detail?: string; ms?: number; state: 'done' | 'error' | 'waiting' }
+export interface AiItem { role: 'user' | 'assistant'; text?: string; file?: string; cards?: AiCard[]; pending?: string[]; actions?: string[]; steps?: (string | AiStep)[]; stopped?: boolean }
+export interface AiAction {
+  id: string; tool: string; summary: string; status: 'pending' | 'done' | 'declined' | 'failed' | 'undone'
+  preview?: { to: string; subject: string; lines: string[] }; undoable?: boolean
+}
+export interface AiView { threadId: string; title?: string; items: AiItem[]; pending: AiAction[]; actions?: AiAction[] }
+/** What the screen gets while the assistant works (server-sent events). */
+export type AiEvent =
+  | { type: 'start'; threadId: string }
+  | { type: 'thinking' }
+  | { type: 'step'; id: string; label: string; state: 'running' | AiStep['state']; detail?: string; ms?: number }
+  | { type: 'text'; delta: string }
+  | { type: 'card'; card: AiCard }
+  | { type: 'action'; action: AiAction }
+  | { type: 'error'; message: string }
+  | { type: 'done'; view: AiView }
+/** What an AI import found, before anything is saved. */
+export interface ImportPlan {
+  id: string
+  sources: { name: string; what: string; rows: number }[]
+  skipped: { name: string; reason: string }[]
+  dispatchers: { name: string; percent: number; existing?: boolean }[]
+  carriers: { name: string; mc: string; dot: string; phone: string; email: string; feePercent: number; factoring: string; existing?: boolean }[]
+  trucks: { unit: string; driver: string; phone: string; carrier: string; existing?: boolean }[]
+  loads: { date: string; broker: string; pro: string; origin: string; destination: string; rate: number; carrier: string; truck: string; dispatcher: string; status: LoadStatus; source: string; duplicate?: boolean }[]
+  brokers: { name: string; mc: string; email: string }[]
+}
 /** A rate confirmation read by AI. */
 export interface RateConFields {
   isRateConfirmation: boolean; broker: string; brokerMc: string; brokerEmail: string; loadNumber: string; pickupDate: string; deliveryDate: string
@@ -193,6 +248,43 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   const data = await res.json().catch(() => null)
   if (!res.ok) throw new CrmError((Array.isArray(data?.message) ? data.message.join('; ') : data?.message) || `HTTP ${res.status}`, res.status)
   return data as T
+}
+
+/**
+ * A streamed AI request: each event is handed to `on` as it arrives. Aborting `signal` (the Stop button) stops the
+ * assistant on the server too; the final `done` event carries the saved chat.
+ */
+async function stream(path: string, body: unknown, on: (e: AiEvent) => void, signal?: AbortSignal): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(`/api/crm${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' }, body: JSON.stringify(body), signal })
+  } catch (e) {
+    if (signal?.aborted) return
+    throw new CrmError('Server is not reachable', 0)
+  }
+  if (!res.ok || !res.body) {
+    const data = await res.json().catch(() => null)
+    throw new CrmError(data?.message || `HTTP ${res.status}`, res.status)
+  }
+  const reader = res.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      let i
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const chunk = buf.slice(0, i)
+        buf = buf.slice(i + 2)
+        const data = chunk.split('\n').filter((l) => l.startsWith('data: ')).map((l) => l.slice(6)).join('\n')
+        if (data) on(JSON.parse(data) as AiEvent)
+      }
+    }
+  } catch (e) {
+    if (!signal?.aborted) throw e
+  }
 }
 
 /** Sends raw bytes (a PDF or photo) to the API. */
@@ -254,6 +346,11 @@ export const crm = {
   aiRateCon: (file: Blob) => sendBytes<RateConFields>('/ai/ratecon', file),
   aiChat: (v: { threadId?: string; text: string; file?: { name: string; data: string }; loadId?: number | null }) => call<AiView>('POST', '/ai/chat', v),
   aiDecide: (threadId: string, actionId: string, approve: boolean) => call<AiView>('POST', '/ai/decide', { threadId, actionId, approve }),
+  aiChatStream: (v: { threadId?: string; text: string; file?: { name: string; data: string }; loadId?: number | null }, on: (e: AiEvent) => void, signal?: AbortSignal) => stream('/ai/chat/stream', v, on, signal),
+  aiDecideStream: (threadId: string, actionId: string, approve: boolean, on: (e: AiEvent) => void, signal?: AbortSignal) => stream('/ai/decide/stream', { threadId, actionId, approve }, on, signal),
+  aiUndo: (threadId: string, actionId: string) => call<AiView>('POST', '/ai/undo', { threadId, actionId }),
+  aiImport: (v: { files: { name: string; data: string }[]; sheetUrl?: string }) => call<ImportPlan>('POST', '/ai/import', v),
+  aiImportApply: (id: string, skipLoads: number[] = []) => call<{ dispatchers: number; carriers: number; trucks: number; loads: number; brokers: number }>('POST', '/ai/import/apply', { id, skip: { loads: skipLoads } }),
   aiThread: (id: string) => call<AiView>('GET', `/ai/thread/${encodeURIComponent(id)}`),
   aiThreads: () => call<{ id: string; title: string; updatedAt: string }[]>('GET', '/ai/threads'),
   aiDeleteThread: (id: string) => call('DELETE', `/ai/thread/${encodeURIComponent(id)}`),
@@ -271,6 +368,20 @@ export const crm = {
   removeFile: (id: number) => call('DELETE', `/files/${id}`),
   invoicePdfUrl: (loadId: number, attach: number[]) => `/api/crm/loads/${loadId}/invoice.pdf?${new URLSearchParams({ attach: attach.join(',') })}`,
   sendInvoice: (loadId: number, v: InvoiceSend) => call<{ ok: true; number: string }>('POST', `/loads/${loadId}/invoice`, v),
+  inbox: () => call<InboxView>('GET', '/inbox'),
+  saveInbox: (v: InboxSettings) => call<{ ok: true }>('PATCH', '/inbox/settings', v),
+  postingDraft: (id: number) => call<{ to: string; subject: string; body: string }>('GET', `/inbox/postings/${id}/draft`),
+  emailPosting: (id: number, subject: string, body: string) => call<{ ok: true; to: string }>('POST', `/inbox/postings/${id}/email`, { subject, body }),
+  dismissPosting: (id: number) => call<{ ok: true }>('POST', `/inbox/postings/${id}/dismiss`),
+  pasteEmail: (text: string) => call<{ ok: true; kind: string; postings: number; loadId: number | null }>('POST', '/inbox/paste', { text }),
+  integrations: () => call<Integrations>('GET', '/integrations'),
+  connectEld: (provider: EldProvider, token: string, region: string) => call<{ ok: true; vehicles: number; linked: number; hos: number }>('POST', `/integrations/eld/${provider}`, { token, region }),
+  syncEld: (provider: EldProvider) => call<{ ok: true; vehicles: number; linked: number; hos: number }>('POST', `/integrations/eld/${provider}/sync`),
+  qboConnect: () => call<{ url: string }>('POST', '/integrations/quickbooks/connect'),
+  qboSync: () => call<{ ok: true; pushed: number; paid: number }>('POST', '/integrations/quickbooks/sync'),
+  disconnect: (provider: string) => call<{ ok: true }>('DELETE', `/integrations/${provider}`),
+  linkUnit: (provider: EldProvider, vehicleId: string, v: { truckId?: number | null; create?: boolean }) => call<{ ok: true; truckId: number | null }>('PATCH', `/integrations/eld/${provider}/units/${encodeURIComponent(vehicleId)}`, v),
+  sendFactoring: (loadId: number, v: Omit<InvoiceSend, 'remind'> & { factoring?: string }) => call<{ ok: true; number: string }>('POST', `/loads/${loadId}/factoring`, v),
   setInvoiceReminders: (loadId: number, remind: boolean) => call('PATCH', `/loads/${loadId}/invoice`, { remind }),
   /** FMCSA check of an MC as a broker or a carrier. */
   check: (mc: string, role: CheckRole) => call<CompanyCheck>('GET', `/check?${new URLSearchParams({ mc, role })}`),

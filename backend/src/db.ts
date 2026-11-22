@@ -14,6 +14,9 @@ export function db(): pg.Pool | null {
     pool = new pg.Pool({ connectionString: config.databaseUrl, max: 4, ssl: local ? undefined : { rejectUnauthorized: false } });
     // An idle connection dropped by the network or by Neon must not crash the server; the pool reconnects on next use.
     pool.on('error', (e) => logger.warn(`Database connection dropped: ${e.message}`));
+    // A connection that drops while checked out (inside a transaction) has no pool listener: without this the
+    // 'error' event is unhandled and the process exits. The running query still fails and the pool discards it.
+    pool.on('connect', (client) => client.on('error', (e) => logger.warn(`Database connection dropped mid-query: ${e.message}`)));
   }
   return pool;
 }

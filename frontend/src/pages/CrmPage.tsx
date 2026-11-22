@@ -5,7 +5,10 @@ import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
 import { BoardMap } from '../components/crm/MapView'
 import { ReportsView } from '../components/crm/ReportsView'
-import { AiWorkspace } from '../components/crm/AiWorkspace'
+import { AiHome } from '../components/crm/AiHome'
+import { Onboarding } from '../components/crm/Onboarding'
+import { IntegrationsView } from '../components/crm/IntegrationsView'
+import { LoadAlertsView } from '../components/crm/LoadAlertsView'
 import { CompanySetup, SignIn, type InviteInfo } from '../components/crm/SignIn'
 import { Icon, type IconName } from '../components/Icon'
 import { BoardSkeleton } from '../components/Skeleton'
@@ -14,7 +17,7 @@ import { crm, CrmError, looksLikePlace, type Company, type CrmConfig, type CrmSt
 import { crmDemo } from '../lib/crmDemo'
 import type { BoardTool } from '../App'
 
-type Tab = 'ai' | 'loads' | 'map' | 'statements' | 'reports' | 'carriers' | 'trucks' | 'dispatchers'
+type Tab = 'ai' | 'loads' | 'map' | 'statements' | 'reports' | 'carriers' | 'trucks' | 'dispatchers' | 'integrations' | 'alerts'
 type Theme = 'light' | 'dark'
 
 const THEME_KEY = 'leadhaul.work.theme'
@@ -190,6 +193,20 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
     crm.config().then(setConfig, (e: Error) => setError(e.message))
     void reload()
   }, [reload])
+  // With AI on, the AI is the main screen: the board opens on it (once; the person can switch sections after).
+  const openedOnAi = useRef(false)
+  useEffect(() => {
+    if (config?.ai && !demo && !openedOnAi.current) { openedOnAi.current = true; setTab('ai') }
+  }, [config?.ai, demo])
+  // Back from connecting a partner (QuickBooks sends the owner back to #/crm?integrations=<message>).
+  useEffect(() => {
+    const msg = hashParams().get('integrations')
+    if (msg == null) return
+    openedOnAi.current = true
+    setTab('integrations')
+    if (msg) toast(msg)
+    history.replaceState(null, '', '#/crm')
+  }, [toast])
 
   const onSignedIn = useCallback((u: CrmUser) => {
     track('crm_sign_in', { email_domain: u.email.split('@')[1] ?? '' })
@@ -234,6 +251,8 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
     setState((s) => (s ? { ...s, loads: s.loads.map((x) => (x.id === tempId ? saved : x)) } : s))
     return saved
   }
+  /** The "bring your data in" step after sign-up was shown (or skipped) in this session. */
+  const [onboarded, setOnboarded] = useState(false)
   const [aiPrompt, setAiPrompt] = useState<{ text: string; send: boolean } | null>(null)
   const [aiLoad, setAiLoad] = useState<number | null>(null)
   const askAi = (text: string, send = true, loadId: number | null = null) => { setAiLoad(loadId); setAiPrompt({ text, send }); setTool(null); setOpenId(null); setTab('ai'); scrollTo(0, 0) }
@@ -295,16 +314,34 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
 
   const openLoad = openId == null ? null : state.loads.find((l) => l.id === openId) ?? null
 
+  // Right after sign-up, on an empty board: move the office in (files → AI fills the board). Shown once per person.
+  const obKey = `haulpanel.onboarded.${state.user.id}`
+  let obSeen = onboarded
+  try { obSeen ||= !!localStorage.getItem(obKey) } catch { /* no storage: show it until dismissed in this session */ }
+  const emptyBoard = !state.loads.length && !state.carriers.length && !state.trucks.length
+  if (config?.ai && !demo && state.me?.role !== 'dispatcher' && emptyBoard && !obSeen) {
+    return shell(<Onboarding firstName={state.user.name.split(' ')[0] || 'there'} done={(note) => {
+      try { localStorage.setItem(obKey, '1') } catch { /* fine */ }
+      setOnboarded(true)
+      setTab('ai')
+      if (note) toast(note)
+      void reload()
+    }} />, true)
+  }
+
   const aiOn = !!config?.ai && !demo
   const items: NavItem[] = [
-    ...(aiOn ? [['ai', 'AI Assistant', 'spark', 0] as NavItem] : []),
+    ...(aiOn ? [['ai', 'Home', 'spark', 0] as NavItem] : []),
     ['loads', 'Loads', 'file', state.loads.length],
+    // Load alerts by email shows only once the server receives mail (INBOUND_DOMAIN).
+    ...(demo || !config?.loadAlerts ? [] : [['alerts', 'Load alerts', 'mail', 0] as NavItem]),
     ['map', 'Map', 'map', state.loads.filter((l) => l.status === 'in_transit').length],
     ['statements', 'Statements', 'dollar', state.carriers.filter((c) => c.fee > 0).length],
     ['reports', 'Reports', 'chart', 0],
     ['carriers', 'Carriers', 'building', state.carriers.length],
     ['trucks', 'Trucks', 'truck', state.trucks.length],
     ...(state.me?.role === 'dispatcher' ? [] : [['dispatchers', 'Dispatchers', 'users', state.dispatchers.length] as NavItem]),
+    ...(demo ? [] : [['integrations', 'Integrations', 'plug', 0] as NavItem]),
   ]
   const leave = () => (demo ? setDemo(false) : void crm.logout().then(() => { setState(null); setSignedOut(true) }))
 
@@ -348,7 +385,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           lane={api.lane}
           check={api.check}
           theme={theme}
-          docs={api}
+          docs={demo ? api : { ...api, sendFactoring: crm.sendFactoring }}
           toast={toast}
           changed={() => void reload()}
           demo={demo}
@@ -377,10 +414,12 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
       {!tool && tab === 'map' && <BoardMap state={state} theme={theme} openLoad={setOpenId} points={api.points} />}
       {!tool && tab === 'reports' && <ReportsView state={state} />}
       {!tool && tab === 'ai' && aiOn && (
-        <AiWorkspace state={state} theme={theme} openLoad={setOpenId} changed={() => void reload()} prompt={aiPrompt} onPromptUsed={() => setAiPrompt(null)}
-          contextLoadId={aiLoad} firstName={state.user.name.split(' ')[0] || 'there'} />
+        <AiHome state={state} theme={theme} openLoad={setOpenId} changed={() => void reload()} prompt={aiPrompt} onPromptUsed={() => setAiPrompt(null)}
+          contextLoadId={aiLoad} firstName={state.user.name.split(' ')[0] || 'there'} owner={state.me?.role !== 'dispatcher'} />
       )}
       {!tool && tab === 'statements' && <StatementsView state={state} toast={toast} />}
+      {!tool && tab === 'alerts' && !demo && config?.loadAlerts && <LoadAlertsView owner={state.me?.role !== 'dispatcher'} toast={toast} changed={() => void reload()} />}
+      {!tool && tab === 'integrations' && !demo && <IntegrationsView state={state} owner={state.me?.role !== 'dispatcher'} changed={() => void reload()} toast={toast} />}
       {!tool && tab === 'trucks' && (
         <TrucksView
           state={state}

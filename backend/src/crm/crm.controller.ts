@@ -17,16 +17,22 @@ import type { CompanyInput } from './crm.types.js';
 import { MilesService } from './miles.js';
 import { CompanyCheckService } from './company-check.service.js';
 import { aiEnabled, readRateCon } from './ai.js';
-import { boardContext, chat, decide, newThread, type AgentCtx, type Thread } from './ai-agent.js';
+import { actionView, boardContext, chat, decide, newThread, undo, type AgentCtx, type Emit, type Thread } from './ai-agent.js';
 import { LookupService } from '../fmcsa/lookup.service.js';
 import { parseLookupQuery } from '../fmcsa/lookup.query.js';
 import { TelegramService } from '../telegram/telegram.service.js';
 import { FILE_KINDS, type FileKind } from './crm.store.js';
 import { buildInvoicePdf } from './invoice.js';
-import { invoiceParts, sendLoadInvoice } from './invoice-send.js';
+import { invoiceParts, sendLoadInvoice, sendToFactoring } from './invoice-send.js';
+import { EldSyncService } from './integrations/eld-sync.service.js';
+import { QboService } from './integrations/qbo.service.js';
+import { InboxService } from './inbox/inbox.service.js';
+import { EldError, ELD_PROVIDERS, type EldProvider, type EldRegion } from './integrations/eld.js';
+import { vaultReady } from './integrations/vault.js';
 import type { Load } from './crm.types.js';
 import { emailOk as validEmail } from './password.js';
 import { PlacesService } from './places.js';
+import { planImport, type ImportFile, type ImportPlan } from './ai-import.js';
 
 const COOKIE = 'lh_crm';
 const COMPANY_TYPES = ['dispatch', 'carrier', 'broker'];
@@ -66,15 +72,17 @@ export class CrmController {
   private readonly aiLimiter = new RateLimiter(60, 3600_000);
   /** Miles are public (the demo uses them too), so each visitor gets a fair share of the free map services. */
   private readonly milesLimiter = new RateLimiter(150, 10 * 60_000);
+  /** AI import previews waiting for "Import" (an hour at most). */
+  private readonly importPlans = new Map<string, { at: number; plan: ImportPlan }>();
 
-  constructor(private readonly checks: CompanyCheckService, private readonly telegram: TelegramService, private readonly lookup: LookupService) {
+  constructor(private readonly checks: CompanyCheckService, private readonly telegram: TelegramService, private readonly lookup: LookupService, private readonly eld: EldSyncService, private readonly qbo: QboService, private readonly inbox: InboxService) {
     const pool = db();
     this.store = pool ? new CrmStore(pool) : null;
   }
 
   @Get('config')
   settings() {
-    return { googleClientId: config.googleClientId, devLogin: config.crmDevLogin, enabled: !!this.store, emailAuth: !!this.store && mailReady(), ai: aiEnabled() };
+    return { googleClientId: config.googleClientId, devLogin: config.crmDevLogin, enabled: !!this.store, emailAuth: !!this.store && mailReady(), ai: aiEnabled(), loadAlerts: this.inbox.enabled() };
   }
 
   @Post('auth/google')
@@ -248,17 +256,10 @@ export class CrmController {
     }
   }
 
-  /**
-   * Ask AI: the assistant works the board with tools (finds and totals loads, checks MCs, miles) and proposes
-   * changes that run only after the user confirms them. The conversation is kept per user (crm_ai_threads).
-   * Body: { threadId?, text, file?: { name, mime, data (base64) }, loadId? }.
-   */
-  @Post('ai/chat')
-  @HttpCode(200)
-  async aiChat(@Req() req: Request, @Body() b: { threadId?: string; text?: string; file?: { name?: string; data?: string }; loadId?: number }) {
-    const s = await this.auth(req);
+  /** The message, file and chat of an AI request (checked before anything is sent to the AI). */
+  private async aiInput(s: Scope, b: { threadId?: string; text?: string; file?: { name?: string; data?: string }; loadId?: number }) {
     if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
-    const textIn = text(b?.text, 2000);
+    const textIn = text(b?.text, 4000);
     let file: { name: string; mime: string; data: Buffer } | null = null;
     if (b?.file?.data) {
       const data = Buffer.from(String(b.file.data), 'base64');
@@ -270,10 +271,50 @@ export class CrmController {
     if (!textIn && !file) throw new BadRequestException('Write a message');
     if (!this.aiLimiter.take(`ws:${s.ws}`)) throw new HttpException('Too many AI requests this hour, try again later', 429);
     const t = (b?.threadId && (await this.store!.aiThread(s.ws, s.user.id, text(b.threadId, 60)))) || newThread();
-    if (t.messages.length > 120) throw new BadRequestException('This chat is long — start a new chat');
+    if (t.messages.length > 160) throw new BadRequestException('This chat is long — start a new chat');
+    return { t, input: { text: textIn, file, loadId: Number.isInteger(b?.loadId) ? (b.loadId as number) : null } };
+  }
+
+  /**
+   * Server-sent events: every step of the assistant's work as it happens (steps, text, cards, changes), then the saved
+   * chat. Closing the connection (the Stop button) stops the assistant; what it did so far is kept.
+   */
+  private async streamAi(res: Response, s: Scope, t: Thread, run: (emit: Emit, signal: AbortSignal) => Promise<void>) {
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+    const ac = new AbortController();
+    res.on('close', () => { if (!res.writableFinished) ac.abort(); });
+    const send = (e: object) => { if (!res.writableEnded && !res.destroyed) res.write(`data: ${JSON.stringify(e)}\n\n`); };
+    send({ type: 'start', threadId: t.id });
+    const ping = setInterval(() => { if (!res.writableEnded && !res.destroyed) res.write(': ping\n\n'); }, 15_000);
+    try {
+      await run(send, ac.signal);
+    } catch (e) {
+      send({ type: 'error', message: (e as Error).message });
+    } finally {
+      clearInterval(ping);
+      await this.store!.saveAiThread(s.ws, s.user.id, t).catch(() => undefined);
+      send({ type: 'done', view: aiView(t) });
+      if (!res.writableEnded) res.end();
+    }
+  }
+
+  /**
+   * The AI assistant (the board's main screen): it works the board with tools, makes board changes itself (each can
+   * be undone) and prepares emails that wait for an OK. The conversation is kept per user (crm_ai_threads).
+   * Body: { threadId?, text, file?: { name, data (base64) }, loadId? }. `ai/chat/stream` shows the work live.
+   */
+  @Post('ai/chat')
+  @HttpCode(200)
+  async aiChat(@Req() req: Request, @Body() b: { threadId?: string; text?: string; file?: { name?: string; data?: string }; loadId?: number }) {
+    const s = await this.auth(req);
+    const { t, input } = await this.aiInput(s, b);
     const ctx = this.agentCtx(s);
     try {
-      await chat(ctx, t, boardContext(await ctx.state(), s), { text: textIn, file, loadId: Number.isInteger(b?.loadId) ? b.loadId : null });
+      await chat(ctx, t, boardContext(await ctx.state(), s), input);
     } catch (e) {
       await this.store!.saveAiThread(s.ws, s.user.id, t);
       throw new ServiceUnavailableException((e as Error).message);
@@ -282,7 +323,16 @@ export class CrmController {
     return aiView(t);
   }
 
-  /** The user confirms (or declines) one action the assistant proposed. */
+  @Post('ai/chat/stream')
+  async aiChatStream(@Req() req: Request, @Res() res: Response, @Body() b: { threadId?: string; text?: string; file?: { name?: string; data?: string }; loadId?: number }) {
+    const s = await this.auth(req);
+    const { t, input } = await this.aiInput(s, b);
+    const ctx = this.agentCtx(s);
+    const board = boardContext(await ctx.state(), s);
+    await this.streamAi(res, s, t, (emit, signal) => chat(ctx, t, board, input, emit, signal));
+  }
+
+  /** The user answers an email waiting for their OK (approve sends it). */
   @Post('ai/decide')
   @HttpCode(200)
   async aiDecide(@Req() req: Request, @Body() b: { threadId?: string; actionId?: string; approve?: boolean }) {
@@ -298,6 +348,64 @@ export class CrmController {
     }
     await this.store!.saveAiThread(s.ws, s.user.id, t);
     return aiView(t);
+  }
+
+  @Post('ai/decide/stream')
+  async aiDecideStream(@Req() req: Request, @Res() res: Response, @Body() b: { threadId?: string; actionId?: string; approve?: boolean }) {
+    const s = await this.auth(req);
+    if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
+    const t = found(await this.store!.aiThread(s.ws, s.user.id, text(b?.threadId, 60)));
+    const ctx = this.agentCtx(s);
+    const board = boardContext(await ctx.state(), s);
+    await this.streamAi(res, s, t, (emit, signal) => decide(ctx, t, board, text(b?.actionId, 100), b?.approve === true, emit, signal));
+  }
+
+  /** Takes back a change the assistant made by itself. */
+  @Post('ai/undo')
+  @HttpCode(200)
+  async aiUndo(@Req() req: Request, @Body() b: { threadId?: string; actionId?: string }) {
+    const s = await this.auth(req);
+    const t = found(await this.store!.aiThread(s.ws, s.user.id, text(b?.threadId, 60)));
+    const a = await undo(this.agentCtx(s), t, text(b?.actionId, 100));
+    if (!a) throw new BadRequestException('Nothing to undo');
+    await this.store!.saveAiThread(s.ws, s.user.id, t);
+    return aiView(t);
+  }
+
+  /**
+   * Moving a dispatch office in: files (Excel, CSV, PDF, photos, screenshots) and/or a Google Sheets link → what the
+   * AI found, as a preview. Nothing is saved until `ai/import/apply`. Owner only. Body: { files: [{ name, data }], sheetUrl? }.
+   */
+  @Post('ai/import')
+  @HttpCode(200)
+  async aiImport(@Req() req: Request, @Body() b: { files?: { name?: string; data?: string }[]; sheetUrl?: string }) {
+    const s = await this.owner(req);
+    if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
+    const files: ImportFile[] = (Array.isArray(b?.files) ? b.files : []).slice(0, 10).map((f) => ({ name: text(f?.name, 120) || 'file', data: Buffer.from(String(f?.data ?? ''), 'base64') }))
+      .filter((f) => f.data.length);
+    if (files.some((f) => f.data.length > 15 * 1024 * 1024)) throw new BadRequestException('Each file must be under 15 MB');
+    if (b?.sheetUrl) files.push(await googleSheet(text(b.sheetUrl, 500)));
+    if (!files.length) throw new BadRequestException('Add a file or a Google Sheets link');
+    for (let i = 0; i <= files.length; i++) if (!this.aiLimiter.take(`ws:${s.ws}`)) throw new HttpException('Too many AI requests this hour, try again later', 429);
+    const plan = await planImport(await this.store!.state(s.ws, s.user), files);
+    this.importPlans.set(`${s.ws}:${plan.id}`, { at: Date.now(), plan });
+    for (const [k, v] of this.importPlans) if (Date.now() - v.at > 3600_000) this.importPlans.delete(k);
+    return plan;
+  }
+
+  @Post('ai/import/apply')
+  @HttpCode(200)
+  async aiImportApply(@Req() req: Request, @Body() b: { id?: string; skip?: { loads?: number[] } }) {
+    const s = await this.owner(req);
+    const key = `${s.ws}:${text(b?.id, 60)}`;
+    const saved = this.importPlans.get(key);
+    if (!saved) throw new BadRequestException('This preview has expired — add the files again');
+    const skip = new Set(Array.isArray(b?.skip?.loads) ? b.skip.loads : []);
+    const plan = { ...saved.plan, loads: saved.plan.loads.filter((_, i) => !skip.has(i)) };
+    const r = await this.store!.applyImport(s.ws, plan);
+    this.importPlans.delete(key);
+    for (const c of plan.carriers.filter((x) => x.mc && !x.existing).slice(0, 50)) this.checkCarrierSoon(s.ws, c.mc);
+    return r;
   }
 
   /** The person's recent chats for the history list. */
@@ -340,18 +448,23 @@ export class CrmController {
       createLoad: (l) => this.store!.addLoad(s.ws, mine(l)),
       updateLoad: async (id, l) => { await this.loadAccess(s, id); return this.store!.updateLoad(s.ws, id, mine(l)); },
       sendInvoice: (id, to, attach) => this.loadAccess(s, id).then(() => this.emailInvoice(s, id, to, [], attach, true, '')),
+      sendFactoring: (id, attach, to) => this.factorPacket(s, id, to ?? '', '', [], attach, ''),
+      emailBroker: (to, subject, body) => this.brokerEmail(s, to, subject, body),
       addCarrier: async (c) => { if (s.role !== 'owner') throw new Error('Only the owner can add carriers here'); this.checkCarrierSoon(s.ws, c.mc); return this.store!.addCarrier(s.ws, c); },
       trackingLink: async (id) => {
         await this.loadAccess(s, id);
         return `${config.publicUrl || 'https://haulpanel.com'}/#/track/${found(await this.store!.trackingToken(s.ws, id))}`;
       },
       attachFile: async (id, name, mime, data) => { await this.loadAccess(s, id); return this.store!.addFile(s.ws, id, { kind: 'ratecon', name, mime, data }); },
+      deleteLoad: async (id) => { await this.loadAccess(s, id); await this.store!.deleteLoad(s.ws, id); },
+      archiveCarrier: async (id) => { if (s.role !== 'owner') throw new Error('Only the owner can remove carriers'); await this.store!.archiveCarrier(s.ws, id); },
     };
   }
 
   /** The board as this person may see it: the owner sees everything, an invited dispatcher only their own loads. */
   private async scopedState(s: Scope) {
-    const st = await this.store!.state(s.ws, s.user);
+    const [base, eld] = await Promise.all([this.store!.state(s.ws, s.user), this.eld.store?.units(s.ws).catch(() => []) ?? []]);
+    const st = { ...base, eld };
     const me = { role: s.role, dispatcherId: s.dispatcherId };
     if (s.role === 'owner') return { ...st, me, team: await this.store!.team(s.ws) };
     // An invited dispatcher sees the board's carriers and trucks, but only their own loads, documents and pay.
@@ -365,7 +478,202 @@ export class CrmController {
     };
   }
 
-  // Team (owner only)
+  // Load alerts inbox: load-board alerts and broker load lists sent to the board's address, matched to its trucks
+
+  @Get('inbox')
+  async inboxView(@Req() req: Request) {
+    const { ws } = await this.auth(req);
+    const store = this.inbox.store;
+    if (!store) throw new ServiceUnavailableException('The inbox is not available');
+    const settings = await store.settings(ws);
+    const [rows, messages] = await Promise.all([store.postings(ws), store.messages(ws)]);
+    const postings = await this.inbox.refit(ws, rows);
+    return {
+      enabled: this.inbox.enabled(), ai: aiEnabled(), address: this.inbox.enabled() ? this.inbox.address(settings.token) : '',
+      settings: { autoEmail: settings.autoEmail, minRpm: settings.minRpm, maxDeadhead: settings.maxDeadhead, dailyCap: settings.dailyCap },
+      postings, messages,
+    };
+  }
+
+  @Patch('inbox/settings')
+  async inboxSettings(@Req() req: Request, @Body() b: Record<string, unknown>) {
+    const { ws } = await this.owner(req);
+    const n = (v: unknown, min: number, max: number, dflt: number) => { const x = Number(v); return Number.isFinite(x) ? Math.min(max, Math.max(min, x)) : dflt; };
+    await this.inbox.store!.saveSettings(ws, { autoEmail: b.autoEmail === true, minRpm: n(b.minRpm, 0, 20, 2.5), maxDeadhead: Math.round(n(b.maxDeadhead, 0, 1000, 150)), dailyCap: Math.round(n(b.dailyCap, 0, 200, 40)) });
+    return { ok: true };
+  }
+
+  /** The email to the broker about a posting, ready to send (the dispatcher may edit it). */
+  @Get('inbox/postings/:id/draft')
+  async postingDraft(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
+    const { ws, user } = await this.auth(req);
+    const p = found(await this.inbox.store!.posting(ws, id));
+    return { to: p.data.email, ...(await this.inbox.draft(ws, p, user.name)) };
+  }
+
+  @Post('inbox/postings/:id/email')
+  @HttpCode(200)
+  async emailPosting(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() b: Record<string, unknown>) {
+    const scope = await this.auth(req);
+    const subject = text(b.subject, 200), body = text(b.body, 4000);
+    if (!subject || !body) throw new BadRequestException('Write the subject and the message');
+    if (!this.mailHourly.take(`broker:${scope.ws}`)) throw new HttpException('Too many emails this hour, try again later', 429);
+    try {
+      return { ok: true, ...(await this.inbox.emailPosting(scope.ws, scope.user, id, subject, body)) };
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+  }
+
+  @Post('inbox/postings/:id/dismiss')
+  @HttpCode(200)
+  async dismissPosting(@Req() req: Request, @Param('id', ParseIntPipe) id: number) {
+    const { ws } = await this.auth(req);
+    await this.inbox.store!.dismiss(ws, id);
+    return { ok: true };
+  }
+
+  /** Try it without email: paste an alert or a broker's load list, it's read like an email to the board's address. */
+  @Post('inbox/paste')
+  @HttpCode(200)
+  async pasteEmail(@Req() req: Request, @Body() b: Record<string, unknown>) {
+    const { ws } = await this.owner(req);
+    if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
+    const body = text(b.text, 40_000);
+    if (body.length < 20) throw new BadRequestException('Paste the whole email or load list');
+    if (!this.aiLimiter.take(`ws:${ws}`)) throw new HttpException('Too many AI requests this hour, try again later', 429);
+    try {
+      const r = await this.inbox.process(ws, { from: '(pasted)', to: [], subject: text(b.subject, 200) || 'Pasted load list', text: body, html: '', attachments: [] });
+      return { ok: true, kind: r.kind, postings: r.postings.length, loadId: r.loadId ?? null };
+    } catch (e) {
+      throw new ServiceUnavailableException((e as Error).message);
+    }
+  }
+
+  // Integrations: ELD (Samsara now; Motive once Motive approves HaulPanel), more partners next
+
+  @Get('integrations')
+  async integrations(@Req() req: Request) {
+    const { ws } = await this.auth(req);
+    const store = this.eld.store;
+    return {
+      ready: !!store && vaultReady(),
+      providers: this.eld.providers(),
+      quickbooks: this.qbo.enabled(),
+      connections: store ? await store.connections(ws) : [],
+      units: store ? await store.units(ws) : [],
+    };
+  }
+
+  /** Connects an ELD with the carrier's own token: it's checked against the ELD right away and the fleet is read. */
+  @Post('integrations/eld/:provider')
+  @HttpCode(200)
+  async connectEld(@Req() req: Request, @Param('provider') provider: string, @Body() b: Record<string, unknown>) {
+    const { ws } = await this.owner(req);
+    const p = this.eldProvider(provider);
+    const token = text(b.token, 500).replace(/^Bearer\s+/i, '');
+    if (token.length < 10) throw new BadRequestException(p === 'samsara' ? 'Paste the API token from Samsara (Settings → API Tokens)' : 'Paste the API key from Motive (Admin → Developers → API Access)');
+    const region = (['us', 'eu', 'ca'].includes(String(b.region)) ? b.region : 'us') as EldRegion;
+    if (!this.authLimiter.take(`eld:${ws}`)) throw new HttpException('Too many tries, wait a few minutes', 429);
+    try {
+      const r = await this.eld.sync(ws, { provider: p, region, token });
+      // Saved only after the ELD accepted it; the first sync above already filled the map.
+      await this.eld.store!.connect(ws, p, region, token);
+      return { ok: true, ...r };
+    } catch (e) {
+      if (e instanceof EldError) throw new BadRequestException(e.message);
+      throw e;
+    }
+  }
+
+  @Post('integrations/eld/:provider/sync')
+  @HttpCode(200)
+  async syncEld(@Req() req: Request, @Param('provider') provider: string) {
+    const { ws } = await this.auth(req);
+    const p = this.eldProvider(provider);
+    const c = (await this.eld.store!.allOf([p])).find((x) => x.ws === ws);
+    if (!c) throw new NotFoundException('Not connected');
+    try {
+      return { ok: true, ...(await this.eld.sync(ws, { provider: p, region: c.region as EldRegion, token: c.secret })) };
+    } catch (e) {
+      if (e instanceof EldError) {
+        if (e.auth) await this.eld.store!.markError(ws, p, e.message);
+        throw new BadRequestException(e.message);
+      }
+      throw e;
+    }
+  }
+
+  @Delete('integrations/:provider')
+  async disconnect(@Req() req: Request, @Param('provider') provider: string) {
+    const { ws } = await this.owner(req);
+    if (provider === 'quickbooks') await this.qbo.disconnect(ws);
+    else await this.eld.store!.disconnect(ws, this.eldProvider(provider));
+    return { ok: true };
+  }
+
+  /** Starts connecting QuickBooks: the page goes to this Intuit address, the owner approves, Intuit calls back. */
+  @Post('integrations/quickbooks/connect')
+  @HttpCode(200)
+  async qboConnect(@Req() req: Request) {
+    const { ws, user } = await this.owner(req);
+    if (!this.qbo.enabled()) throw new ServiceUnavailableException('QuickBooks connection isn’t switched on yet');
+    return { url: this.qbo.start(ws, user.id) };
+  }
+
+  /** Intuit sends the owner back here; the code is turned into tokens and the page goes back to Integrations. */
+  @Get('integrations/quickbooks/callback')
+  async qboCallback(@Req() req: Request, @Res() res: Response, @Query('code') code = '', @Query('state') state = '', @Query('realmId') realmId = '', @Query('error') error = '') {
+    const back = (msg: string) => res.redirect(302, `/#/crm?integrations=${encodeURIComponent(msg)}`);
+    if (error) return back(error === 'access_denied' ? 'QuickBooks was not connected' : 'QuickBooks couldn’t connect');
+    try {
+      const { ws, user } = await this.owner(req);
+      const r = await this.qbo.finish(state, code, realmId, user.id);
+      void this.qbo.pushExisting(ws, user).catch(() => undefined);
+      return back(`QuickBooks connected${r.company ? `: ${r.company}` : ''}`);
+    } catch (e) {
+      return back((e as Error).message);
+    }
+  }
+
+  /** Sends invoices not in QuickBooks yet and marks loads paid that QuickBooks shows paid. */
+  @Post('integrations/quickbooks/sync')
+  @HttpCode(200)
+  async qboSync(@Req() req: Request) {
+    const { ws, user } = await this.owner(req);
+    if (!this.qbo.enabled()) throw new ServiceUnavailableException('QuickBooks connection isn’t switched on yet');
+    try {
+      const pushed = await this.qbo.pushExisting(ws, user);
+      const paid = await this.qbo.syncPayments(ws);
+      return { ok: true, pushed, paid };
+    } catch (e) {
+      throw new BadRequestException((e as Error).message);
+    }
+  }
+
+  /** Links an ELD vehicle to a board truck (truckId), to none (null), or makes a new truck from it (create: true). */
+  @Patch('integrations/eld/:provider/units/:vehicleId')
+  async linkUnit(@Req() req: Request, @Param('provider') provider: string, @Param('vehicleId') vehicleId: string, @Body() b: Record<string, unknown>) {
+    const { ws } = await this.owner(req);
+    const p = this.eldProvider(provider);
+    let truckId = b.truckId == null ? null : Number(b.truckId);
+    if (b.create) {
+      const u = (await this.eld.store!.units(ws)).find((x) => x.provider === p && x.vehicleId === vehicleId);
+      if (!u) throw new NotFoundException();
+      truckId = (await this.store!.addTruck(ws, { carrierId: null, unit: (u.name.replace(/^\s*(fleet\s+)?(truck|tractor|unit|trk)\s*#?\s*/i, '') || u.name || vehicleId).slice(0, 40), driver: u.driver.slice(0, 80), phone: '' })).id;
+    }
+    if (truckId != null && !Number.isInteger(truckId)) throw new BadRequestException('Unknown truck');
+    if (!(await this.eld.store!.link(ws, p, vehicleId, truckId))) throw new NotFoundException();
+    return { ok: true, truckId };
+  }
+
+  private eldProvider(p: string): EldProvider {
+    if (!(ELD_PROVIDERS as string[]).includes(p)) throw new NotFoundException();
+    if (!this.eld.store || !vaultReady()) throw new ServiceUnavailableException('Integrations are not switched on yet');
+    if (!this.eld.providers().includes(p as EldProvider)) throw new BadRequestException('Motive connections open once Motive approves HaulPanel as a partner');
+    return p as EldProvider;
+  }
+
 
   /** Invites a dispatcher of this board by email: they get a link to sign up (or log in) and join. */
   @Post('invites')
@@ -652,7 +960,59 @@ export class CrmController {
     const to = normEmail(toRaw);
     if (!validEmail(to)) throw new BadRequestException('Enter the broker’s billing email');
     if (!this.mailHourly.take(`invoice:${scope.ws}`)) throw new HttpException('Too many invoices this hour, try again later', 429);
-    return sendLoadInvoice(this.store!, scope.ws, scope.user, id, to, cc, attach, remind, note);
+    const r = await sendLoadInvoice(this.store!, scope.ws, scope.user, id, to, cc, attach, remind, note);
+    void this.qbo.push(scope.ws, scope.user, id);
+    return r;
+  }
+
+  /**
+   * Sends the carrier's invoice packet to their factoring company (and remembers that address on the carrier, so the
+   * next load is one click). The load is marked invoiced; the factor collects, so no broker reminders.
+   */
+  @Post('loads/:id/factoring')
+  @HttpCode(200)
+  async sendFactoring(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() b: Record<string, unknown>) {
+    const scope = await this.auth(req);
+    const cc = (Array.isArray(b.cc) ? b.cc : []).map((x) => normEmail(String(x))).filter(validEmail).slice(0, 3);
+    const attach = (Array.isArray(b.attach) ? b.attach : []).map(Number).filter(Number.isInteger);
+    return { ok: true, ...(await this.factorPacket(scope, id, String(b.to ?? ''), text(b.factoring, 120), cc, attach, text(b.note, 1000))) };
+  }
+
+  /** The invoice packet to the carrier's factoring company; the factor's name and email are remembered on the carrier. */
+  private async factorPacket(scope: Scope, id: number, toRaw: string, factoring: string, cc: string[], attach: number[], note: string) {
+    await this.loadAccess(scope, id);
+    const load = await this.store!.loadById(scope.ws, id);
+    const carrier = load?.carrierId == null ? null : (await this.store!.state(scope.ws, scope.user)).carriers.find((c) => c.id === load.carrierId);
+    if (!carrier) throw new BadRequestException('Choose the carrier of this load first');
+    const to = normEmail(toRaw) || carrier.factoringEmail || '';
+    if (!validEmail(to)) throw new BadRequestException(`Enter ${carrier.factoring || 'the factoring company'}’s email for invoices`);
+    // The factoring company's name goes on the invoice as "remit to", so it's saved before the PDF is made.
+    const name = factoring || carrier.factoring;
+    if (!name) throw new BadRequestException('Enter the factoring company’s name — it goes on the invoice as “remit to”');
+    if (!this.mailHourly.take(`invoice:${scope.ws}`)) throw new HttpException('Too many invoices this hour, try again later', 429);
+    if (name !== carrier.factoring || to !== carrier.factoringEmail) {
+      const { id: cid, ...rest } = carrier;
+      await this.store!.updateCarrier(scope.ws, cid, { ...rest, factoring: name, factoringEmail: to });
+    }
+    const r = await sendToFactoring(this.store!, scope.ws, scope.user, id, to, cc, attach, note);
+    void this.qbo.push(scope.ws, scope.user, id);
+    return { ...r, factor: name };
+  }
+
+  /** An email the AI wrote to a broker (about a posted load, a truck, a rate), sent after the user's OK. Replies go to them. */
+  private async brokerEmail(scope: Scope, toRaw: string, subject: string, body: string) {
+    const to = normEmail(toRaw);
+    if (!validEmail(to)) throw new BadRequestException('That broker email doesn’t look right');
+    if (!this.mailHourly.take(`broker:${scope.ws}`)) throw new HttpException('Too many emails this hour, try again later', 429);
+    const co = await this.store!.company(scope.ws);
+    const from = co.name || scope.user.name;
+    const sign = [scope.user.name, [from, co.mc && `MC ${co.mc}`, co.phone].filter(Boolean).join(' · ')].filter(Boolean).join('\n');
+    const textBody = `${body.trim()}\n\n${sign}`;
+    await sendMail({
+      to, fromName: `${from} via HaulPanel`, replyTo: scope.user.email, subject: subject.slice(0, 200),
+      text: textBody, html: `<div style="font:14px/1.5 sans-serif">${esc(textBody).replace(/\n/g, '<br>')}</div>`,
+    });
+    return { to };
   }
 
   @Patch('loads/:id/invoice')
@@ -815,7 +1175,18 @@ export function boardText(st: { company: { name: string }; loads: Load[]; carrie
 
 /** What the chat panel shows: the conversation and the actions waiting for a decision. */
 function aiView(t: Thread) {
-  return { threadId: t.id, title: t.title ?? 'New chat', items: t.display, pending: t.pending.map(({ id, tool, summary, status }) => ({ id, tool, summary, status })) };
+  return { threadId: t.id, title: t.title ?? 'New chat', items: t.display, pending: t.pending.map(actionView), actions: (t.actions ?? []).map(actionView) };
+}
+
+/** A Google Sheet shared "anyone with the link" → all its tabs as an .xlsx file. */
+async function googleSheet(url: string): Promise<ImportFile> {
+  const id = /docs\.google\.com\/spreadsheets\/d\/([\w-]{20,})/.exec(url)?.[1];
+  if (!id) throw new BadRequestException('That is not a Google Sheets link');
+  const r = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`, { redirect: 'follow', signal: AbortSignal.timeout(30_000) }).catch(() => null);
+  const data = r?.ok ? Buffer.from(await r.arrayBuffer()) : null;
+  if (!data || data.readUInt32LE(0) !== 0x04034b50) throw new BadRequestException('Can’t open this sheet — in Google Sheets set Share → “Anyone with the link can view”, then try again');
+  if (data.length > 15 * 1024 * 1024) throw new BadRequestException('The sheet is over 15 MB');
+  return { name: 'Google Sheet.xlsx', data };
 }
 
 /** "3,4" → [3, 4] */

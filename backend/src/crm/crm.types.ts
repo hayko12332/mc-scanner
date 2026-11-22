@@ -1,5 +1,6 @@
 import type { CompanyCheck } from './company-check.js';
 import type { CrmFile, Position } from './crm.store.js';
+import type { EldView } from './integrations/integrations.store.js';
 
 /** Dispatcher CRM: a workspace (one per user for now) with its dispatchers, carriers and loads. */
 
@@ -34,6 +35,8 @@ export interface CrmCarrier {
   fee: number;
   /** Factoring company the carrier uses, if any. */
   factoring: string;
+  /** Where that factoring company takes invoice packets (empty = not set). */
+  factoringEmail?: string;
 }
 
 /** A truck (and its driver) of a carrier. */
@@ -106,6 +109,8 @@ export interface CrmState {
   drivers: { truckId: number; name: string }[];
   /** Last known position of each truck (from the driver's Telegram location). */
   positions: Position[];
+  /** Vehicles from a connected ELD (Samsara / Motive): location and the driver's hours left. */
+  eld?: EldView[];
 }
 
 /** A row pasted from a spreadsheet; dispatcher and carrier are names that are matched or created. */

@@ -34,6 +34,16 @@ export const config = {
   mailFrom: env('MAIL_FROM') || 'HaulPanel <no-reply@haulpanel.com>',
   mailReplyTo: env('MAIL_REPLY_TO'),
   onRender: env('RENDER') === 'true',
+  // Motive (ELD) API terms need Motive's written OK before other carriers connect; switch on after it (MOTIVE_ENABLED=1).
+  motiveEnabled: env('MOTIVE_ENABLED') === '1',
+  // QuickBooks Online app (developer.intuit.com → Keys & credentials). QBO_SANDBOX=1 uses the sandbox companies.
+  qboClientId: env('QBO_CLIENT_ID'),
+  qboClientSecret: env('QBO_CLIENT_SECRET'),
+  qboSandbox: env('QBO_SANDBOX') === '1',
+  // Inbound email (Resend receiving): the domain of boards' load-alert addresses, e.g. in.haulpanel.com, and the
+  // signing secret of the Resend webhook (whsec_…). Both empty = the inbox is off.
+  inboundDomain: env('INBOUND_DOMAIN').toLowerCase(),
+  resendWebhookSecret: env('RESEND_WEBHOOK_SECRET'),
   // Local development only: lets /api/crm/auth/dev log in without Google. Never set on the server.
   crmDevLogin: env('CRM_DEV_LOGIN') === '1' && env('RENDER') !== 'true',
   // Public https address of the site; Render sets RENDER_EXTERNAL_URL automatically.

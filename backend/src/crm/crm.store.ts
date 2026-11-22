@@ -1,3 +1,4 @@
+import type { ImportPlan } from './ai-import.js';
 import { createHash, randomBytes } from 'node:crypto';
 import type pg from 'pg';
 import type { CompanyCheck } from './company-check.js';
@@ -65,6 +66,8 @@ const SCHEMA = `
   ALTER TABLE crm_carriers ADD COLUMN IF NOT EXISTS fee_type TEXT NOT NULL DEFAULT 'percent';
   ALTER TABLE crm_carriers ADD COLUMN IF NOT EXISTS fee NUMERIC(12,2) NOT NULL DEFAULT 0;
   ALTER TABLE crm_carriers ADD COLUMN IF NOT EXISTS factoring TEXT NOT NULL DEFAULT '';
+  -- Where the carrier's factoring company takes invoice packets ("Send to factoring")
+  ALTER TABLE crm_carriers ADD COLUMN IF NOT EXISTS factoring_email TEXT NOT NULL DEFAULT '';
   CREATE TABLE IF NOT EXISTS crm_trucks (
     id            BIGSERIAL PRIMARY KEY,
     workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
@@ -206,7 +209,7 @@ const SCHEMA = `
   );
 `;
 
-const CARRIER_COLS = 'id, name, mc, dot, phone, email, notes, fee_type, fee, factoring';
+const CARRIER_COLS = 'id, name, mc, dot, phone, email, notes, fee_type, fee, factoring, factoring_email';
 const TRUCK_COLS = 'id, carrier_id, unit, driver, phone';
 const LOAD_COLS = `id, to_char(load_date, 'YYYY-MM-DD') AS load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, notes,
   status, truck_id, loaded_miles, empty_miles, detention, layover, tonu, other, lumper,
@@ -250,6 +253,7 @@ const toDispatcher = (r: Record<string, unknown>): Dispatcher => ({ id: Number(r
 const toCarrier = (r: Record<string, unknown>): CrmCarrier => ({
   id: Number(r.id), name: String(r.name), mc: String(r.mc), dot: String(r.dot), phone: String(r.phone), email: String(r.email), notes: String(r.notes),
   feeType: (r.fee_type === 'flat' ? 'flat' : 'percent') as FeeType, fee: Number(r.fee ?? 0), factoring: String(r.factoring ?? ''),
+  factoringEmail: String(r.factoring_email ?? ''),
 });
 const toTruck = (r: Record<string, unknown>): Truck => ({
   id: Number(r.id), carrierId: r.carrier_id == null ? null : Number(r.carrier_id), unit: String(r.unit), driver: String(r.driver), phone: String(r.phone),
@@ -274,7 +278,8 @@ export type TruckInput = Omit<Truck, 'id'>;
 
 /** Every query is scoped to one workspace, so a user can only ever touch their own rows. */
 export class CrmStore {
-  private readonly ready: Promise<unknown>;
+  /** Tables are there (other stores whose tables reference these wait for it). */
+  readonly ready: Promise<unknown>;
 
   constructor(private readonly pool: pg.Pool) {
     this.ready = pool.query(SCHEMA);
@@ -777,18 +782,19 @@ export class CrmStore {
 
   async addCarrier(ws: number, c: CarrierInput): Promise<CrmCarrier> {
     const { rows } = await this.pool.query(
-      `INSERT INTO crm_carriers (workspace_id, name, mc, dot, phone, email, notes, fee_type, fee, factoring) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `INSERT INTO crm_carriers (workspace_id, name, mc, dot, phone, email, notes, fee_type, fee, factoring, factoring_email) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        RETURNING ${CARRIER_COLS}`,
-      [ws, c.name, c.mc, c.dot, c.phone, c.email, c.notes, c.feeType, c.fee, c.factoring],
+      [ws, c.name, c.mc, c.dot, c.phone, c.email, c.notes, c.feeType, c.fee, c.factoring, c.factoringEmail ?? ''],
     );
     return toCarrier(rows[0]);
   }
 
   async updateCarrier(ws: number, id: number, c: CarrierInput): Promise<CrmCarrier | null> {
     const { rows } = await this.pool.query(
-      `UPDATE crm_carriers SET name = $3, mc = $4, dot = $5, phone = $6, email = $7, notes = $8, fee_type = $9, fee = $10, factoring = $11
+      `UPDATE crm_carriers SET name = $3, mc = $4, dot = $5, phone = $6, email = $7, notes = $8, fee_type = $9, fee = $10, factoring = $11,
+        factoring_email = COALESCE($12, factoring_email)
         WHERE workspace_id = $1 AND id = $2 RETURNING ${CARRIER_COLS}`,
-      [ws, id, c.name, c.mc, c.dot, c.phone, c.email, c.notes, c.feeType, c.fee, c.factoring],
+      [ws, id, c.name, c.mc, c.dot, c.phone, c.email, c.notes, c.feeType, c.fee, c.factoring, c.factoringEmail ?? null],
     );
     return rows[0] ? toCarrier(rows[0]) : null;
   }
@@ -861,6 +867,79 @@ export class CrmStore {
 
   async deleteLoad(ws: number, id: number) {
     await this.pool.query('DELETE FROM crm_loads WHERE workspace_id = $1 AND id = $2', [ws, id]);
+  }
+
+  /**
+   * Saves an AI import in one go (all or nothing): dispatchers, carriers and trucks already on the board are reused
+   * (carriers by MC or name, trucks by unit or driver), the rest are added; loads marked as duplicates are skipped.
+   */
+  async applyImport(ws: number, plan: ImportPlan): Promise<{ dispatchers: number; carriers: number; trucks: number; loads: number; brokers: number; loadIds: number[] }> {
+    const client = await this.pool.connect();
+    const lc = (v: string) => v.trim().toLowerCase();
+    try {
+      await client.query('BEGIN');
+      const added = { dispatchers: 0, carriers: 0, trucks: 0, loads: 0, brokers: 0, loadIds: [] as number[] };
+      const ids = async (sql: string) => (await client.query(sql, [ws])).rows as Record<string, unknown>[];
+      const disp = new Map((await ids('SELECT id, name FROM crm_dispatchers WHERE workspace_id = $1 AND NOT archived')).map((r) => [lc(String(r.name)), Number(r.id)]));
+      const carrRows = await ids('SELECT id, name, mc FROM crm_carriers WHERE workspace_id = $1 AND NOT archived');
+      const carr = new Map(carrRows.map((r) => [lc(String(r.name)), Number(r.id)]));
+      const carrMc = new Map(carrRows.filter((r) => r.mc).map((r) => [String(r.mc), Number(r.id)]));
+      const truckRows = await ids('SELECT id, unit, driver FROM crm_trucks WHERE workspace_id = $1 AND NOT archived');
+      const trucks = new Map<string, number>();
+      for (const r of truckRows) { if (r.unit) trucks.set(lc(String(r.unit)), Number(r.id)); if (r.driver) trucks.set(`driver:${lc(String(r.driver))}`, Number(r.id)); }
+
+      for (const d of plan.dispatchers.slice(0, 200)) {
+        if (disp.has(lc(d.name))) continue;
+        const r = await client.query('INSERT INTO crm_dispatchers (workspace_id, name, percent) VALUES ($1,$2,$3) RETURNING id', [ws, d.name.slice(0, 80), d.percent]);
+        disp.set(lc(d.name), Number(r.rows[0].id));
+        added.dispatchers++;
+      }
+      for (const c of plan.carriers.slice(0, 1000)) {
+        const have = (c.mc && carrMc.get(c.mc)) || carr.get(lc(c.name));
+        if (have) { carr.set(lc(c.name), have); continue; }
+        const r = await client.query(
+          `INSERT INTO crm_carriers (workspace_id, name, mc, dot, phone, email, notes, fee_type, fee, factoring) VALUES ($1,$2,$3,$4,$5,$6,'','percent',$7,$8) RETURNING id`,
+          [ws, c.name.slice(0, 200), c.mc, c.dot, c.phone, c.email, c.feePercent, c.factoring]);
+        const id = Number(r.rows[0].id);
+        carr.set(lc(c.name), id);
+        if (c.mc) carrMc.set(c.mc, id);
+        added.carriers++;
+      }
+      for (const t of plan.trucks.slice(0, 1000)) {
+        const have = (t.unit && trucks.get(lc(t.unit))) || (t.driver && trucks.get(`driver:${lc(t.driver)}`));
+        if (have) continue;
+        const r = await client.query('INSERT INTO crm_trucks (workspace_id, carrier_id, unit, driver, phone) VALUES ($1,$2,$3,$4,$5) RETURNING id',
+          [ws, t.carrier ? carr.get(lc(t.carrier)) ?? null : null, t.unit.slice(0, 30), t.driver.slice(0, 80), t.phone]);
+        if (t.unit) trucks.set(lc(t.unit), Number(r.rows[0].id));
+        if (t.driver) trucks.set(`driver:${lc(t.driver)}`, Number(r.rows[0].id));
+        added.trucks++;
+      }
+      for (const l of plan.loads.slice(0, 3000)) {
+        if (l.duplicate) continue;
+        const truckId = l.truck ? trucks.get(lc(l.truck.replace(/^#/, ''))) ?? trucks.get(`driver:${lc(l.truck)}`) ?? null : null;
+        const r = await client.query(
+          `INSERT INTO crm_loads (workspace_id, load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, notes, status, truck_id,
+             loaded_miles, empty_miles, invoiced_on, paid_on, broker_mc)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+          [ws, l.date, l.carrier ? carr.get(lc(l.carrier)) ?? null : null, l.dispatcher ? disp.get(lc(l.dispatcher)) ?? null : null, l.broker.slice(0, 200), l.pro,
+            l.origin.slice(0, 200), l.destination.slice(0, 200), l.rate, l.notes, l.status, truckId, l.loadedMiles, l.emptyMiles, l.invoicedOn, l.paidOn, l.brokerMc]);
+        added.loadIds.push(Number(r.rows[0].id));
+        added.loads++;
+      }
+      for (const b of plan.brokers.slice(0, 1000)) {
+        if (!b.email || !/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(b.email)) continue;
+        await client.query(
+          `INSERT INTO crm_broker_emails (workspace_id, broker, email) VALUES ($1, lower($2), $3) ON CONFLICT (workspace_id, broker) DO NOTHING`, [ws, b.name.trim(), b.email]);
+        added.brokers++;
+      }
+      await client.query('COMMIT');
+      return added;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   /** Bulk import from a spreadsheet: dispatchers and carriers are matched by name (case-insensitive) or created. */
