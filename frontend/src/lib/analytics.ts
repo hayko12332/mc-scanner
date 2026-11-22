@@ -54,9 +54,15 @@ function flush(useBeacon = false) {
   if (queue.length) flush(useBeacon)
 }
 
+let account: Props = {}
+/** After sign-in to the TMS: every event carries the account's user id, so what each sign-up does can be followed. */
+export function setAnalyticsUser(uid: number | null, role = ''): void {
+  account = uid ? { crm_uid: uid, crm_role: role } : {}
+}
+
 /** Record something the user did. Keep props small: they are stored as-is. */
 export function track(event: string, props: Props = {}): void {
-  queue.push({ event, props, path: location.hash || '#/', at: new Date().toISOString() })
+  queue.push({ event, props: { ...account, ...props }, path: location.hash || '#/', at: new Date().toISOString() })
   if (queue.length >= 20) flush()
   else timer ??= setTimeout(flush, FLUSH_MS)
 }

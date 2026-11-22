@@ -1,6 +1,6 @@
 import {
   BadRequestException, Body, ConflictException, Controller, Delete, ForbiddenException, Get, HttpCode, HttpException, NotFoundException, Param, ParseIntPipe, Patch,
-  Post, Query, Req, Res, ServiceUnavailableException, UnauthorizedException,
+  Post, Query, Req, Res, ServiceUnavailableException, UnauthorizedException, UseInterceptors,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { RateLimiter } from '../analytics/rate-limiter.js';
@@ -33,6 +33,7 @@ import type { Load } from './crm.types.js';
 import { emailOk as validEmail } from './password.js';
 import { PlacesService } from './places.js';
 import { planImport, type ImportFile, type ImportPlan } from './ai-import.js';
+import { CrmActivityInterceptor, type ScopedRequest } from './activity.interceptor.js';
 
 const COOKIE = 'lh_crm';
 const COMPANY_TYPES = ['dispatch', 'carrier', 'broker'];
@@ -59,6 +60,7 @@ function readCookie(req: Request, name: string): string {
 
 /** Dispatcher CRM API: sign in with Google, then loads, carriers and dispatchers of the user's workspace. */
 @Controller('crm')
+@UseInterceptors(CrmActivityInterceptor)
 export class CrmController {
   private readonly store: CrmStore | null;
   private readonly placesService = new PlacesService();
@@ -1128,7 +1130,9 @@ export class CrmController {
   private async auth(req: Request): Promise<Scope> {
     const s = await this.need().session(readCookie(req, COOKIE));
     if (!s) throw new UnauthorizedException('Please sign in');
-    return { ws: s.workspaceId, user: s.user, role: s.role, dispatcherId: s.dispatcherId };
+    const scope: Scope = { ws: s.workspaceId, user: s.user, role: s.role, dispatcherId: s.dispatcherId };
+    (req as ScopedRequest).crmScope = scope; // for the activity analytics
+    return scope;
   }
 
   /** Only the owner of the board (not an invited dispatcher) may do this. */

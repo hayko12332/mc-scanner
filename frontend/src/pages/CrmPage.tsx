@@ -12,7 +12,7 @@ import { LoadAlertsView } from '../components/crm/LoadAlertsView'
 import { CompanySetup, SignIn, type InviteInfo } from '../components/crm/SignIn'
 import { Icon, type IconName } from '../components/Icon'
 import { BoardSkeleton } from '../components/Skeleton'
-import { track } from '../lib/analytics'
+import { setAnalyticsUser, track } from '../lib/analytics'
 import { crm, CrmError, looksLikePlace, type Company, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
 import { crmDemo } from '../lib/crmDemo'
 import type { BoardTool } from '../App'
@@ -259,6 +259,12 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
 
   const closeLoad = useCallback(() => setOpenId(null), [])
   const closeNew = useCallback(() => setCreating(null), [])
+  // Analytics after sign-up: events carry the account, and each section or tool the person opens is recorded.
+  const uid = demo ? null : state?.user?.id ?? null
+  const role = state?.me?.role ?? ''
+  useEffect(() => { setAnalyticsUser(uid, role) }, [uid, role])
+  useEffect(() => { if (uid) track('crm_view', { view: tool ?? tab }) }, [uid, tab, tool])
+  useEffect(() => { if (uid && creating) track('crm_new_load_open') }, [uid, creating])
   const newLoad = useCallback((d: { carrierId: string; dispatcherId: string }) => setCreating(d), [])
 
   // Loaded miles fill themselves in: every load with a lane and no miles is looked up on the map in the background,

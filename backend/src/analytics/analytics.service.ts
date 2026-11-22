@@ -83,6 +83,17 @@ export class AnalyticsService implements OnModuleDestroy {
     if (event === 'bot_start') void this.notifier.send([this.notifier.botStartAlert(stored)]);
   }
 
+  /**
+   * Something a signed-in TMS user did (recorded by the server, so actions taken by the AI count too).
+   * Stored like browser events, with visitor/session `crm:<user id>` and the user and workspace in props.
+   */
+  async recordAccount(event: string, props: Record<string, unknown>, who: { uid: number; ws: number; role: string }, ctx: RequestContext): Promise<void> {
+    const id = `crm:${who.uid}`;
+    const all = { uid: who.uid, ws: who.ws, role: who.role, ...props };
+    if (JSON.stringify(all).length > MAX_PROPS_JSON) return;
+    await this.save([this.event(event, all, { at: new Date(), visitorId: id, sessionId: id, path: '', referrer: '', ctx, tg: null })]);
+  }
+
   /** Store a suggestion. Unlike analytics, a failure is reported so the user knows it was not saved. */
   async recordFeedback(input: FeedbackInput, ctx: RequestContext, botUser?: TelegramUser): Promise<void> {
     const message = clip(input?.message, MAX_FEEDBACK).trim();
