@@ -2,7 +2,7 @@ import type { Carrier } from './fmcsa.types.js';
 import { joinAddress, toIsoDate, toNumber } from './normalize.js';
 import type { Row } from './socrata.client.js';
 
-const CARGO: Record<string, string> = {
+export const CARGO: Record<string, string> = {
   genfreight: 'General Freight',
   household: 'Household Goods',
   metalsheet: 'Metal: sheets, coils, rolls',

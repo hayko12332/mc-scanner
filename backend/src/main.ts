@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { indexHtml, SEO_PAGES, seoHtml } from './seo.js';
+import { sitePage } from './site/router.js';
 
 const DIST = fileURLToPath(new URL('../../frontend/dist', import.meta.url));
 
@@ -27,6 +28,19 @@ async function bootstrap() {
       next();
     });
   }
+  // Server-rendered public pages: feature pages, the carrier directory, a page per MC number, and the sitemaps.
+  app.use((req: { method: string; path: string; query: Record<string, unknown> }, res: {
+    status: (c: number) => { type: (t: string) => { send: (b: string) => void } }; redirect: (c: number, u: string) => void; setHeader: (k: string, v: string) => void
+  }, next: (e?: unknown) => void) => {
+    if ((req.method !== 'GET' && req.method !== 'HEAD') || req.path.startsWith('/api/')) return next();
+    if (!/^\/(mc|usdot|dot|carriers)(\/|$)|^\/sitemap[\w-]*\.xml$|^\/(truck-dispatch-software|freight-broker-tms|rate-confirmation-ai|bol-pod-software)$/i.test(req.path)) return next();
+    sitePage(req.path, req.query).then((r) => {
+      if (!r) return next();
+      if (r.redirect) return res.redirect(r.status, r.redirect);
+      if (r.maxAge) res.setHeader('Cache-Control', `public, max-age=${r.maxAge}`);
+      res.status(r.status).type(r.type === 'xml' ? 'application/xml' : 'html').send(r.body);
+    }, next);
+  });
   // One address per page for search engines: "/mc-number-lookup/" → "/mc-number-lookup"; addresses that don't exist
   // answer 404 (with the app, so a person still lands on the home page) instead of a "soft 404" 200.
   app.use((req: { method: string; path: string; originalUrl: string }, res: {
