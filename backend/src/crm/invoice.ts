@@ -21,10 +21,10 @@ export interface InvoiceData {
 export interface Attachment { name: string; mime: string; data: Uint8Array }
 
 /** Helvetica can only write Latin-1: arrows and other symbols become plain text, anything else is dropped. */
-const safe = (s: string) => s.replace(/[→⟶]/g, '->').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/·/g, '-')
+export const safe = (s: string) => s.replace(/[→⟶]/g, '->').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-').replace(/·/g, '-')
   .replace(/[^\x20-\x7E\xA0-\xFF]/g, '');
-const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtDate = (iso: string) => new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+export const usd = (n: number) => `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+export const fmtDate = (iso: string) => new Date(iso + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
 export const invoiceTotal = (d: Pick<InvoiceData, 'lines'>) => Math.round(d.lines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
 
@@ -116,7 +116,7 @@ function drawInvoice(page: PDFPage, d: InvoiceData, font: PDFFont, bold: PDFFont
   text('Thank you for your business.', 48, 50, { size: 9, color: muted });
 }
 
-function wrap(s: string, font: PDFFont, size: number, width: number): string[] {
+export function wrap(s: string, font: PDFFont, size: number, width: number): string[] {
   const out: string[] = [];
   for (const para of s.split('\n')) {
     let cur = '';

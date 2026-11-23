@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  addDays, carrierFee, daysBetween, fmtRpm, gross, overdueDays, PAY_TERMS_DAYS, rpm, shortDate, STATUSES, today, usd, weekStart,
+  addDays, carrierFee, daysBetween, fmtRpm, gross, isBroker, margin, overdueDays, PAY_TERMS_DAYS, payBase, rpm, shortDate, STATUSES, today, usd, weekStart, words,
   type CrmState, type Load,
 } from '../../lib/crm'
 import { buildXlsx, type Cell } from '../../lib/xlsx'
@@ -39,6 +39,8 @@ const sorted = (m: Map<string, Row>) => [...m.values()].sort((a, b) => b.gross -
 export function ReportsView({ state }: { state: CrmState }) {
   const [period, setPeriod] = useState<Period>('month')
   const range = span(period)
+  const broker = isBroker(state)
+  const w = words(broker)
   const loads = useMemo(() => state.loads.filter((l) => l.id > 0 && (!range || (l.date >= range[0] && l.date <= range[1]))), [state.loads, period]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const r = useMemo(() => {
@@ -46,7 +48,7 @@ export function ReportsView({ state }: { state: CrmState }) {
     const miles = loads.reduce((s, l) => s + l.loadedMiles, 0)
     const empty = loads.reduce((s, l) => s + l.emptyMiles, 0)
     const percent = new Map(state.dispatchers.map((d) => [d.id, d.percent]))
-    const pay = loads.reduce((s, l) => s + (l.dispatcherId != null ? (gross(l) * (percent.get(l.dispatcherId) ?? 0)) / 100 : 0), 0)
+    const pay = loads.reduce((s, l) => s + (l.dispatcherId != null ? (payBase(l, broker) * (percent.get(l.dispatcherId) ?? 0)) / 100 : 0), 0)
     // Dispatch fees: percent carriers per load, flat carriers once per week they ran.
     let fees = 0
     const byCarrierWeek = new Map<string, Load[]>()
@@ -61,11 +63,11 @@ export function ReportsView({ state }: { state: CrmState }) {
     const disp = new Map<string, Row>(), carr = new Map<string, Row>(), brok = new Map<string, Row>(), lanes = new Map<string, Row>()
     for (const l of loads) {
       const d = state.dispatchers.find((x) => x.id === l.dispatcherId)
-      const dr = add(disp, String(l.dispatcherId ?? 'none'), d?.name ?? 'No dispatcher', l, d ? `${d.percent}%` : undefined)
-      dr.extra! += d ? (gross(l) * d.percent) / 100 : 0
+      const dr = add(disp, String(l.dispatcherId ?? 'none'), d?.name ?? `No ${w.dispatcher.toLowerCase()}`, l, d ? `${d.percent}%` : undefined)
+      dr.extra! += d ? (payBase(l, broker) * d.percent) / 100 : 0
       const c = state.carriers.find((x) => x.id === l.carrierId)
       add(carr, String(l.carrierId ?? 'none'), c?.name ?? 'No carrier', l, c?.mc ? `MC ${c.mc.replace(/\D/g, '')}` : undefined)
-      const b = l.broker.trim() || 'No broker'
+      const b = l.broker.trim() || `No ${w.customerLower}`
       const br = add(brok, b.toLowerCase(), b, l)
       if (l.paidOn && l.invoicedOn) { br.extra! += daysBetween(l.invoicedOn, l.paidOn); br.extra2! += 1 }
       const a = state2(l.origin), z = state2(l.destination)
@@ -75,20 +77,23 @@ export function ReportsView({ state }: { state: CrmState }) {
       const carrier = state.carriers.find((x) => String(x.id) === c.key)
       let f = 0
       for (const [k, ls] of byCarrierWeek) if (k.split('|')[0] === c.key) f += carrierFee(carrier, ls)
-      c.extra = f
+      c.extra = broker ? loads.filter((l) => String(l.carrierId ?? 'none') === c.key).reduce((s, l) => s + (l.carrierPay ?? 0), 0) : f
     }
+    const withPay = loads.filter((l) => margin(l) != null)
+    const marginSum = withPay.reduce((s, l) => s + (margin(l) ?? 0), 0)
     return {
-      total, miles, empty, pay, fees, unpaid, overdue,
+      total, miles, empty, pay, fees, unpaid, overdue, marginSum, withPay: withPay.length, withPayGross: withPay.reduce((s, l) => s + gross(l), 0),
       disp: sorted(disp), carr: sorted(carr), brok: sorted(brok), lanes: sorted(lanes).slice(0, 15),
     }
-  }, [loads, state])
+  }, [loads, state, broker]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const label = PERIODS.find(([p]) => p === period)![1]
   const name = (what: string) => `haulpanel-${what}-${range ? `${range[0]}_to_${range[1]}` : 'all-time'}`
 
   const exportLoads = () => {
-    const header = ['Pickup date', 'Status', 'Broker', 'Broker MC', 'Load #', 'Origin', 'Destination', 'Loaded miles', 'Empty miles', 'Rate', 'Detention',
-      'Layover', 'TONU', 'Other', 'Lumper', 'Gross', 'RPM', 'All-in RPM', 'Carrier', 'Truck', 'Driver', 'Dispatcher', 'Invoiced on', 'Paid on', 'Notes']
+    const header = ['Pickup date', 'Status', w.customer, `${w.customer} MC`, 'Load #', 'Origin', 'Destination', 'Loaded miles', 'Empty miles', 'Rate', 'Detention',
+      'Layover', 'TONU', 'Other', 'Lumper', 'Gross', 'RPM', 'All-in RPM', 'Carrier', 'Truck', 'Driver', w.dispatcher, 'Invoiced on', 'Paid on', 'Notes',
+      ...(broker ? ['Carrier pay', 'Margin', 'Carrier paid on'] : [])]
     const rows: Cell[][] = [...loads].sort((a, b) => a.date.localeCompare(b.date)).map((l) => {
       const t = state.trucks.find((x) => x.id === l.truckId)
       const g = gross(l)
@@ -96,7 +101,7 @@ export function ReportsView({ state }: { state: CrmState }) {
         l.emptyMiles || null, l.rate, l.detention || null, l.layover || null, l.tonu || null, l.other || null, l.lumper || null, g,
         l.loadedMiles ? Math.round((g / l.loadedMiles) * 100) / 100 : null, l.loadedMiles ? Math.round((g / (l.loadedMiles + l.emptyMiles)) * 100) / 100 : null,
         state.carriers.find((c) => c.id === l.carrierId)?.name, t?.unit, t?.driver, state.dispatchers.find((d) => d.id === l.dispatcherId)?.name,
-        l.invoicedOn, l.paidOn, l.notes]
+        l.invoicedOn, l.paidOn, l.notes, ...(broker ? [l.carrierPay || null, margin(l), l.carrierPaidOn ?? null] : [])]
     })
     saveFile(buildXlsx('Loads', header, rows), `${name('loads')}.xlsx`)
   }
@@ -143,15 +148,17 @@ export function ReportsView({ state }: { state: CrmState }) {
         <div><span>Gross</span><b>{usd(Math.round(r.total))}</b><small>{loads.length ? `avg ${usd(Math.round(r.total / loads.length))} / load` : 'no loads'}</small></div>
         <div><span>Rate per mile</span><b>{fmtRpm(rpm(r.total, r.miles))}</b><small>all-in {fmtRpm(rpm(r.total, r.miles + r.empty))}</small></div>
         <div><span>Miles</span><b>{r.miles.toLocaleString('en-US')}</b><small>deadhead {r.empty.toLocaleString('en-US')} mi · {Math.round(deadhead * 100)}%</small></div>
-        <div><span>Dispatch fees</span><b>{usd(Math.round(r.fees))}</b><small>dispatcher pay {usd(Math.round(r.pay))}</small></div>
+        {broker
+          ? <div><span>Margin</span><b>{usd(Math.round(r.marginSum))}</b><small>{r.withPayGross ? `${Math.round((r.marginSum / r.withPayGross) * 100)}% · ` : ''}agent pay {usd(Math.round(r.pay))}{r.withPay < loads.length ? ` · ${loads.length - r.withPay} without carrier pay` : ''}</small></div>
+          : <div><span>Dispatch fees</span><b>{usd(Math.round(r.fees))}</b><small>dispatcher pay {usd(Math.round(r.pay))}</small></div>}
         <div className={r.overdue.length ? 'bad' : ''}><span>Not paid yet</span><b>{usd(Math.round(unpaidSum))}</b><small>{r.overdue.length ? `${r.overdue.length} overdue · ${usd(Math.round(overdueSum))}` : `${r.unpaid.length} invoiced, none overdue`}</small></div>
       </div>
 
       {!loads.length ? <p className="bm-empty">No loads in this period. Pick another period above.</p> : (
         <div className="rp-grid">
-          <Table title="Dispatchers" rows={r.disp} max={max(r.disp)} extraHead="Pay" extra={(x) => usd(Math.round(x.extra ?? 0))} />
-          <Table title="Carriers" rows={r.carr} max={max(r.carr)} extraHead="Fee" extra={(x) => usd(Math.round(x.extra ?? 0))} deadhead />
-          <Table title="Brokers" rows={r.brok} max={max(r.brok)} extraHead="Pays in" note="Average days from invoice to payment"
+          <Table title={w.dispatchers} rows={r.disp} max={max(r.disp)} extraHead="Pay" extra={(x) => usd(Math.round(x.extra ?? 0))} />
+          <Table title="Carriers" rows={r.carr} max={max(r.carr)} extraHead={broker ? 'Carrier pay' : 'Fee'} extra={(x) => usd(Math.round(x.extra ?? 0))} deadhead />
+          <Table title={w.customers} rows={r.brok} max={max(r.brok)} extraHead="Pays in" note="Average days from invoice to payment"
             extra={(x) => (x.extra2 ? `${Math.round(x.extra! / x.extra2)} days` : '—')} />
           <Table title="Lanes (state to state)" rows={r.lanes} max={max(r.lanes)} />
         </div>

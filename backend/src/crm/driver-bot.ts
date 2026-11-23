@@ -150,7 +150,10 @@ export class DriverBot {
       const name = doc?.file_name || `${kind.toUpperCase()} ${load.pro || load.id} ${stamp}.jpg`;
       const mime = doc?.mime_type ?? 'image/jpeg';
       await store.addFile(d.ws, load.id, { kind, name, mime, data });
-      return this.send(m.chat.id, `📄 <b>${kind === 'ratecon' ? 'Rate con' : kind.toUpperCase()}</b> saved to the load ${this.lane(load)}. Wrong type? Write “BOL” or “POD” as the caption.`);
+      // A signed POD means the load is delivered, even if the driver didn't tap the button.
+      const delivered = kind === 'pod' && (load.status === 'booked' || load.status === 'in_transit');
+      if (delivered) await store.setLoadStatus(d.ws, load.id, 'delivered');
+      return this.send(m.chat.id, `📄 <b>${kind === 'ratecon' ? 'Rate con' : kind.toUpperCase()}</b> saved to the load ${this.lane(load)}${delivered ? ' — marked <b>delivered</b>' : ''}. Wrong type? Write “BOL” or “POD” as the caption.`);
     } catch (e) {
       this.logger.warn(`Driver document: ${(e as Error).message}`);
       return this.send(m.chat.id, 'Could not save the file — try again in a minute.');

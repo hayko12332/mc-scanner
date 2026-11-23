@@ -1,12 +1,12 @@
 import { useEffect, type ReactNode } from 'react'
 import {
-  addDays, carrierFee, daysBetween, feeLabel, fmtMiles, fmtRpm, gross, overdueDays, PAY_TERMS_DAYS, rpm, shortDate, STATUSES, today, usd, weekStart,
+  addDays, carrierFee, daysBetween, feeLabel, fmtMiles, fmtRpm, gross, isBroker, overdueDays, PAY_TERMS_DAYS, payBase, rpm, shortDate, STATUSES, today, usd, weekStart, words,
   type CrmState, type Load,
 } from '../../lib/crm'
 import { Icon } from '../Icon'
 import { place } from './LoadsTable'
 
-export type KpiKind = 'gross' | 'rpm' | 'fees' | 'pay' | 'unpaid'
+export type KpiKind = 'gross' | 'rpm' | 'fees' | 'pay' | 'unpaid' | 'carriers'
 
 interface Props {
   kind: KpiKind
@@ -17,6 +17,8 @@ interface Props {
   openLoad: (id: number) => void
   markPaid: (loads: Load[]) => void
   goStatements: () => void
+  /** Brokerage boards: the carrier of each load was paid today. */
+  markCarrierPaid?: (loads: Load[]) => void
 }
 
 const round = (n: number) => Math.round(n)
@@ -64,7 +66,9 @@ const loadsRpm = (ls: Load[]) => {
  * Details behind a KPI tile, the way TMS dashboards drill down: gross by week, carrier and broker; RPM by truck,
  * carrier and lane; dispatch fees per carrier; dispatcher pay; unpaid loads by age with "Mark paid".
  */
-export function KpiDrawer({ kind, rows, state, periodLabel, close, openLoad, markPaid, goStatements }: Props) {
+export function KpiDrawer({ kind, rows, state, periodLabel, close, openLoad, markPaid, goStatements, markCarrierPaid }: Props) {
+  const broker = isBroker(state)
+  const w = words(broker)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
     addEventListener('keydown', onKey)
@@ -180,19 +184,19 @@ export function KpiDrawer({ kind, rows, state, periodLabel, close, openLoad, mar
   } else if (kind === 'pay') {
     const per = state.dispatchers.map((d) => {
       const mine = rows.filter((l) => l.dispatcherId === d.id)
-      return { d, loads: mine, gross: sumGross(mine), pay: (sumGross(mine) * d.percent) / 100 }
+      return { d, loads: mine, gross: sumGross(mine), pay: (mine.reduce((s, l) => s + payBase(l, broker), 0) * d.percent) / 100 }
     }).sort((a, b) => b.pay - a.pay)
     const unassigned = rows.filter((l) => l.dispatcherId == null)
     const totalPay = per.reduce((s, x) => s + x.pay, 0)
-    title = 'Dispatcher pay'
+    title = `${w.dispatcher} pay`
     big = usd(round(totalPay))
-    sub = `${per.filter((x) => x.loads.length).length} dispatchers · by each one’s percent of gross`
+    sub = `${per.filter((x) => x.loads.length).length} ${w.dispatchers.toLowerCase()} · by each one’s percent of ${broker ? 'margin' : 'gross'}`
     body = (
       <>
-        {unassigned.length > 0 && <p className="kd-warn"><Icon name="lifebuoy" size={15} />{nLoads(unassigned.length)} ({usd(sumGross(unassigned))}) have no dispatcher — they are not in anyone’s pay.</p>}
-        <Section title="By dispatcher">
+        {unassigned.length > 0 && <p className="kd-warn"><Icon name="lifebuoy" size={15} />{nLoads(unassigned.length)} ({usd(sumGross(unassigned))}) have no ${w.dispatcher.toLowerCase()} — they are not in anyone’s pay.</p>}
+        <Section title={`By ${w.dispatcher.toLowerCase()}`}>
           <table className="kd-table">
-            <thead><tr><th>Dispatcher</th><th className="r">Percent</th><th className="r">Loads</th><th className="r">Gross</th><th className="r">Pay</th></tr></thead>
+            <thead><tr><th>{w.dispatcher}</th><th className="r">Percent</th><th className="r">Loads</th><th className="r">Gross</th><th className="r">Pay</th></tr></thead>
             <tbody>{per.map((x) => (
               <tr key={x.d.id}><td>{x.d.name}</td><td className="r">{x.d.percent}%</td><td className="r">{x.loads.length}</td><td className="r">{usd(x.gross)}</td><td className="r b">{usd(Math.round(x.pay * 100) / 100)}</td></tr>
             ))}</tbody>
@@ -201,9 +205,45 @@ export function KpiDrawer({ kind, rows, state, periodLabel, close, openLoad, mar
         </Section>
         <Section title="Pay by week">
           <Bars items={[...group(rows.filter((l) => l.dispatcherId != null), (l) => weekStart(l.date))].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 10).map(([w, ls]) => {
-            const p = ls.reduce((s, l) => s + (gross(l) * (state.dispatchers.find((d) => d.id === l.dispatcherId)?.percent ?? 0)) / 100, 0)
+            const p = ls.reduce((s, l) => s + (payBase(l, broker) * (state.dispatchers.find((d) => d.id === l.dispatcherId)?.percent ?? 0)) / 100, 0)
             return { key: w, label: `${shortDate(w)} – ${shortDate(addDays(w, 6))}`, sub: `${nLoads(ls.length)}`, value: p, text: usd(round(p)) }
           })} />
+        </Section>
+      </>
+    )
+  } else if (kind === 'carriers') {
+    // Brokerage boards: what is owed to carriers for loads they delivered (by delivery, the carrier sends its invoice).
+    const owed = rows.filter((l) => (l.carrierPay ?? 0) > 0 && !l.carrierPaidOn && ['delivered', 'invoiced', 'paid'].includes(l.status))
+      .sort((a, b) => a.date.localeCompare(b.date))
+    const upcoming = rows.filter((l) => (l.carrierPay ?? 0) > 0 && !l.carrierPaidOn && (l.status === 'booked' || l.status === 'in_transit'))
+    const noPay = rows.filter((l) => !(l.carrierPay && l.carrierPay > 0))
+    const sum = (ls: Load[]) => ls.reduce((s, l) => s + (l.carrierPay ?? 0), 0)
+    const carrierName = (id: number | null) => state.carriers.find((c) => c.id === id)?.name ?? 'No carrier'
+    title = 'Owed to carriers'
+    big = usd(round(sum(owed)))
+    sub = `${nLoads(owed.length)} delivered, not paid to the carrier yet`
+    body = (
+      <>
+        {noPay.length > 0 && <p className="kd-warn"><Icon name="lifebuoy" size={15} />{nLoads(noPay.length)} have no carrier pay set — margin can’t be counted for them.</p>}
+        <div className="kd-aging">
+          <div><span>Delivered · to pay</span><b>{usd(round(sum(owed)))}</b><small>{nLoads(owed.length)}</small></div>
+          <div><span>Booked / in transit</span><b>{usd(round(sum(upcoming)))}</b><small>{nLoads(upcoming.length)}</small></div>
+        </div>
+        <Section title="To pay">
+          {!owed.length ? <p className="kd-empty">Nothing owed to carriers in this period.</p> : (
+            <table className="kd-table">
+              <thead><tr><th>Load</th><th>Carrier</th><th>Status</th><th className="r">Pay</th><th /></tr></thead>
+              <tbody>{owed.map((l) => (
+                <tr key={l.id} className="click" onClick={(e) => { if (!(e.target as HTMLElement).closest('button')) open(l.id) }}>
+                  <td><b>{l.broker || 'No customer'}</b><small>{shortDate(l.date)}{l.pro ? ` · #${l.pro}` : ''}</small></td>
+                  <td>{carrierName(l.carrierId)}</td>
+                  <td>{statusLabel(l.status)}</td>
+                  <td className="r b">{usd(l.carrierPay ?? 0)}</td>
+                  <td className="r">{markCarrierPaid && <button className="kd-paid" onClick={() => markCarrierPaid([l])}>Paid</button>}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          )}
         </Section>
       </>
     )

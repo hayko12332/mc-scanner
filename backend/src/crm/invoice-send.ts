@@ -1,7 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { sendMail } from '../mail/mailer.js';
-import type { CrmStore } from './crm.store.js';
-import type { CrmUser, Load } from './crm.types.js';
+import { forInvoice, type CrmStore } from './crm.store.js';
+import { isBrokerage, type CrmUser, type Load } from './crm.types.js';
 import { buildInvoicePdf, invoiceTotal, type InvoiceData } from './invoice.js';
 
 // Building and emailing a load's invoice: used by the board's "Email invoice" button, by Ask AI, and by the
@@ -33,21 +33,26 @@ export function invoiceData(load: Load, o: { from: InvoiceData['from']; remitTo?
 }
 
 
-/** What goes on a load's invoice: the carrier (or this company) bills the broker; the carrier's factoring gets paid. */
+/**
+ * What goes on a load's invoice. On a dispatch board the carrier (or this company) bills the broker and the carrier's
+ * factoring gets paid; on a brokerage board the brokerage itself bills its customer.
+ */
 export async function invoiceParts(store: CrmStore, ws: number, user: CrmUser, id: number, attach: number[]) {
   const state = await store.state(ws, user);
   const load = state.loads.find((l) => l.id === id);
   if (!load) throw new NotFoundException();
-  const carrier = state.carriers.find((c) => c.id === load.carrierId);
+  const broker = isBrokerage(state.company);
+  const carrier = broker ? undefined : state.carriers.find((c) => c.id === load.carrierId);
   const truck = state.trucks.find((t) => t.id === load.truckId);
   const data = invoiceData(load, {
     from: carrier
       ? { name: carrier.name, mc: carrier.mc.replace(/\D/g, ''), phone: carrier.phone, email: carrier.email }
       : { name: state.company.name || user.name, mc: state.company.mc, phone: state.company.phone, email: user.email },
-    remitTo: carrier?.factoring || undefined, truck: truck?.unit, driver: truck?.driver,
+    remitTo: carrier?.factoring || undefined, truck: broker ? undefined : truck?.unit, driver: broker ? undefined : truck?.driver,
     billEmail: state.brokerEmails[load.broker.trim().toLowerCase()],
   });
-  const files = await store.filesOf(ws, id, attach);
+  // The carrier's rate con (with its pay) never goes on a customer's or factor's invoice, whatever was picked.
+  const files = (await store.filesOf(ws, id, attach)).filter((f) => forInvoice(f.kind));
   return { load, data, files };
 }
 

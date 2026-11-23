@@ -120,6 +120,23 @@ function AuthLayout({ top, children, foot }: { top?: ReactNode; children: ReactN
  * from FMCSA, password), confirm the email with a 6-digit code; log in with email and password or Google;
  * "Forgot password?" emails a reset code. HaulPanel serves dispatch companies for now.
  */
+/** Sign-up asks what the business is: a dispatch service (loads from brokers for its carriers) or a freight broker. */
+function BusinessType({ value, onChange }: { value: string; onChange: (t: 'dispatch' | 'broker') => void }) {
+  const opts = [
+    ['dispatch', 'Dispatch service', 'I dispatch trucks for carriers — loads from brokers, a fee from carriers'],
+    ['broker', 'Freight broker', 'I broker loads — customers pay me, I pay carriers'],
+  ] as const
+  return (
+    <div className="au-types two" role="radiogroup" aria-label="Your business">
+      {opts.map(([id, title, sub]) => (
+        <button key={id} type="button" role="radio" aria-checked={value === id} className={value === id ? 'on' : ''} onClick={() => onChange(id)}>
+          <b>{title}</b><small>{sub}</small>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export interface InviteInfo { token: string; email: string; company: string; dispatcher: string }
 
 export function SignIn({ config, onSignedIn, onDemo, initial = 'signup', invite }: {
@@ -188,7 +205,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup', invite 
     if (invite) return void run(async () => after(await crm.signUp({ ...v, email: invite.email, invite: invite.token })))
     if (step === 1) { setStep(2); setError(''); return }
     const typed = mcDot.replace(/\D/g, '')
-    void run(async () => after(await crm.signUp({ ...v, companyType: 'dispatch', mc: v.mc || (v.dot === typed ? '' : typed) })))
+    void run(async () => after(await crm.signUp({ ...v, companyType: v.companyType || 'dispatch', mc: v.mc || (v.dot === typed ? '' : typed) })))
   }
   const logIn = (e: FormEvent) => { e.preventDefault(); void run(async () => after(await crm.login(email, password))) }
   const verify = (e: FormEvent) => { e.preventDefault(); void run(async () => { const r = await crm.verify(email, code); track('crm_verified'); onSignedIn(r.user) }) }
@@ -223,8 +240,8 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup', invite 
         </div>}
         <h2>{invite ? `Join ${invite.company || 'your team'}` : step === 1 ? 'Create your free account' : 'Tell us about your company'}</h2>
         <p className="au-sub">{invite ? `You were invited to ${invite.company ? `${invite.company}’s` : 'a'} dispatch board${invite.dispatcher ? ` as ${invite.dispatcher}` : ''}. Create your account with ${invite.email} to start — you’ll see your own loads, documents and pay.` : step === 1
-          ? 'Set up your dispatch board in a few minutes. Free during beta, no credit card.'
-          : 'Type your MC number and we fill in the rest from FMCSA.'}</p>
+          ? 'Set up your board in a few minutes. Free during beta, no credit card.'
+          : 'What your business does, then your MC number — we fill in the rest from FMCSA.'}</p>
         {step === 1 && googleBlock}
         {emailAuth ? (
           <form onSubmit={signUp} className="au-form">
@@ -237,6 +254,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup', invite 
               </>
             ) : (
               <>
+                <BusinessType value={v.companyType} onChange={(t) => setV({ ...v, companyType: t })} />
                 <Field label="MC number" hint={note || 'Optional — company name and phone fill in from FMCSA'}>
                   <div className="au-inline">
                     <input inputMode="numeric" value={mcDot} onChange={(e) => setMcDot(e.target.value)} placeholder="e.g. 1234567" autoFocus
@@ -244,7 +262,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup', invite 
                     <button type="button" className="ghost" onClick={() => { track('mc_fill'); void fill(mcDot) }}>Find</button>
                   </div>
                 </Field>
-                <Field label="Company name"><input required autoComplete="organization" value={v.company} onChange={(e) => setV({ ...v, company: e.target.value })} placeholder="Acme Dispatch LLC" /></Field>
+                <Field label="Company name"><input required autoComplete="organization" value={v.company} onChange={(e) => setV({ ...v, company: e.target.value })} placeholder={v.companyType === 'broker' ? 'Acme Logistics LLC' : 'Acme Dispatch LLC'} /></Field>
                 <Field label="Phone"><input type="tel" autoComplete="tel" value={v.phone} onChange={(e) => setV({ ...v, phone: e.target.value })} placeholder="Optional" /></Field>
                 <div className="au3-actions">
                   <button type="button" className="ghost" onClick={() => setStep(1)}>Back</button>
@@ -354,14 +372,15 @@ export function CompanySetup({ user, onDone }: { user: CrmUser; onDone: (c: Comp
     e.preventDefault()
     const typed = mcDot.replace(/\D/g, '')
     setBusy(true)
-    crm.setCompany({ ...c, type: 'dispatch', mc: c.mc || (c.dot === typed ? '' : typed) }).then(onDone, (er: Error) => { setError(er.message); setBusy(false) })
+    crm.setCompany({ ...c, type: c.type || 'dispatch', mc: c.mc || (c.dot === typed ? '' : typed) }).then(onDone, (er: Error) => { setError(er.message); setBusy(false) })
   }
   return (
     <AuthLayout>
           <h2>Welcome, {user.name.split(' ')[0] || 'there'}!</h2>
-          <p className="au-sub">One last step: tell us about your dispatch company.</p>
+          <p className="au-sub">One last step: tell us about your company.</p>
           {error && <p className="au-error" role="alert">{error}</p>}
           <form onSubmit={save} className="au-form">
+            <BusinessType value={c.type} onChange={(t) => setC({ ...c, type: t })} />
             <Field label="MC number" hint={note || 'Optional — we fill in your company from FMCSA'}>
               <div className="au-inline">
                 <input inputMode="numeric" value={mcDot} onChange={(e) => setMcDot(e.target.value)} placeholder="e.g. 1234567" />
@@ -374,5 +393,38 @@ export function CompanySetup({ user, onDone }: { user: CrmUser; onDone: (c: Comp
           </form>
           <p className="au-switch">Signed in as {user.email}. <button type="button" onClick={() => void crm.logout().then(() => location.reload())}>Not you? Sign out</button></p>
     </AuthLayout>
+  )
+}
+
+/** The company's details later on (the sidebar's company card): business type, name, MC and phone. */
+export function CompanyEdit({ company, close, saved }: { company: Company; close: () => void; saved: (c: Company) => void }) {
+  const [c, setC] = useState<Company>({ ...company, type: company.type || 'dispatch' })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const save = (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    crm.setCompany(c).then((r) => { track('company_edit', { type: r.type }); saved(r) }, (er: Error) => { setError(er.message); setBusy(false) })
+  }
+  return (
+    <div className="ld-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) close() }}>
+      <aside className="ld ce" role="dialog" aria-label="Company">
+        <header className="ld-head">
+          <div><small>Settings</small><h2>Your company</h2><p>A freight broker’s board counts customers, carrier pay and margin.</p></div>
+          <button className="ld-x" aria-label="Close" onClick={close}>×</button>
+        </header>
+        <form className="ld-body au-form" onSubmit={save}>
+          {error && <p className="au-error" role="alert">{error}</p>}
+          <BusinessType value={c.type} onChange={(t) => setC({ ...c, type: t })} />
+          <Field label="Company name"><input required value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} /></Field>
+          <Field label="MC number"><input inputMode="numeric" value={c.mc} onChange={(e) => setC({ ...c, mc: e.target.value.replace(/\D/g, '') })} /></Field>
+          <Field label="Phone"><input type="tel" value={c.phone} onChange={(e) => setC({ ...c, phone: e.target.value })} /></Field>
+          <div className="au3-actions">
+            <button type="button" className="ghost" onClick={close}>Cancel</button>
+            <button className="primary au-submit" disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+          </div>
+        </form>
+      </aside>
+    </div>
   )
 }

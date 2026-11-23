@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { saveFile } from '../../lib/export'
 import {
-  addDays, carrierFee, extras, fmtMiles, fmtRpm, gross, overdueDays, rpm, shortDate, STATUSES, today, usd, weekStart,
+  addDays, carrierFee, extras, fmtMiles, fmtRpm, gross, isBroker, margin, overdueDays, payBase, rpm, shortDate, STATUSES, today, usd, weekStart, words,
   withStatusDates, type CrmState, type ImportRow, type Load, type LoadInput, type LoadStatus,
 } from '../../lib/crm'
 import { track } from '../../lib/analytics'
@@ -87,6 +87,8 @@ interface Props {
   newLoad: (defaults: { carrierId: string; dispatcherId: string }) => void
   /** Opens another section of the board (KPI details and the getting-started steps link there). */
   goTab: (tab: 'statements' | 'carriers' | 'trucks' | 'dispatchers') => void
+  /** Opens "Add BOL / POD" (AI reads the documents and finds their loads); only when AI is on. */
+  addDocs?: () => void
 }
 
 /**
@@ -94,8 +96,10 @@ interface Props {
  * (broker over load #, lane over miles, carrier over truck/driver, rate over RPM), status changed right in the row,
  * everything else in the load panel that opens on a click. Weekly subtotals, KPIs, bulk actions.
  */
-export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLoads, openLoad, newLoad, goTab }: Props) {
+export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLoads, openLoad, newLoad, goTab, addDocs }: Props) {
   const { carriers, dispatchers, trucks } = state
+  const broker = isBroker(state)
+  const wd = words(broker)
   const [tab, setTab] = useState<Tab>('all')
   const [period, setPeriod] = useState<Period>('all')
   const [carrierId, setCarrierId] = useState('')
@@ -111,7 +115,7 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
   const truckById = useMemo(() => new Map(trucks.map((t) => [t.id, t])), [trucks])
   const dispatcherName = useMemo(() => new Map(dispatchers.map((d) => [d.id, d.name])), [dispatchers])
   const percent = useMemo(() => new Map(dispatchers.map((d) => [d.id, d.percent])), [dispatchers])
-  const pay = (l: Load) => (l.dispatcherId != null ? (gross(l) * (percent.get(l.dispatcherId) ?? 0)) / 100 : 0)
+  const pay = (l: Load) => (l.dispatcherId != null ? (payBase(l, broker) * (percent.get(l.dispatcherId) ?? 0)) / 100 : 0)
   const truckLabel = (id: number | null) => {
     const t = id == null ? null : truckById.get(id)
     return t ? (t.unit ? `#${t.unit}` : t.driver) : ''
@@ -190,6 +194,11 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
     feeGroups.set(k, [...(feeGroups.get(k) ?? []), l])
   }
   const fees = [...feeGroups].reduce((s, [k, ls]) => s + carrierFee(carrierById.get(Number(k.split('|')[0])), ls), 0)
+  // Brokerage boards: margin over the loads whose carrier pay is set.
+  const priced = rows.filter((l) => margin(l) != null)
+  const marginSum = priced.reduce((s, l) => s + (margin(l) ?? 0), 0)
+  const pricedGross = priced.reduce((s, l) => s + gross(l), 0)
+  const carrierUnpaid = broker ? rows.filter((l) => (l.carrierPay ?? 0) > 0 && !l.carrierPaidOn && ['delivered', 'invoiced', 'paid'].includes(l.status)) : []
   const unpaid = rows.filter((l) => l.status !== 'paid')
   const overdue = rows.filter((l) => overdueDays(l) > 0)
   const delta = prevGross ? Math.round(((total - prevGross) / prevGross) * 100) : null
@@ -217,11 +226,12 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
         l.date, carrierById.get(l.carrierId ?? -1)?.name ?? '', truckLabel(l.truckId), l.broker, l.pro, place(l.origin), place(l.destination),
         l.loadedMiles || '', l.emptyMiles || '', l.rate, extras(l) || '', gross(l), l.lumper || '', v == null ? '' : Math.round(v * 100) / 100,
         dispatcherName.get(l.dispatcherId ?? -1) ?? '', Math.round(pay(l) * 100) / 100, statusLabel(l.status), l.invoicedOn ?? '', l.paidOn ?? '',
+        ...(broker ? [l.carrierPay || '', margin(l) ?? '', l.carrierPaidOn ?? ''] : []),
       ]
     })
     saveFile(buildXlsx('Loads', [
-      'Date', 'Carrier', 'Truck', 'Broker', 'PRO#', 'Origin', 'Destination', 'Loaded miles', 'Empty miles', 'Rate', 'Accessorials', 'Gross',
-      'Lumper', 'RPM', 'Dispatcher', 'Dispatcher pay', 'Status', 'Invoiced', 'Paid',
+      'Date', 'Carrier', 'Truck', wd.customer, 'PRO#', 'Origin', 'Destination', 'Loaded miles', 'Empty miles', 'Rate', 'Accessorials', 'Gross',
+      'Lumper', 'RPM', wd.dispatcher, `${wd.dispatcher} pay`, 'Status', 'Invoiced', 'Paid', ...(broker ? ['Carrier pay', 'Margin', 'Carrier paid'] : []),
     ], data), `loads_${today()}.xlsx`)
   }
 
@@ -245,8 +255,8 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
         <td><b>{t.miles ? `${fmtMiles(t.miles)} mi` : ''}</b><small>{t.miles ? 'loaded' : ''}</small></td>
         <td />
         <td className="lb-num lb-rate"><b className="wk-gross">{usd(t.gross)}</b><small>{t.miles ? `${fmtRpm(rpm(t.milesGross, t.miles))}/mi` : ''}</small></td>
-        <td className="lb-disp" title={payBy ? `Dispatcher pay: ${payBy}` : undefined}>
-          {payTotal > 0 && <><b>{usd(Math.round(payTotal))}</b><small>dispatcher pay</small></>}
+        <td className="lb-disp" title={payBy ? `${wd.dispatcher} pay: ${payBy}` : undefined}>
+          {payTotal > 0 && <><b>{usd(Math.round(payTotal))}</b><small>{wd.dispatcher.toLowerCase()} pay</small></>}
         </td>
         <td />
       </tr>
@@ -285,6 +295,7 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
           )}
         </div>
         <div className="lt-actions">
+          {addDocs && <button className="ghost" onClick={addDocs} title="Drop BOLs and PODs — AI finds each one’s load"><Icon name="file" size={14} />BOL / POD</button>}
           <button className="ghost" onClick={() => setImporting(true)}><Icon name="database" size={14} />Import</button>
           <button className="ghost" onClick={() => { track('loads_export', { rows: rows.length }); exportXlsx() }} disabled={!rows.length}><Icon name="download" size={14} />Export</button>
           <button className="primary" onClick={add} title="New load (N)">+ New load</button>
@@ -292,13 +303,13 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
       </div>
 
       <div className="lt-filters">
-        <label className="lt-search"><Icon name="search" size={14} /><input placeholder="Search broker, load #, city, truck, driver…" value={q} onChange={(e) => setQ(e.target.value)} /></label>
+        <label className="lt-search"><Icon name="search" size={14} /><input placeholder={`Search ${wd.customerLower}, load #, city, truck, driver…`} value={q} onChange={(e) => setQ(e.target.value)} /></label>
         <select value={carrierId} onChange={(e) => setCarrierId(e.target.value)} aria-label="Carrier">
           <option value="">All carriers</option>
           {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
         <select value={dispatcherId} onChange={(e) => setDispatcherId(e.target.value)} aria-label="Dispatcher">
-          <option value="">All dispatchers</option>
+          <option value="">All {wd.dispatchers.toLowerCase()}</option>
           {dispatchers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
         <div className="lt-period" role="radiogroup" aria-label="Period">
@@ -318,12 +329,26 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
           <span>Rate per mile<Icon name="chevron" size={13} /></span><b>{fmtRpm(avgRpm)}</b>
           <small>{fmtMiles(loaded)} loaded mi{empty ? ` · all-in ${fmtRpm(allInRpm)}` : ''}</small>
         </button>
-        <button type="button" onClick={() => setKpi('fees')}>
-          <span>Dispatch fees<Icon name="chevron" size={13} /></span><b>{usd(Math.round(fees))}</b><small>owed by carriers</small>
-        </button>
-        <button type="button" onClick={() => setKpi('pay')}>
-          <span>Dispatcher pay<Icon name="chevron" size={13} /></span><b>{usd(Math.round(totalPay))}</b><small>by each dispatcher’s %</small>
-        </button>
+        {broker ? (
+          <button type="button" onClick={() => setKpi('gross')}>
+            <span>Margin<Icon name="chevron" size={13} /></span><b>{usd(Math.round(marginSum))}</b>
+            <small>{pricedGross ? `${Math.round((marginSum / pricedGross) * 100)}% of gross` : 'set the carrier pay on loads'}{priced.length < rows.length ? ` · ${rows.length - priced.length} without carrier pay` : ''}</small>
+          </button>
+        ) : (
+          <button type="button" onClick={() => setKpi('fees')}>
+            <span>Dispatch fees<Icon name="chevron" size={13} /></span><b>{usd(Math.round(fees))}</b><small>owed by carriers</small>
+          </button>
+        )}
+        {broker ? (
+          <button type="button" onClick={() => setKpi('carriers')}>
+            <span>Owed to carriers<Icon name="chevron" size={13} /></span><b>{usd(Math.round(carrierUnpaid.reduce((s, l) => s + (l.carrierPay ?? 0), 0)))}</b>
+            <small>{carrierUnpaid.length} delivered {carrierUnpaid.length === 1 ? 'load' : 'loads'} not paid to the carrier · agents {usd(Math.round(totalPay))}</small>
+          </button>
+        ) : (
+          <button type="button" onClick={() => setKpi('pay')}>
+            <span>Dispatcher pay<Icon name="chevron" size={13} /></span><b>{usd(Math.round(totalPay))}</b><small>by each dispatcher’s %</small>
+          </button>
+        )}
         <button type="button" onClick={() => setKpi('unpaid')}>
           <span>Not paid yet<Icon name="chevron" size={13} /></span><b>{usd(unpaid.reduce((s, l) => s + gross(l), 0))}</b>
           {overdue.length > 0
@@ -345,11 +370,11 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
                   onChange={() => setSelected(allChosen ? new Set() : new Set(visibleIds))} />
               </th>
               <th>{sortBtn('date', 'Pickup')}</th>
-              <th>{sortBtn('broker', 'Broker · load #')}</th>
+              <th>{sortBtn('broker', `${wd.customer} · load #`)}</th>
               <th>{sortBtn('miles', 'Lane · miles')}</th>
               <th>{sortBtn('carrier', 'Carrier · truck')}</th>
               <th className="lb-num">{sortBtn('rate', 'Rate')}{sortBtn('rpm', 'RPM')}</th>
-              <th className="lb-disp">{sortBtn('dispatcher', 'Dispatcher')}</th>
+              <th className="lb-disp">{sortBtn('dispatcher', wd.dispatcher)}</th>
               <th>{sortBtn('status', 'Status')}</th>
             </tr>
           </thead>
@@ -378,7 +403,7 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
                     <td className="lb-check"><input type="checkbox" aria-label="Select load" checked={selected.has(l.id)} onChange={() => toggle(l.id)} /></td>
                     <td className="lb-date"><b>{shortDate(l.date)}</b><small>{weekday(l.date)}</small></td>
                     <td className="lb-load">
-                      <b title={l.broker}>{l.broker || <em>No broker</em>}</b>
+                      <b title={l.broker}>{l.broker || <em>No {wd.customerLower}</em>}</b>
                       <small>{l.pro ? `# ${l.pro}` : <em>no load #</em>}</small>
                     </td>
                     <td className="lb-lane">
@@ -396,10 +421,10 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
                     </td>
                     <td className="lb-num lb-rate">
                       <b title={acc ? `Rate ${usd(l.rate)} + accessorials ${usd(acc)}` : undefined}>{usd(gross(l))}{acc > 0 && <i className="plus">+</i>}</b>
-                      <small>{v == null ? '' : `${fmtRpm(v)}/mi`}</small>
+                      <small>{broker && margin(l) != null ? `margin ${usd(Math.round(margin(l)!))}` : v == null ? '' : `${fmtRpm(v)}/mi`}</small>
                     </td>
                     <td className="lb-disp">
-                      <EditSelect value={String(l.dispatcherId ?? '')} label="Dispatcher" onSave={(x) => save(l, { dispatcherId: x ? Number(x) : null })}
+                      <EditSelect value={String(l.dispatcherId ?? '')} label={wd.dispatcher} onSave={(x) => save(l, { dispatcherId: x ? Number(x) : null })}
                         options={[['', '—'], ...dispatchers.map((d): [string, string] => [String(d.id), d.name])]} />
                     </td>
                     <td className="lb-status">
@@ -447,7 +472,8 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
         <KpiDrawer kind={kpi} rows={rows} state={state} close={() => setKpi(null)} openLoad={openLoad}
           periodLabel={`${PERIODS.find(([id]) => id === period)![1]}${carrierId ? ` · ${carrierById.get(Number(carrierId))?.name ?? ''}` : ''}${dispatcherId ? ` · ${dispatcherName.get(Number(dispatcherId)) ?? ''}` : ''}`}
           markPaid={(ls) => { track('mark_paid', { from: 'kpi' }); quiet(updateMany(ls, (l) => withStatusDates(l, 'paid'))) }}
-          goStatements={() => goTab('statements')} />
+          goStatements={() => goTab('statements')}
+          markCarrierPaid={broker ? (ls) => { track('carrier_paid', { from: 'kpi' }); quiet(updateMany(ls, () => ({ carrierPaidOn: today() }))) } : undefined} />
       )}
 
       {importing && (
@@ -462,10 +488,11 @@ export function LoadsTable({ state, updateLoad, updateMany, removeMany, importLo
 function GettingStarted({ state, add, importFile, goTab }: {
   state: CrmState; add: () => void; importFile: () => void; goTab: Props['goTab']
 }) {
+  const broker = isBroker(state)
   const steps: { done: boolean; title: string; text: string; action: ReactNode }[] = [
     {
       done: state.carriers.length > 0, title: 'Add your carriers',
-      text: 'Type an MC number — the name, USDOT and phone fill in from FMCSA. Set each carrier’s dispatch fee.',
+      text: broker ? 'Type an MC number — the name, USDOT and phone fill in from FMCSA, and authority and insurance are checked.' : 'Type an MC number — the name, USDOT and phone fill in from FMCSA. Set each carrier’s dispatch fee.',
       action: <button className={state.carriers.length ? 'ghost' : 'primary'} onClick={() => goTab('carriers')}>{state.carriers.length ? `${state.carriers.length} added · Manage` : 'Add carriers'}</button>,
     },
     {
@@ -474,9 +501,9 @@ function GettingStarted({ state, add, importFile, goTab }: {
       action: <button className="ghost" onClick={() => goTab('trucks')}>{state.trucks.length ? `${state.trucks.length} added · Manage` : 'Add trucks'}</button>,
     },
     {
-      done: state.dispatchers.length > 0, title: 'Add your dispatchers',
-      text: 'Optional. Each dispatcher’s percent of gross becomes their weekly pay.',
-      action: <button className="ghost" onClick={() => goTab('dispatchers')}>{state.dispatchers.length ? `${state.dispatchers.length} added · Manage` : 'Add dispatchers'}</button>,
+      done: state.dispatchers.length > 0, title: broker ? 'Add your agents' : 'Add your dispatchers',
+      text: broker ? 'Optional. Each agent’s percent of the margin becomes their pay.' : 'Optional. Each dispatcher’s percent of gross becomes their weekly pay.',
+      action: <button className="ghost" onClick={() => goTab('dispatchers')}>{state.dispatchers.length ? `${state.dispatchers.length} added · Manage` : broker ? 'Add agents' : 'Add dispatchers'}</button>,
     },
   ]
   return (

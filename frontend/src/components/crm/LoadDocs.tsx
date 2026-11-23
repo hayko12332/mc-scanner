@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
-import { FILE_KINDS, shortDate, type CrmFile, type CrmState, type FileKind, type InvoiceSend, type Load } from '../../lib/crm'
+import { FILE_KINDS, isBroker, shortDate, usd, words, type CrmFile, type CrmState, type FileKind, type InvoiceSend, type Load } from '../../lib/crm'
 
 export interface DocsApi {
   uploadFile: (loadId: number, file: Blob, name: string, kind: FileKind) => Promise<CrmFile>
@@ -11,7 +11,12 @@ export interface DocsApi {
   setInvoiceReminders: (loadId: number, remind: boolean) => Promise<unknown>
   /** Sends the invoice packet to the carrier's factoring company (not in the demo). */
   sendFactoring?: (loadId: number, v: Omit<InvoiceSend, 'remind'> & { factoring?: string }) => Promise<{ number: string }>
+  /** Brokerage boards: the carrier's rate con (not in the demo). */
+  carrierRcUrl?: (loadId: number) => string
+  sendCarrierRc?: (loadId: number, to: string, note?: string) => Promise<{ number: string; to: string }>
 }
+/** Documents that go with an invoice: never the invoice itself, other files, or the carrier's rate con (it shows the carrier's pay). */
+const forInvoice = (f: CrmFile) => f.kind !== 'invoice' && f.kind !== 'other' && f.kind !== 'carrier_rc'
 
 const kindLabel = (k: FileKind) => FILE_KINDS.find(([id]) => id === k)?.[1] ?? 'Other'
 const size = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
@@ -44,8 +49,10 @@ export async function prepare(file: File): Promise<{ blob: Blob; name: string }>
  * Documents of a load — rate con, BOL, POD — kept with the load; and its invoice: preview the PDF, email it to the
  * broker with the documents in the same PDF, and let the board remind the broker while it stays unpaid.
  */
-export function LoadDocs({ load, state, api, toast, changed, demo }: {
+export function LoadDocs({ load, state, api, toast, changed, demo, onPod }: {
   load: Load; state: CrmState; api: DocsApi; toast: (m: string) => void; changed: () => void; demo: boolean
+  /** A POD was added to a load not delivered yet: the panel marks it delivered. */
+  onPod?: () => void
 }) {
   const files = (state.files ?? []).filter((f) => f.loadId === load.id)
   const sent = state.invoices?.find((i) => i.loadId === load.id)
@@ -55,17 +62,21 @@ export function LoadDocs({ load, state, api, toast, changed, demo }: {
   const nextKind = useRef<FileKind | null>(null)
 
   const add = async (list: FileList | File[], kind: FileKind | null) => {
+    let pod = false
     for (const f of [...list]) {
       setBusy(`Uploading ${f.name}…`)
       try {
         const { blob, name } = await prepare(f)
         if (blob.size > 10 * 1024 * 1024) throw new Error(`${f.name} is over 10 MB`)
-        await api.uploadFile(load.id, blob, name, kind ?? guessKind(f.name))
+        const k = kind ?? guessKind(f.name)
+        await api.uploadFile(load.id, blob, name, k)
+        if (k === 'pod') pod = true
       } catch (e) {
         toast((e as Error).message)
       }
     }
     setBusy('')
+    if (pod && onPod) onPod()
     changed()
   }
   const pick = (kind: FileKind | null) => { nextKind.current = kind; picker.current?.click() }
@@ -102,6 +113,7 @@ export function LoadDocs({ load, state, api, toast, changed, demo }: {
             onChange={(e) => { if (e.target.files?.length) void add(e.target.files, nextKind.current); e.target.value = '' }} />
         </div>
       </section>
+      {isBroker(state) && <CarrierRcBox load={load} state={state} files={files} api={api} toast={toast} changed={changed} demo={demo} />}
       <InvoiceBox load={load} state={state} files={files} sent={sent} api={api} toast={toast} changed={changed} demo={demo} />
     </>
   )
@@ -111,15 +123,18 @@ function InvoiceBox({ load, state, files, sent, api, toast, changed, demo }: {
   load: Load; state: CrmState; files: CrmFile[]; sent: NonNullable<CrmState['invoices']>[number] | undefined
   api: DocsApi; toast: (m: string) => void; changed: () => void; demo: boolean
 }) {
+  const broker = isBroker(state)
+  const w = words(broker)
   const carrier = state.carriers.find((c) => c.id === load.carrierId)
-  const factors = !!carrier?.factoring || !!carrier?.factoringEmail
+  // A brokerage bills its customer itself; the carrier's factoring company is the carrier's business.
+  const factors = !broker && (!!carrier?.factoring || !!carrier?.factoringEmail)
   /** Which form is open: the broker's invoice email, or the packet for the carrier's factoring company. */
   const [open, setOpen] = useState<'broker' | 'factor' | null>(null)
   const [to, setTo] = useState(() => sent?.sentTo ?? state.brokerEmails?.[load.broker.trim().toLowerCase()] ?? '')
   const [factor, setFactor] = useState(() => carrier?.factoring ?? '')
   const [factorTo, setFactorTo] = useState(() => carrier?.factoringEmail ?? '')
   const [copyCarrier, setCopyCarrier] = useState(true)
-  const [attach, setAttach] = useState<Set<number>>(() => new Set(files.filter((f) => f.kind !== 'invoice' && f.kind !== 'other').map((f) => f.id)))
+  const [attach, setAttach] = useState<Set<number>>(() => new Set(files.filter(forInvoice).map((f) => f.id)))
   const [remind, setRemind] = useState(true)
   const [note, setNote] = useState('')
   const [sending, setSending] = useState(false)
@@ -128,7 +143,7 @@ function InvoiceBox({ load, state, files, sent, api, toast, changed, demo }: {
   useEffect(() => {
     const fresh = files.filter((f) => !known.current.has(f.id))
     fresh.forEach((f) => known.current.add(f.id))
-    if (fresh.length) setAttach((s) => new Set([...s, ...fresh.filter((f) => f.kind !== 'invoice' && f.kind !== 'other').map((f) => f.id)]))
+    if (fresh.length) setAttach((s) => new Set([...s, ...fresh.filter(forInvoice).map((f) => f.id)]))
   }, [files])
   const chosen = files.filter((f) => attach.has(f.id)).map((f) => f.id)
   const missing = !files.some((f) => f.kind === 'pod')
@@ -148,7 +163,7 @@ function InvoiceBox({ load, state, files, sent, api, toast, changed, demo }: {
     }
   }
   const send = () => {
-    if (!email(to)) return toast('Enter the broker’s billing email')
+    if (!email(to)) return toast(`Enter the ${w.customerLower}’s billing email`)
     void run(() => api.sendInvoice(load.id, { to: to.trim(), attach: chosen, remind, note: note.trim() || undefined }), (n) => `Invoice ${n} sent to ${to.trim()}`)
   }
   const sendFactor = () => {
@@ -159,7 +174,7 @@ function InvoiceBox({ load, state, files, sent, api, toast, changed, demo }: {
       (n) => `Invoice ${n} sent to ${factor.trim()}`)
   }
   const toggle = (which: 'broker' | 'factor') => {
-    if (demo) return toast(which === 'factor' ? 'Sign in to send invoices to factoring' : 'Sign in to email invoices to brokers')
+    if (demo) return toast(which === 'factor' ? 'Sign in to send invoices to factoring' : `Sign in to email invoices to ${w.customers.toLowerCase()}`)
     if (which === 'factor' && !carrier) return toast('Choose the carrier of this load first')
     setOpen((x) => (x === which ? null : which))
   }
@@ -167,22 +182,22 @@ function InvoiceBox({ load, state, files, sent, api, toast, changed, demo }: {
   const docsPicker = (
     <div className="iv-attach">
       <span>Attach in the same PDF</span>
-      {files.length ? files.map((f) => (
+      {files.filter((f) => f.kind !== 'carrier_rc').length ? files.filter((f) => f.kind !== 'carrier_rc').map((f) => (
         <label key={f.id}>
           <input type="checkbox" checked={attach.has(f.id)} onChange={(e) => setAttach((s) => { const n = new Set(s); if (e.target.checked) n.add(f.id); else n.delete(f.id); return n })} />
           {kindLabel(f.kind)} · {f.name}
         </label>
       )) : <small>No documents yet — add the rate con and POD above, they’re needed to get paid.</small>}
-      {files.length > 0 && missing && <small className="warn">No POD among the documents — most {open === 'factor' ? 'factoring companies' : 'brokers'} won’t pay without it.</small>}
+      {files.length > 0 && missing && <small className="warn">No POD among the documents — most {open === 'factor' ? 'factoring companies' : w.customers.toLowerCase()} won’t pay without it.</small>}
     </div>
   )
   const noteField = (
     <label className="ld-field">
       <span>Note (optional)</span>
-      <textarea className="ld-notes" rows={2} value={note} placeholder={open === 'factor' ? 'Anything for the factoring company' : 'Anything for the broker’s accounting'} onChange={(e) => setNote(e.target.value)} />
+      <textarea className="ld-notes" rows={2} value={note} placeholder={open === 'factor' ? 'Anything for the factoring company' : `Anything for the ${w.customerLower}’s accounting`} onChange={(e) => setNote(e.target.value)} />
     </label>
   )
-  const factorBtn = api.sendFactoring || demo ? (
+  const factorBtn = !broker && (api.sendFactoring || demo) ? (
     <button className={factors ? 'primary' : ''} onClick={() => toggle('factor')}>
       {factors ? `Send to ${carrier?.factoring || 'factoring'}` : 'Send to factoring'}
     </button>
@@ -198,7 +213,7 @@ function InvoiceBox({ load, state, files, sent, api, toast, changed, demo }: {
           {sent.sentTo !== carrier?.factoringEmail && (
             <label className="iv-remind">
               <input type="checkbox" checked={sent.remind} onChange={(e) => void api.setInvoiceReminders(load.id, e.target.checked).then(changed)} />
-              Remind the broker while unpaid
+              Remind the {w.customerLower} while unpaid
             </label>
           )}
         </p>
@@ -208,27 +223,27 @@ function InvoiceBox({ load, state, files, sent, api, toast, changed, demo }: {
           onClick={(e) => { if (demo) { e.preventDefault(); toast('Sign in to make invoices') } }}>Preview PDF</a>
         {factors && factorBtn}
         <button className={factors ? '' : 'primary'} onClick={() => toggle('broker')}>
-          {sent && !factors ? 'Send again' : 'Email invoice to broker'}
+          {sent && !factors ? 'Send again' : `Email invoice to ${w.customerLower}`}
         </button>
         {!factors && factorBtn}
       </div>
       {open === 'broker' && (
         <div className="iv-form">
           <label className="ld-field">
-            <span>Broker billing email</span>
+            <span>{w.customer} billing email</span>
             <div className="ld-input"><input type="email" value={to} placeholder="ap@broker.com" onChange={(e) => setTo(e.target.value)} autoFocus /></div>
           </label>
           {docsPicker}
           {noteField}
           <label className="iv-remind">
             <input type="checkbox" checked={remind} onChange={(e) => setRemind(e.target.checked)} />
-            Remind the broker if unpaid after 30 days (up to 3 polite emails, a week apart; replies come to you)
+            Remind the {w.customerLower} if unpaid after 30 days (up to 3 polite emails, a week apart; replies come to you)
           </label>
           <div className="iv-actions">
             <button className="ghost" onClick={() => setOpen(null)}>Cancel</button>
             <button className="primary" disabled={sending} onClick={send}>{sending ? 'Sending…' : 'Send invoice'}</button>
           </div>
-          <small className="iv-small">Sent from HaulPanel in {carrier?.name ?? 'your company'}’s name; the broker’s replies go to {state.user.email}. The load is marked invoiced.</small>
+          <small className="iv-small">Sent from HaulPanel in {broker ? state.company?.name || 'your company' : carrier?.name ?? 'your company'}’s name; the {w.customerLower}’s replies go to {state.user.email}. The load is marked invoiced.</small>
         </div>
       )}
       {open === 'factor' && (
@@ -257,6 +272,69 @@ function InvoiceBox({ load, state, files, sent, api, toast, changed, demo }: {
             <button className="primary" disabled={sending} onClick={sendFactor}>{sending ? 'Sending…' : `Send to ${factor.trim() || 'factoring'}`}</button>
           </div>
           <small className="iv-small">One PDF: the invoice (“Remit payment to {factor.trim() || 'the factoring company'}”), then the documents you picked. The load is marked invoiced; the factoring company collects from the broker, so no reminders go to the broker.</small>
+        </div>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Brokerage boards: the rate confirmation for the carrier booked on the load — preview the PDF, email it to the
+ * carrier (a copy is kept with the load). It needs the carrier and the carrier pay.
+ */
+function CarrierRcBox({ load, state, files, api, toast, changed, demo }: {
+  load: Load; state: CrmState; files: CrmFile[]; api: DocsApi; toast: (m: string) => void; changed: () => void; demo: boolean
+}) {
+  const carrier = state.carriers.find((c) => c.id === load.carrierId)
+  const sent = files.filter((f) => f.kind === 'carrier_rc').sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+  const [open, setOpen] = useState(false)
+  const [to, setTo] = useState(carrier?.email ?? '')
+  const [note, setNote] = useState('')
+  const [sending, setSending] = useState(false)
+  useEffect(() => { setTo(carrier?.email ?? '') }, [carrier?.id, carrier?.email])
+  const missing = !carrier ? 'Pick the carrier above first' : !(load.carrierPay && load.carrierPay > 0) ? 'Enter the carrier pay first' : ''
+  const send = async () => {
+    if (!api.sendCarrierRc) return
+    if (!/^\S+@\S+\.\S{2,}$/.test(to.trim())) return toast('Enter the carrier’s email')
+    setSending(true)
+    try {
+      const r = await api.sendCarrierRc(load.id, to.trim(), note.trim() || undefined)
+      toast(`Rate con ${r.number} sent to ${r.to}`)
+      setOpen(false)
+      changed()
+    } catch (e) {
+      toast((e as Error).message)
+    } finally {
+      setSending(false)
+    }
+  }
+  return (
+    <section>
+      <h3>Rate con to the carrier</h3>
+      {sent && <p className="iv-sent">✓ Sent {shortDate(sent.createdAt.slice(0, 10))} · <a href={api.fileUrl(sent.id)} target="_blank" rel="noopener">{sent.name}</a></p>}
+      <div className="iv-actions">
+        <a className={`btn ${demo || missing ? 'disabled' : ''}`} href={demo || missing || !api.carrierRcUrl ? undefined : api.carrierRcUrl(load.id)} target="_blank" rel="noopener"
+          onClick={(e) => { if (demo || missing) { e.preventDefault(); toast(demo ? 'Sign in to make rate cons' : missing) } }}>Preview PDF</a>
+        <button className={sent ? '' : 'primary'} onClick={() => { if (demo) return toast('Sign in to send rate cons'); if (missing) return toast(missing); setOpen((x) => !x) }}>
+          {sent ? 'Send again' : `Email to ${carrier?.name ?? 'the carrier'}`}
+        </button>
+      </div>
+      {!sent && <small className="iv-small">{missing || `${carrier!.name} · ${usd(load.carrierPay ?? 0)} · the customer never sees this document`}</small>}
+      {open && (
+        <div className="iv-form">
+          <label className="ld-field">
+            <span>Carrier email</span>
+            <div className="ld-input"><input type="email" value={to} placeholder="dispatch@carrier.com" onChange={(e) => setTo(e.target.value)} autoFocus /></div>
+          </label>
+          <label className="ld-field">
+            <span>Note (optional)</span>
+            <textarea className="ld-notes" rows={2} value={note} placeholder="Appointment, contact at pickup…" onChange={(e) => setNote(e.target.value)} />
+          </label>
+          <div className="iv-actions">
+            <button className="ghost" onClick={() => setOpen(false)}>Cancel</button>
+            <button className="primary" disabled={sending} onClick={() => void send()}>{sending ? 'Sending…' : 'Send rate con'}</button>
+          </div>
+          <small className="iv-small">One PDF with the lane, dates, carrier pay and the load notes as instructions, and a line for the carrier to sign. Replies go to {state.user.email}; a copy is kept with the load.</small>
         </div>
       )}
     </section>

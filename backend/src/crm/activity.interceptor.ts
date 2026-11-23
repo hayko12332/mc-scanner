@@ -53,6 +53,11 @@ const EVENTS: Record<string, [string, ((b: Body, p: Record<string, string>, out:
   'POST ai/undo': ['ai_undo'],
   'DELETE ai/thread/:id': ['ai_chat_delete'],
   'POST ai/ratecon': ['ai_ratecon_read'],
+  'POST ai/doc': ['ai_doc_read', (_b, _p, out) => {
+    const o = (out ?? {}) as { doc?: { kind?: string; signedByReceiver?: boolean; exceptions?: string }; match?: { loadId?: number | null } };
+    return { kind: o.doc?.kind ?? '', signed: o.doc?.signedByReceiver === true, exceptions: has(o.doc?.exceptions), matched: o.match?.loadId != null };
+  }],
+  'POST loads/:id/carrier-ratecon': ['carrier_ratecon_send', (_b, p) => ({ load: Number(p.id) })],
   'POST ai/import': ['ai_import_preview', (b, _p, out) => {
     const o = (out ?? {}) as { loads?: unknown[]; carriers?: unknown[]; trucks?: unknown[]; dispatchers?: unknown[]; skipped?: unknown[] };
     return { files: len(b.files), sheet: has(b.sheetUrl), loads: len(o.loads), carriers: len(o.carriers), trucks: len(o.trucks), dispatchers: len(o.dispatchers), skipped: len(o.skipped) };

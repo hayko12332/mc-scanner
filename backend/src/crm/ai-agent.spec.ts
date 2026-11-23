@@ -47,6 +47,8 @@ function fakeCtx() {
   const sentInvoices: number[] = [];
   const deleted: number[] = [];
   const factored: { id: number; to?: string }[] = [];
+  const attached: { loadId: number; name: string; kind?: string }[] = [];
+  const deletedFiles: number[] = [];
   const brokerMails: { to: string; subject: string; body: string }[] = [];
   const ctx: AgentCtx = {
     state: async () => ({ company: { name: 'Acme', type: 'dispatch', mc: '', dot: '', phone: '', fleetSize: '' }, loads,
@@ -55,12 +57,12 @@ function fakeCtx() {
     createLoad: async (l) => ({ ...l, id: 9 }),
     updateLoad: async (id, l) => { updates.push({ id, status: l.status, paidOn: l.paidOn }); return { ...l, id }; },
     sendInvoice: async (id) => { sentInvoices.push(id); return { number: 'INV-1' }; },
-    addCarrier: async (c) => ({ ...c, id: 5 }), trackingLink: async () => 'u', attachFile: async () => undefined,
+    addCarrier: async (c) => ({ ...c, id: 5 }), trackingLink: async () => 'u', attachFile: async (loadId, name, _m, _d, kind) => { attached.push({ loadId, name, kind }); return { id: 77 }; }, deleteFile: async (id) => { deletedFiles.push(id); },
     deleteLoad: async (id) => { deleted.push(id); }, archiveCarrier: async () => undefined,
     sendFactoring: async (id, _attach, to) => { factored.push({ id, to }); return { number: 'INV-2', to: to ?? 'inv@rts.example', factor: 'RTS Financial' }; },
     emailBroker: async (to, subject, body) => { brokerMails.push({ to, subject, body }); return { to }; },
   };
-  return { ctx, updates, sentInvoices, deleted, factored, brokerMails };
+  return { ctx, updates, sentInvoices, deleted, factored, brokerMails, attached, deletedFiles };
 }
 
 afterEach(() => setAiClient(null));
@@ -183,5 +185,20 @@ describe('AI assistant', () => {
     expect(factored).toEqual([{ id: 1, to: undefined }]);
     expect(brokerMails[0]).toMatchObject({ to: 'jane@coyote.example' });
     expect(t.display.at(-1)?.text).toBe('Both sent.');
+  });
+
+  it('attaches a POD sent in the chat to the load, marks it delivered, and undo takes the file off', async () => {
+    fakeApi([
+      [tool('a1', 'attach_document', { load_id: 1, kind: 'pod' }), tool('u1', 'update_load', { id: 1, status: 'delivered' })],
+      [text('**POD attached — load 1 delivered.**')],
+    ]);
+    const { ctx, attached, updates, deletedFiles } = fakeCtx();
+    const t = newThread();
+    await chat(ctx, t, 'board', { text: '', file: { name: 'pod.jpg', mime: 'image/jpeg', data: Buffer.from([0xff, 0xd8, 0xff, 1]) } });
+    expect(attached).toEqual([{ loadId: 1, name: 'pod.jpg', kind: 'pod' }]);
+    expect(updates[0]).toMatchObject({ id: 1, status: 'delivered' });
+    expect(t.file).toBeNull();
+    await undo(ctx, t, 'a1');
+    expect(deletedFiles).toEqual([77]);
   });
 });

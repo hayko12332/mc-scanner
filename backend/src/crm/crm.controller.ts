@@ -16,7 +16,9 @@ import type { CodePurpose } from './crm.store.js';
 import type { CompanyInput } from './crm.types.js';
 import { MilesService } from './miles.js';
 import { CompanyCheckService } from './company-check.service.js';
-import { aiEnabled, readRateCon } from './ai.js';
+import { aiEnabled, readDeliveryDoc, readRateCon } from './ai.js';
+import { matchDoc } from './doc-match.js';
+import { buildCarrierRcPdf, carrierRcParts, sendCarrierRc } from './carrier-ratecon.js';
 import { actionView, boardContext, chat, decide, newThread, undo, type AgentCtx, type Emit, type Thread } from './ai-agent.js';
 import { LookupService } from '../fmcsa/lookup.service.js';
 import { parseLookupQuery } from '../fmcsa/lookup.query.js';
@@ -258,6 +260,30 @@ export class CrmController {
     }
   }
 
+  /**
+   * A BOL or POD (PDF or photo, raw bytes): AI reads it and the board finds the load it belongs to. Nothing is saved
+   * here — the screen shows what was read and the match, and the person saves it (upload + status) with one click.
+   */
+  @Post('ai/doc')
+  @HttpCode(200)
+  async aiDoc(@Req() req: Request, @Body() body: unknown) {
+    const s = await this.auth(req);
+    if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
+    if (!Buffer.isBuffer(body) || !body.length) throw new BadRequestException('Send the document as application/octet-stream');
+    if (body.length > 10 * 1024 * 1024) throw new BadRequestException('The file is over 10 MB');
+    const type = sniff(body);
+    if (!type) throw new BadRequestException('Send a PDF or a photo (JPEG or PNG)');
+    if (!this.aiLimiter.take(`ws:${s.ws}`)) throw new HttpException('Too many AI requests this hour, try again later', 429);
+    let doc;
+    try {
+      doc = await readDeliveryDoc(body, type, new Date().toISOString().slice(0, 10));
+    } catch (e) {
+      throw new ServiceUnavailableException((e as Error).message);
+    }
+    const st = await this.scopedState(s);
+    return { doc, match: matchDoc(doc, st.loads, st.files) };
+  }
+
   /** The message, file and chat of an AI request (checked before anything is sent to the AI). */
   private async aiInput(s: Scope, b: { threadId?: string; text?: string; file?: { name?: string; data?: string }; loadId?: number }) {
     if (!aiEnabled()) throw new ServiceUnavailableException('AI is not switched on');
@@ -457,7 +483,8 @@ export class CrmController {
         await this.loadAccess(s, id);
         return `${config.publicUrl || 'https://haulpanel.com'}/#/track/${found(await this.store!.trackingToken(s.ws, id))}`;
       },
-      attachFile: async (id, name, mime, data) => { await this.loadAccess(s, id); return this.store!.addFile(s.ws, id, { kind: 'ratecon', name, mime, data }); },
+      attachFile: async (id, name, mime, data, kind = 'ratecon') => { await this.loadAccess(s, id); return found(await this.store!.addFile(s.ws, id, { kind, name, mime, data })); },
+      deleteFile: async (id) => { const f = await this.store!.file(s.ws, id); if (!f) return; await this.loadAccess(s, f.loadId); await this.store!.deleteFile(s.ws, id); },
       deleteLoad: async (id) => { await this.loadAccess(s, id); await this.store!.deleteLoad(s.ws, id); },
       archiveCarrier: async (id) => { if (s.role !== 'owner') throw new Error('Only the owner can remove carriers'); await this.store!.archiveCarrier(s.ws, id); },
     };
@@ -965,6 +992,36 @@ export class CrmController {
     const r = await sendLoadInvoice(this.store!, scope.ws, scope.user, id, to, cc, attach, remind, note);
     void this.qbo.push(scope.ws, scope.user, id);
     return r;
+  }
+
+  /** Brokerage boards: the rate confirmation for the carrier of a load, as a PDF. */
+  @Get('loads/:id/carrier-ratecon.pdf')
+  async carrierRcPdf(@Req() req: Request, @Res() res: Response, @Param('id', ParseIntPipe) id: number) {
+    const scope = await this.auth(req);
+    await this.loadAccess(scope, id);
+    const { data } = await carrierRcParts(this.store!, scope.ws, scope.user, id);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="RateCon-${data.number}.pdf"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(Buffer.from(await buildCarrierRcPdf(data)));
+  }
+
+  /** Brokerage boards: emails the rate con to the carrier (replies go to the user); a copy is kept with the load. */
+  @Post('loads/:id/carrier-ratecon')
+  @HttpCode(200)
+  async sendCarrierRc(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Body() b: Record<string, unknown>) {
+    const scope = await this.auth(req);
+    await this.loadAccess(scope, id);
+    const to = normEmail(String(b.to ?? ''));
+    if (!validEmail(to)) throw new BadRequestException('Enter the carrier’s email');
+    if (!this.mailHourly.take(`invoice:${scope.ws}`)) throw new HttpException('Too many emails this hour, try again later', 429);
+    const r = await sendCarrierRc(this.store!, scope.ws, scope.user, id, to, text(b.note, 1000));
+    // The carrier's email is remembered on the carrier for the next load.
+    const st = await this.store!.state(scope.ws, scope.user);
+    const load = st.loads.find((l) => l.id === id);
+    const carrier = st.carriers.find((c) => c.id === load?.carrierId);
+    if (carrier && !carrier.email) { const { id: cid, ...rest } = carrier; await this.store!.updateCarrier(scope.ws, cid, { ...rest, email: to }).catch(() => undefined); }
+    return { ok: true, ...r };
   }
 
   /**

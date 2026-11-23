@@ -9,15 +9,17 @@ import { AiHome } from '../components/crm/AiHome'
 import { Onboarding } from '../components/crm/Onboarding'
 import { IntegrationsView } from '../components/crm/IntegrationsView'
 import { LoadAlertsView } from '../components/crm/LoadAlertsView'
-import { CompanySetup, SignIn, type InviteInfo } from '../components/crm/SignIn'
+import { DocsDialog } from '../components/crm/DocsDialog'
+import { CustomersView } from '../components/crm/CustomersView'
+import { CompanyEdit, CompanySetup, SignIn, type InviteInfo } from '../components/crm/SignIn'
 import { Icon, type IconName } from '../components/Icon'
 import { BoardSkeleton } from '../components/Skeleton'
 import { setAnalyticsUser, track } from '../lib/analytics'
-import { crm, CrmError, looksLikePlace, type Company, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
+import { crm, CrmError, isBroker, looksLikePlace, withStatusDates, words, type Company, type CrmConfig, type CrmState, type CrmUser, type Load, type LoadInput } from '../lib/crm'
 import { crmDemo } from '../lib/crmDemo'
 import type { BoardTool } from '../App'
 
-type Tab = 'ai' | 'loads' | 'map' | 'statements' | 'reports' | 'carriers' | 'trucks' | 'dispatchers' | 'integrations' | 'alerts'
+type Tab = 'ai' | 'loads' | 'map' | 'statements' | 'reports' | 'customers' | 'carriers' | 'trucks' | 'dispatchers' | 'integrations' | 'alerts'
 type Theme = 'light' | 'dark'
 
 const THEME_KEY = 'leadhaul.work.theme'
@@ -59,12 +61,14 @@ type NavItem = [Tab, string, IconName, number]
  * Signed in: the TMS layout — a dark sidebar that stays put (your company on top, the sections, tools, and you
  * at the bottom) and one work area that scrolls with the page, so there is a single scroll, never a box inside a box.
  */
-function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, company, demo, onLeave, banner, children, role, onAskBar }: {
+function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, company, demo, onLeave, banner, children, role, onAskBar, onCompany }: {
   theme: Theme; setTheme: (t: Theme) => void; items: NavItem[]; tab: Tab; setTab: (t: Tab) => void
   tool: BoardTool | null; setTool: (t: BoardTool | null) => void
   user: CrmUser; company?: Company; demo: boolean; onLeave: () => void; banner?: ReactNode; children: ReactNode; role?: 'owner' | 'dispatcher'
   /** The "Ask AI" bar on top of every section (only when AI is on): sends the question to the AI Assistant. */
   onAskBar?: (text: string) => void
+  /** Opens the company's settings (owner only). */
+  onCompany?: () => void
 }) {
   const bar = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -79,9 +83,10 @@ function AppShell({ theme, setTheme, items, tab, setTab, tool, setTool, user, co
     <div className={`work app theme-${theme}`}>
       <aside className="w-side">
         <a href="#/" className="w-side-logo" title="HaulPanel home"><img src="/logo.svg" alt="" width="24" height="24" /><b>HaulPanel</b></a>
-        <div className="w-org" title={org}>
+        <div className={`w-org ${onCompany ? 'click' : ''}`} title={onCompany ? 'Company settings' : org} role={onCompany ? 'button' : undefined} tabIndex={onCompany ? 0 : undefined}
+          onClick={onCompany} onKeyDown={(e) => { if (onCompany && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onCompany() } }}>
           <span className="w-org-mark">{initials || 'H'}</span>
-          <span className="w-org-text"><b>{org}</b><small>{role === 'dispatcher' ? 'You’re a dispatcher here' : company?.mc ? `MC ${company.mc}` : demo ? 'Demo account' : 'Dispatch company'}</small></span>
+          <span className="w-org-text"><b>{org}</b><small>{role === 'dispatcher' ? 'You’re a dispatcher here' : [company?.type === 'broker' ? 'Freight broker' : demo ? 'Demo account' : 'Dispatch company', company?.mc && `MC ${company.mc}`].filter(Boolean).join(' · ')}</small></span>
         </div>
         <nav className="w-nav" aria-label="Sections">
           {items.map(([id, label, icon, n]) => (
@@ -143,6 +148,9 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
   const [openId, setOpenId] = useState<number | null>(null)
   /** New-load form open, with the carrier/dispatcher it starts from. */
   const [creating, setCreating] = useState<{ carrierId: string; dispatcherId: string } | null>(null)
+  /** "BOL / POD" open (AI reads documents and finds their loads). */
+  const [docsOpen, setDocsOpen] = useState(false)
+  const [companyOpen, setCompanyOpen] = useState(false)
   const [error, setError] = useState('')
   const [theme, setThemeState] = useState<Theme>(readTheme)
   const [demo, setDemoState] = useState(() => hashParams().has('demo'))
@@ -336,24 +344,33 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
   }
 
   const aiOn = !!config?.ai && !demo
+  // A brokerage board: customers instead of dispatch-fee statements, agents instead of dispatchers.
+  const broker = isBroker(state)
+  const w = words(broker)
+  const customerCount = new Set(state.loads.map((l) => l.broker.trim().toLowerCase()).filter(Boolean)).size
   const items: NavItem[] = [
     ...(aiOn ? [['ai', 'Home', 'spark', 0] as NavItem] : []),
     ['loads', 'Loads', 'file', state.loads.length],
     // Load alerts by email shows only once the server receives mail (INBOUND_DOMAIN).
     ...(demo || !config?.loadAlerts ? [] : [['alerts', 'Load alerts', 'mail', 0] as NavItem]),
     ['map', 'Map', 'map', state.loads.filter((l) => l.status === 'in_transit').length],
-    ['statements', 'Statements', 'dollar', state.carriers.filter((c) => c.fee > 0).length],
+    broker ? ['customers', 'Customers', 'users', customerCount] as NavItem : ['statements', 'Statements', 'dollar', state.carriers.filter((c) => c.fee > 0).length] as NavItem,
     ['reports', 'Reports', 'chart', 0],
     ['carriers', 'Carriers', 'building', state.carriers.length],
     ['trucks', 'Trucks', 'truck', state.trucks.length],
-    ...(state.me?.role === 'dispatcher' ? [] : [['dispatchers', 'Dispatchers', 'users', state.dispatchers.length] as NavItem]),
+    ...(state.me?.role === 'dispatcher' ? [] : [['dispatchers', w.dispatchers, 'users', state.dispatchers.length] as NavItem]),
     ...(demo ? [] : [['integrations', 'Integrations', 'plug', 0] as NavItem]),
   ]
   const leave = () => (demo ? setDemo(false) : void crm.logout().then(() => { setState(null); setSignedOut(true) }))
 
   return (
     <AppShell theme={theme} setTheme={setTheme} items={items} tab={tab} setTab={setTab} tool={tool} setTool={setTool} user={state.user} company={state.company}
-      demo={demo} onLeave={leave} banner={banner} role={state.me?.role} onAskBar={aiOn ? (t) => askAi(t) : undefined}>
+      demo={demo} onLeave={leave} banner={banner} role={state.me?.role} onAskBar={aiOn ? (t) => askAi(t) : undefined}
+      onCompany={!demo && state.me?.role !== 'dispatcher' && state.company ? () => setCompanyOpen(true) : undefined}>
+      {companyOpen && state.company && (
+        <CompanyEdit company={state.company} close={() => setCompanyOpen(false)}
+          saved={(c) => { setCompanyOpen(false); if (c.type !== state.company?.type && tab === (c.type === 'broker' ? 'statements' : 'customers')) setTab('loads'); toast('Company saved'); void reload() }} />
+      )}
       {tool && <div className={`w-tool w-tool-${tool}`} ref={toolSlot} />}
       {!tool && tab === 'loads' && (
         <LoadsTable
@@ -362,6 +379,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           openLoad={setOpenId}
           newLoad={newLoad}
           goTab={setTab}
+          addDocs={aiOn ? () => { track('docs_open'); setDocsOpen(true) } : undefined}
           updateMany={(loads, patch) => optimistic(
             patchLoads(new Set(loads.map((l) => l.id)), (l) => ({ ...l, ...patch(l) })),
             () => Promise.all(loads.map((l) => api.updateLoad(l.id, { ...l, ...patch(l) }))),
@@ -408,6 +426,15 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
             attach: (id, f, name) => crm.uploadFile(id, f, name, 'ratecon').then(() => reload()),
           } : undefined} />
       )}
+      {docsOpen && (
+        <DocsDialog state={state} close={() => setDocsOpen(false)} read={crm.aiDoc}
+          upload={(id, f, name, kind) => crm.uploadFile(id, f, name, kind)}
+          apply={(cs) => Promise.all(cs.map(({ load: l, delivered, note }) => api.updateLoad(l.id, {
+            ...l, ...(delivered ? withStatusDates(l, 'delivered') : {}), notes: note ? [l.notes, note].filter(Boolean).join(' · ').slice(0, 1000) : l.notes,
+          })))}
+          done={(note) => { setDocsOpen(false); toast(note); void reload() }} />
+      )}
+      {!tool && tab === 'customers' && broker && <CustomersView state={state} openLoad={setOpenId} />}
       {!tool && tab === 'carriers' && (
         <CarriersView
           state={state}

@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import {
-  addDays, crm, fmtRpm, gross, rpm, shortDate, STATUSES, today, usd, weekStart,
+  addDays, crm, fmtRpm, gross, isBroker, rpm, shortDate, STATUSES, today, usd, weekStart,
   type AiAction, type AiCard, type AiEvent, type AiItem, type AiStep, type AiView, type CrmState, type ImportPlan, type LaneResult,
 } from '../../lib/crm'
 import { CheckBadge } from './CheckBadge'
@@ -416,7 +416,11 @@ function Briefing({ state, firstName, owner, ask, importData }: { state: CrmStat
     const overdue = state.loads.filter((l) => l.status === 'invoiced' && l.invoicedOn && addDays(l.invoicedOn, 30) < now)
     const toInvoice = state.loads.filter((l) => l.status === 'delivered' && !l.invoicedOn)
     const transit = state.loads.filter((l) => l.status === 'in_transit')
-    const noTruck = state.loads.filter((l) => l.status === 'booked' && l.truckId == null)
+    const broker = isBroker(state)
+    // A brokerage covers its loads with carriers (their trucks aren't its own); a dispatch service puts its trucks on them.
+    const noTruck = state.loads.filter((l) => l.status === 'booked' && (broker ? l.carrierId == null : l.truckId == null))
+    const noPay = broker ? state.loads.filter((l) => l.status !== 'paid' && l.carrierId != null && !(l.carrierPay && l.carrierPay > 0)) : []
+    const carriersOwed = broker ? state.loads.filter((l) => (l.carrierPay ?? 0) > 0 && !l.carrierPaidOn && ['delivered', 'invoiced', 'paid'].includes(l.status)) : []
     const ws = weekStart(now)
     // This week only (Mon–Sun): loads booked for next week don't count yet.
     const week = state.loads.filter((l) => l.date >= ws && l.date <= addDays(ws, 6))
@@ -425,10 +429,14 @@ function Briefing({ state, firstName, owner, ask, importData }: { state: CrmStat
     const unpaid = state.loads.filter((l) => l.status === 'invoiced').reduce((s, l) => s + gross(l) + l.lumper, 0)
     const alerts = (state.checks ?? []).filter((c) => c.role === 'carrier' && c.level === 'danger')
     const sum = (ls: typeof overdue) => ls.reduce((s, l) => s + gross(l) + l.lumper, 0)
-    return { overdue, toInvoice, transit, noTruck, weekGross, miles, unpaid, alerts, sum, week }
+    return { overdue, toInvoice, transit, noTruck, weekGross, miles, unpaid, alerts, sum, week, broker, noPay, carriersOwed }
   }, [state])
   const needs: { tone: string; title: string; sub: string; ask: string; cta: string }[] = []
-  if (b.noTruck.length) needs.push({ tone: 'warn', title: `${b.noTruck.length} booked load${b.noTruck.length === 1 ? '' : 's'} without a truck`, sub: b.noTruck.slice(0, 2).map((l) => `${l.broker || 'Load'} ${place(l.origin)} → ${place(l.destination)}`).join(' · '), ask: 'Which booked loads have no truck yet, and which truck fits each best?', cta: 'Find trucks' })
+  if (b.noTruck.length) needs.push(b.broker
+    ? { tone: 'warn', title: `${b.noTruck.length} booked load${b.noTruck.length === 1 ? '' : 's'} without a carrier`, sub: b.noTruck.slice(0, 2).map((l) => `${l.broker || 'Load'} ${place(l.origin)} → ${place(l.destination)}`).join(' · '), ask: 'Which booked loads have no carrier yet? List them with lane, date and customer rate.', cta: 'Show' }
+    : { tone: 'warn', title: `${b.noTruck.length} booked load${b.noTruck.length === 1 ? '' : 's'} without a truck`, sub: b.noTruck.slice(0, 2).map((l) => `${l.broker || 'Load'} ${place(l.origin)} → ${place(l.destination)}`).join(' · '), ask: 'Which booked loads have no truck yet, and which truck fits each best?', cta: 'Find trucks' })
+  if (b.noPay.length) needs.push({ tone: 'warn', title: `${b.noPay.length} load${b.noPay.length === 1 ? '' : 's'} without carrier pay`, sub: 'Margin can’t be counted, and the carrier’s rate con needs it', ask: 'Which loads have a carrier but no carrier pay set?', cta: 'Show' })
+  if (b.carriersOwed.length) needs.push({ tone: 'acc', title: `${usd(Math.round(b.carriersOwed.reduce((s, l) => s + (l.carrierPay ?? 0), 0)))} owed to carriers`, sub: `${b.carriersOwed.length} delivered load${b.carriersOwed.length === 1 ? '' : 's'} not paid to the carrier`, ask: 'Which carriers do we owe for delivered loads, and how much each?', cta: 'Review' })
   if (b.toInvoice.length) needs.push({ tone: 'acc', title: `${b.toInvoice.length} delivered, not invoiced — ${usd(Math.round(b.sum(b.toInvoice)))}`, sub: 'Money waiting on an invoice', ask: `Prepare invoices for the ${b.toInvoice.length} delivered loads that aren't invoiced yet`, cta: 'Prepare invoices' })
   if (b.overdue.length) needs.push({ tone: 'bad', title: `${b.overdue.length} overdue invoice${b.overdue.length === 1 ? '' : 's'} — ${usd(Math.round(b.sum(b.overdue)))}`, sub: 'Past net 30', ask: 'Which invoices are overdue, who owes the most, and what should I do?', cta: 'Review' })
   if (b.alerts.length) needs.push({ tone: 'bad', title: `${b.alerts.length} carrier${b.alerts.length === 1 ? '' : 's'} with FMCSA problems`, sub: 'Authority or insurance changed', ask: 'Which carriers have problems with FMCSA, and what exactly?', cta: 'Explain' })
@@ -440,7 +448,7 @@ function Briefing({ state, firstName, owner, ask, importData }: { state: CrmStat
         <div className="ah-who">HaulPanel AI <small>Briefing · {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</small></div>
         <div className="ah-text">
           <p><b>{greeting()}, {firstName}.</b> {fresh
-            ? 'Your board is empty. Bring your loads, carriers, trucks and drivers in — just drop your files, I’ll sort them out.'
+            ? (b.broker ? 'Your board is almost empty. Bring your loads, customers and carriers in — just drop your files, I’ll sort them out.' : 'Your board is empty. Bring your loads, carriers, trucks and drivers in — just drop your files, I’ll sort them out.')
             : `This week: ${usd(Math.round(b.weekGross))} gross on ${b.week.length} load${b.week.length === 1 ? '' : 's'}${b.miles ? ` (${fmtRpm(rpm(b.weekGross, b.miles))}/mi)` : ''}. ${b.transit.length} on the road, ${usd(Math.round(b.unpaid))} not paid yet.`}</p>
         </div>
         {fresh && owner && (
@@ -471,7 +479,9 @@ function Briefing({ state, firstName, owner, ask, importData }: { state: CrmStat
           </div>
         )}
         <div className="ah-try">
-          {['How did each dispatcher do this month?', 'Which brokers pay the best rate per mile?', 'Check broker MC ', 'Which truck ran the most empty miles this month?'].map((t) => (
+          {(b.broker
+            ? ['What was my margin by customer this month?', 'Which customers owe me money?', 'Check carrier MC ', 'Which loads were delivered but not invoiced?']
+            : ['How did each dispatcher do this month?', 'Which brokers pay the best rate per mile?', 'Check broker MC ', 'Which truck ran the most empty miles this month?']).map((t) => (
             <button key={t} onClick={() => ask(t)}>✦ {t.trim()}</button>
           ))}
         </div>

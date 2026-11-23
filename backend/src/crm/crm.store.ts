@@ -102,6 +102,9 @@ const SCHEMA = `
   ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS company_phone TEXT NOT NULL DEFAULT '';
   ALTER TABLE crm_workspaces ADD COLUMN IF NOT EXISTS fleet_size TEXT NOT NULL DEFAULT '';
   ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS broker_mc TEXT NOT NULL DEFAULT '';
+  -- Brokerage boards: what the carrier is paid for the load, and when it was paid
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS carrier_pay NUMERIC(12,2) NOT NULL DEFAULT 0;
+  ALTER TABLE crm_loads ADD COLUMN IF NOT EXISTS carrier_paid_on DATE;
   -- FMCSA checks of carriers (re-checked daily, the owner is emailed when one gets worse) and brokers
   CREATE TABLE IF NOT EXISTS crm_checks (
     workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
@@ -213,15 +216,21 @@ const CARRIER_COLS = 'id, name, mc, dot, phone, email, notes, fee_type, fee, fac
 const TRUCK_COLS = 'id, carrier_id, unit, driver, phone';
 const LOAD_COLS = `id, to_char(load_date, 'YYYY-MM-DD') AS load_date, carrier_id, dispatcher_id, broker, pro, origin, destination, rate, notes,
   status, truck_id, loaded_miles, empty_miles, detention, layover, tonu, other, lumper,
-  to_char(invoiced_on, 'YYYY-MM-DD') AS invoiced_on, to_char(paid_on, 'YYYY-MM-DD') AS paid_on, broker_mc`;
+  to_char(invoiced_on, 'YYYY-MM-DD') AS invoiced_on, to_char(paid_on, 'YYYY-MM-DD') AS paid_on, broker_mc,
+  carrier_pay, to_char(carrier_paid_on, 'YYYY-MM-DD') AS carrier_paid_on`;
 /** Load columns written by insert/update, in the order of loadValues(). */
 const LOAD_WRITE = ['load_date', 'carrier_id', 'dispatcher_id', 'broker', 'pro', 'origin', 'destination', 'rate', 'notes', 'status',
-  'truck_id', 'loaded_miles', 'empty_miles', 'detention', 'layover', 'tonu', 'other', 'lumper', 'invoiced_on', 'paid_on', 'broker_mc'];
+  'truck_id', 'loaded_miles', 'empty_miles', 'detention', 'layover', 'tonu', 'other', 'lumper', 'invoiced_on', 'paid_on', 'broker_mc',
+  'carrier_pay', 'carrier_paid_on'];
 const loadValues = (l: LoadInput) => [l.date, l.carrierId, l.dispatcherId, l.broker, l.pro, l.origin, l.destination, l.rate, l.notes, l.status,
-  l.truckId, l.loadedMiles, l.emptyMiles, l.detention, l.layover, l.tonu, l.other, l.lumper, l.invoicedOn, l.paidOn, l.brokerMc];
+  l.truckId, l.loadedMiles, l.emptyMiles, l.detention, l.layover, l.tonu, l.other, l.lumper, l.invoicedOn, l.paidOn, l.brokerMc,
+  l.carrierPay ?? 0, l.carrierPaidOn ?? null];
 
-export const FILE_KINDS = ['ratecon', 'bol', 'pod', 'invoice', 'other'] as const;
+/** carrier_rc: the rate con a brokerage sends its carrier (it shows the carrier's pay, so it never goes to the customer). */
+export const FILE_KINDS = ['ratecon', 'bol', 'pod', 'invoice', 'carrier_rc', 'other'] as const;
 export type FileKind = (typeof FILE_KINDS)[number];
+/** Documents that go with an invoice (not the invoice itself, nor the carrier's rate con with its pay). */
+export const forInvoice = (kind: FileKind) => kind !== 'invoice' && kind !== 'carrier_rc';
 export interface CrmFile { id: number; loadId: number | null; kind: FileKind; name: string; mime: string; size: number; createdAt: string }
 const FILE_COLS = 'id, load_id, kind, name, mime, size, created_at';
 const MAX_BOARD_BYTES = 300 * 1024 * 1024;
@@ -270,6 +279,7 @@ const toLoad = (r: Record<string, unknown>): Load => ({
   loadedMiles: Number(r.loaded_miles ?? 0), emptyMiles: Number(r.empty_miles ?? 0),
   detention: Number(r.detention ?? 0), layover: Number(r.layover ?? 0), tonu: Number(r.tonu ?? 0), other: Number(r.other ?? 0), lumper: Number(r.lumper ?? 0),
   invoicedOn: day(r.invoiced_on), paidOn: day(r.paid_on), brokerMc: String(r.broker_mc ?? ''),
+  carrierPay: Number(r.carrier_pay ?? 0), carrierPaidOn: day(r.carrier_paid_on),
 });
 
 export type LoadInput = Omit<Load, 'id'>;

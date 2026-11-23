@@ -84,10 +84,19 @@ export interface Load {
   paidOn: string | null;
   /** The broker's MC number (digits), for the FMCSA check. */
   brokerMc: string;
+  /** Brokerage boards: what the carrier is paid for this load (margin = gross − carrier pay). 0 = not set. */
+  carrierPay?: number;
+  /** Brokerage boards: YYYY-MM-DD the carrier was paid. */
+  carrierPaidOn?: string | null;
 }
 
-/** Who uses the workspace: asked at sign-up, like other TMSs do, to set the board up for the business. */
+/**
+ * Who uses the workspace, asked at sign-up. A dispatch service books loads from brokers for its carriers (the broker
+ * pays, the carrier owes a dispatch fee). A broker books loads from customers (shippers) and pays carriers: on its
+ * board the load's `broker` field is the customer, and carrierPay / margin count.
+ */
 export type CompanyType = 'dispatch' | 'carrier' | 'broker' | '';
+export const isBrokerage = (c: { type?: string } | null | undefined) => c?.type === 'broker';
 export interface CompanyInput { name: string; type: CompanyType | string; mc: string; dot: string; phone: string; fleetSize: string }
 
 export interface CrmState {

@@ -47,12 +47,26 @@ export interface Load {
   paidOn: string | null
   /** The broker's MC (digits), for the FMCSA check. */
   brokerMc: string
+  /** Brokerage boards: what the carrier is paid (margin = gross − carrier pay); 0 = not set. */
+  carrierPay?: number
+  /** Brokerage boards: when the carrier was paid. */
+  carrierPaidOn?: string | null
 }
 export type LoadInput = Omit<Load, 'id'>
 export type CarrierInput = Omit<CrmCarrier, 'id'>
 export type TruckInput = Omit<Truck, 'id'>
 export type CompanyType = 'dispatch' | 'carrier' | 'broker'
 export interface Company { name: string; type: CompanyType | ''; mc: string; dot: string; phone: string; fleetSize: string }
+/** A brokerage board: loads come from customers (the `broker` field holds the customer) and carriers are paid per load. */
+export const isBroker = (s: { company?: { type?: string } } | null | undefined) => s?.company?.type === 'broker'
+/** Words that change on a brokerage board. */
+export const words = (broker: boolean) => broker
+  ? { customer: 'Customer', customers: 'Customers', customerLower: 'customer', dispatcher: 'Agent', dispatchers: 'Agents' }
+  : { customer: 'Broker', customers: 'Brokers', customerLower: 'broker', dispatcher: 'Dispatcher', dispatchers: 'Dispatchers' }
+/** Margin of a load on a brokerage board (null until the carrier pay is set). */
+export const margin = (l: Load) => (l.carrierPay && l.carrierPay > 0 ? gross(l) - l.carrierPay : null)
+/** What a dispatcher's / agent's percent is taken from: gross on a dispatch board, margin on a brokerage board. */
+export const payBase = (l: Load, broker: boolean) => (broker ? Math.max(0, margin(l) ?? 0) : gross(l))
 export const COMPANY_TYPES: [CompanyType, string, string][] = [
   ['dispatch', 'Dispatch service', 'I dispatch trucks for carriers'],
   ['carrier', 'Carrier / fleet', 'I own or run trucks'],
@@ -108,7 +122,7 @@ export interface Team {
   members: { userId: number; name: string; email: string; dispatcherId: number | null }[]
   invites: { id: number; email: string; dispatcherId: number | null; expiresAt: string }[]
 }
-export const FILE_KINDS = [['ratecon', 'Rate con'], ['bol', 'BOL'], ['pod', 'POD'], ['invoice', 'Invoice'], ['other', 'Other']] as const
+export const FILE_KINDS = [['ratecon', 'Rate con'], ['bol', 'BOL'], ['pod', 'POD'], ['invoice', 'Invoice'], ['carrier_rc', 'Carrier rate con'], ['other', 'Other']] as const
 export type FileKind = (typeof FILE_KINDS)[number][0]
 export interface CrmFile { id: number; loadId: number | null; kind: FileKind; name: string; mime: string; size: number; createdAt: string }
 export interface SentInvoice { loadId: number; number: string; sentTo: string; sentAt: string; remind: boolean; reminders: number }
@@ -119,13 +133,19 @@ export interface CompanyCheck {
   mc: number | null; dot: string; name: string; role: CheckRole; level: 'ok' | 'caution' | 'danger' | 'unknown'
   summary: string; flags: { level: 'caution' | 'danger'; text: string }[]; years: number | null; insurance: number | null; checkedAt: string
 }
+/** What AI read on a BOL or POD, and the load it belongs to. */
+export interface DeliveryDoc {
+  kind: 'bol' | 'pod' | 'other'; references: string[]; shipper: string; consignee: string; origin: string; destination: string
+  pickupDate: string; deliveryDate: string; signedByReceiver: boolean; receiver: string; pieces: string; weight: string; exceptions: string
+}
+export interface DocMatch { loadId: number | null; why: string; candidates: { loadId: number; score: number; why: string }[] }
 export interface MilesResult { miles: number; estimate: boolean }
 /** A lane on the map: both ends and the road as [lon, lat], miles and driving hours. */
 export interface LaneResult { a: [number, number]; b: [number, number]; miles: number; hours: number; line: [number, number][]; estimate: boolean; truck: boolean }
 
 /** Defaults for the fields a new load doesn't need to fill in. */
 export const LOAD_EXTRAS = {
-  truckId: null, loadedMiles: 0, emptyMiles: 0, detention: 0, layover: 0, tonu: 0, other: 0, lumper: 0, invoicedOn: null, paidOn: null, brokerMc: '',
+  truckId: null, loadedMiles: 0, emptyMiles: 0, detention: 0, layover: 0, tonu: 0, other: 0, lumper: 0, invoicedOn: null, paidOn: null, brokerMc: '', carrierPay: 0, carrierPaidOn: null,
 } satisfies Partial<Load>
 
 /** Days a broker has to pay after the invoice before the load counts as overdue. */
@@ -344,6 +364,10 @@ export const crm = {
   places: (q: string) => call<string[]>('GET', `/places?${new URLSearchParams({ q })}`),
   uploadFile: upload,
   aiRateCon: (file: Blob) => sendBytes<RateConFields>('/ai/ratecon', file),
+  /** AI reads a BOL / POD and the board finds its load (nothing is saved). */
+  aiDoc: (file: Blob) => sendBytes<{ doc: DeliveryDoc; match: DocMatch }>('/ai/doc', file),
+  carrierRcUrl: (loadId: number) => `/api/crm/loads/${loadId}/carrier-ratecon.pdf`,
+  sendCarrierRc: (loadId: number, to: string, note?: string) => call<{ ok: true; number: string; to: string }>('POST', `/loads/${loadId}/carrier-ratecon`, { to, note }),
   aiChat: (v: { threadId?: string; text: string; file?: { name: string; data: string }; loadId?: number | null }) => call<AiView>('POST', '/ai/chat', v),
   aiDecide: (threadId: string, actionId: string, approve: boolean) => call<AiView>('POST', '/ai/decide', { threadId, actionId, approve }),
   aiChatStream: (v: { threadId?: string; text: string; file?: { name: string; data: string }; loadId?: number | null }, on: (e: AiEvent) => void, signal?: AbortSignal) => stream('/ai/chat/stream', v, on, signal),

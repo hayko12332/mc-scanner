@@ -46,6 +46,23 @@ const DocType = z.object({
   kind: z.enum(['bol', 'pod', 'ratecon', 'other']).describe('bol = bill of lading before delivery; pod = signed / stamped delivery receipt (BOL signed by the receiver); ratecon = rate confirmation; other = lumper receipt, scale ticket, anything else'),
 });
 
+const DeliveryDoc = z.object({
+  kind: z.enum(['bol', 'pod', 'other']).describe('bol = bill of lading not yet signed by the receiver; pod = proof of delivery (a BOL or delivery receipt signed or stamped by the receiver); other = anything else'),
+  references: z.array(z.string()).describe('Every load, PRO, BOL, order, PO, shipment and reference number printed on it, as printed (max 12)'),
+  shipper: z.string().describe('Shipper (ship from) company name, or empty'),
+  consignee: z.string().describe('Consignee (ship to) company name, or empty'),
+  origin: z.string().describe('Ship-from place as "City, ST", or empty'),
+  destination: z.string().describe('Ship-to place as "City, ST", or empty'),
+  pickupDate: z.string().describe('Ship / pickup date as YYYY-MM-DD, or empty'),
+  deliveryDate: z.string().describe('Delivery date written or stamped by the receiver as YYYY-MM-DD, or empty'),
+  signedByReceiver: z.boolean().describe('true only if a receiver signature, name or stamp is on it'),
+  receiver: z.string().describe('Name of who signed for it at delivery, or empty'),
+  pieces: z.string().describe('Pieces / pallets / handling units as printed, or empty'),
+  weight: z.string().describe('Total weight as printed (with units), or empty'),
+  exceptions: z.string().describe('Shortage, damage, overage, refused, "subject to count" or other notes the receiver wrote, in one short line; empty if clean'),
+});
+export type DeliveryDocFields = z.infer<typeof DeliveryDoc>;
+
 let client: Anthropic | null = null;
 export const api = () => (client ??= new Anthropic({ maxRetries: 2, timeout: 120_000 }));
 /** Tests swap in a client with a fake fetch. */
@@ -84,6 +101,27 @@ export async function readRateCon(data: Buffer, mime: string, today: string): Pr
     });
     if (r.stop_reason === 'refusal' || !r.parsed_output) throw new Error('AI could not read this file');
     return r.parsed_output;
+  } catch (e) {
+    throw friendly(e);
+  }
+}
+
+/** Reads a BOL or POD (PDF or photo): numbers to match it to a load, whether the receiver signed, and any exceptions. */
+export async function readDeliveryDoc(data: Buffer, mime: string, today: string): Promise<DeliveryDocFields> {
+  try {
+    const r = await api().beta.messages.parse({
+      model: FAST_MODEL, max_tokens: 3000,
+      output_config: { effort: 'medium', format: betaZodOutputFormat(DeliveryDoc) },
+      messages: [{
+        role: 'user',
+        content: [
+          fileBlock(data, mime),
+          { type: 'text', text: `A freight company got this trucking document (often a phone photo). Say whether it is a bill of lading or a signed proof of delivery and read the fields. Use only what is on it; leave a field empty when it is not there or not legible. Dates as YYYY-MM-DD (today is ${today}). Places as "City, ST". Handwriting counts.` },
+        ],
+      }],
+    });
+    if (r.stop_reason === 'refusal' || !r.parsed_output) throw new Error('AI could not read this file');
+    return { ...r.parsed_output, references: r.parsed_output.references.slice(0, 12) };
   } catch (e) {
     throw friendly(e);
   }

@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../../api'
 import {
-  addDays, dutyLabel, feeLabel, fmtMiles, fmtRpm, gross, hoursLeft, rpm, today, usd, weekStart,
+  addDays, dutyLabel, feeLabel, fmtMiles, fmtRpm, gross, hoursLeft, isBroker, payBase, rpm, today, usd, weekStart, words,
   type CarrierInput, type CrmCarrier, type CrmState, type Dispatcher, type FeeType, type Truck, type TruckInput,
 } from '../../lib/crm'
 import { formatPhone } from '../../lib/format'
@@ -20,7 +20,7 @@ function CarrierCheck({ state, mc, run }: { state: CrmState; mc: string; run: (m
 const blankCarrier: CarrierInput = { name: '', mc: '', dot: '', phone: '', email: '', notes: '', feeType: 'percent', fee: 0, factoring: '' }
 
 /** Loads, miles and gross this week and this month for one carrier, truck or dispatcher. */
-function totals(state: CrmState, key: 'carrierId' | 'dispatcherId' | 'truckId', id: number) {
+function totals(state: CrmState, key: 'carrierId' | 'dispatcherId' | 'truckId', id: number, value: (l: CrmState['loads'][number]) => number = gross) {
   const week = weekStart(today())
   const weekEnd = addDays(week, 6)
   const month = today().slice(0, 7)
@@ -29,12 +29,12 @@ function totals(state: CrmState, key: 'carrierId' | 'dispatcherId' | 'truckId', 
     if (l[key] !== id) continue
     all++
     if (l.date >= week && l.date <= weekEnd) {
-      week$ += gross(l)
+      week$ += value(l)
       weekLoads++
       weekMiles += l.loadedMiles
       if (l.loadedMiles) weekMiles$ += gross(l)
     }
-    if (l.date.startsWith(month)) month$ += gross(l)
+    if (l.date.startsWith(month)) month$ += value(l)
   }
   return { week: week$, weekLoads, weekMiles, weekRpm: rpm(weekMiles$, weekMiles), month: month$, all }
 }
@@ -93,7 +93,9 @@ export function CarriersView({ state, add, update, remove, check }: {
     }
   }
 
-  const rows = state.carriers.map((c) => ({ c, t: totals(state, 'carrierId', c.id) }))
+  // A brokerage pays its carriers: their columns show carrier pay, and there is no dispatch fee.
+  const broker = isBroker(state)
+  const rows = state.carriers.map((c) => ({ c, t: totals(state, 'carrierId', c.id, broker ? (l) => l.carrierPay ?? 0 : gross) }))
   const sum = (k: 'week' | 'month') => rows.reduce((s, r) => s + r.t[k], 0)
 
   return (
@@ -119,8 +121,8 @@ export function CarriersView({ state, add, update, remove, check }: {
           <thead>
             <tr>
               <th>Carrier</th><th>MC</th><th>Phone</th><th>Email</th>
-              <th className="num" title="Dispatch fee: a percent of gross (8%) or a flat amount per week ($300/wk)">Fee</th><th>Factoring</th>
-              <th className="num">Trucks</th><th className="num">This week</th><th className="num">This month</th><th />
+              {!broker && <th className="num" title="Dispatch fee: a percent of gross (8%) or a flat amount per week ($300/wk)">Fee</th>}<th>Factoring</th>
+              <th className="num">Trucks</th><th className="num">{broker ? 'Paid this week' : 'This week'}</th><th className="num">{broker ? 'Paid this month' : 'This month'}</th><th />
             </tr>
           </thead>
           <tbody>
@@ -131,9 +133,9 @@ export function CarriersView({ state, add, update, remove, check }: {
                 <td className="pv-muted"><EditText value={c.mc} display={c.mc.replace(/\D/g, '') || undefined} onSave={(x) => save(c, { mc: x })} /></td>
                 <td><EditText value={c.phone} onSave={(x) => save(c, { phone: x })} /></td>
                 <td><EditText value={c.email} onSave={(x) => save(c, { email: x })} /></td>
-                <td className="num-edit" title={feeLabel(c)}>
+                {!broker && <td className="num-edit" title={feeLabel(c)}>
                   <EditText align="right" value={feeShort(c)} placeholder="set" onSave={(x) => save(c, parseFee(x))} />
-                </td>
+                </td>}
                 <td className="pv-muted"><EditText value={c.factoring} placeholder="none" onSave={(x) => save(c, { factoring: x })} /></td>
                 <td className="num">{state.trucks.filter((tr) => tr.carrierId === c.id).length || '—'}</td>
                 <td className="num">{usd(t.week)}</td>
@@ -145,7 +147,7 @@ export function CarriersView({ state, add, update, remove, check }: {
           {rows.length > 0 && (
             <tfoot>
               <tr>
-                <td colSpan={6}>{rows.length} {rows.length === 1 ? 'carrier' : 'carriers'} · fee: type “8%” or “$300/wk” · authority and insurance re-checked daily, you get an email if something changes</td>
+                <td colSpan={broker ? 5 : 6}>{rows.length} {rows.length === 1 ? 'carrier' : 'carriers'}{broker ? '' : ' · fee: type “8%” or “$300/wk”'} · authority and insurance re-checked daily, you get an email if something changes</td>
                 <td className="num">{state.trucks.filter((tr) => tr.carrierId != null).length}</td>
                 <td className="num">{usd(sum('week'))}</td>
                 <td className="num wk-gross">{usd(sum('month'))}</td>
@@ -209,19 +211,22 @@ export function DispatchersView({ state, add, save, remove, team }: {
   }
   const update = (d: Dispatcher, patch: Partial<Dispatcher>) => { save({ ...d, ...patch }).catch(() => undefined) }
 
+  const broker = isBroker(state)
+  const w = words(broker)
   const rows = state.dispatchers.map((d) => {
     const t = totals(state, 'dispatcherId', d.id)
-    return { d, t, payWeek: (t.week * d.percent) / 100, payMonth: (t.month * d.percent) / 100 }
+    const base = totals(state, 'dispatcherId', d.id, (l) => payBase(l, broker))
+    return { d, t, payWeek: (base.week * d.percent) / 100, payMonth: (base.month * d.percent) / 100 }
   })
   const sum = (f: (r: (typeof rows)[number]) => number) => rows.reduce((s, r) => s + f(r), 0)
 
   return (
     <div className="lt">
       <form className="pv-add" onSubmit={submit}>
-        <b>Add dispatcher</b>
+        <b>Add {w.dispatcher.toLowerCase()}</b>
         <input className="w-grow" required placeholder="Name, e.g. Sergo" aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} />
-        <label className="pv-pct"><input inputMode="decimal" placeholder="5" aria-label="Percent of each load" value={percent} onChange={(e) => setPercent(e.target.value)} /><span>% of each load</span></label>
-        <button className="primary">+ Add dispatcher</button>
+        <label className="pv-pct"><input inputMode="decimal" placeholder="5" aria-label="Percent of each load" value={percent} onChange={(e) => setPercent(e.target.value)} /><span>{broker ? '% of margin' : '% of each load'}</span></label>
+        <button className="primary">+ Add {w.dispatcher.toLowerCase()}</button>
       </form>
 
       <div className="lt-scroll">
@@ -232,12 +237,12 @@ export function DispatchersView({ state, add, save, remove, team }: {
           </colgroup>
           <thead>
             <tr>
-              <th>Dispatcher</th><th className="num">Percent</th><th className="num">Loads this week</th><th className="num">Booked this week</th>
+              <th>{w.dispatcher}</th><th className="num">{broker ? '% of margin' : 'Percent'}</th><th className="num">Loads this week</th><th className="num">Booked this week</th>
               <th className="num">Pay this week</th><th className="num">Pay this month</th><th />
             </tr>
           </thead>
           <tbody>
-            {!rows.length && <tr className="lt-empty"><td colSpan={7}>No dispatchers yet. Each one gets their own percent of the loads they book.</td></tr>}
+            {!rows.length && <tr className="lt-empty"><td colSpan={7}>No {w.dispatchers.toLowerCase()} yet. Each one gets their own percent of {broker ? 'the margin on' : ''} the loads they book.</td></tr>}
             {rows.map(({ d, t, payWeek, payMonth }) => (
               <tr key={d.id} className="lt-row">
                 <td className="pv-name"><EditText value={d.name} onSave={(x) => x && update(d, { name: x })} />{team && <TeamAccess d={d} state={state} team={team} />}</td>
@@ -253,7 +258,7 @@ export function DispatchersView({ state, add, save, remove, team }: {
           {rows.length > 0 && (
             <tfoot>
               <tr>
-                <td colSpan={2}>{rows.length} {rows.length === 1 ? 'dispatcher' : 'dispatchers'}</td>
+                <td colSpan={2}>{rows.length} {rows.length === 1 ? w.dispatcher.toLowerCase() : w.dispatchers.toLowerCase()}</td>
                 <td className="num">{sum((r) => r.t.weekLoads)}</td>
                 <td className="num">{usd(sum((r) => r.t.week))}</td>
                 <td className="num wk-gross">{usd(Math.round(sum((r) => r.payWeek)))}</td>

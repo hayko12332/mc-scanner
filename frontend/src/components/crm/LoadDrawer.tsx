@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import {
-  addDays, carrierFee, daysBetween, extras, feeLabel, fmtRpm, gross, LOAD_EXTRAS, looksLikePlace, overdueDays, PAY_TERMS_DAYS, rpm, shortDate, STATUSES, today, usd,
+  addDays, carrierFee, daysBetween, extras, feeLabel, fmtRpm, gross, isBroker, LOAD_EXTRAS, looksLikePlace, margin, overdueDays, PAY_TERMS_DAYS, payBase, rpm, shortDate, STATUSES, today, usd, words,
   withStatusDates, type CrmCarrier, type CrmState, type LaneResult, type Load, type LoadInput, type LoadStatus, type MilesResult,
 } from '../../lib/crm'
 import { RouteMap } from './MapView'
@@ -87,6 +87,8 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
   onAskAi?: () => void
 }) {
   const [busy, setBusy] = useState<'' | 'loaded' | 'empty'>('')
+  const broker = isBroker(state)
+  const w = words(broker)
   const brokerCheck = useCheck(load.brokerMc ?? '', 'broker', check, savedCheck(state, load.brokerMc ?? '', 'broker'))
   const [note, setNote] = useState('')
   const set = (patch: Partial<LoadInput>) => save({ ...load, ...patch })
@@ -126,7 +128,8 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
 
   const g = gross(load)
   const fee = carrier?.feeType === 'percent' ? carrierFee(carrier, [load]) : null
-  const pay = dispatcher ? (g * dispatcher.percent) / 100 : 0
+  const pay = dispatcher ? (payBase(load, broker) * dispatcher.percent) / 100 : 0
+  const m = margin(load)
   const late = overdueDays(load)
   const due = load.invoicedOn ? addDays(load.invoicedOn, PAY_TERMS_DAYS) : null
   const billing = load.paidOn && load.invoicedOn
@@ -151,12 +154,21 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
         </header>
 
         <div className="ld-body">
-          <section className="ld-sum">
-            <div><span>Gross</span><b>{usd(g)}</b></div>
-            <div><span>RPM</span><b>{fmtRpm(rpm(g, load.loadedMiles))}</b></div>
-            <div><span>All-in RPM</span><b>{fmtRpm(rpm(g, load.loadedMiles + load.emptyMiles))}</b></div>
-            <div><span>Dispatch fee</span><b>{fee != null ? usd(Math.round(fee * 100) / 100) : carrier?.feeType === 'flat' ? 'Weekly' : '—'}</b></div>
-          </section>
+          {broker ? (
+            <section className="ld-sum">
+              <div><span>Customer pays</span><b>{usd(g)}</b></div>
+              <div><span>Carrier pay</span><b>{load.carrierPay ? usd(load.carrierPay) : '—'}</b></div>
+              <div><span>Margin</span><b className={m != null && m < 0 ? 'bad' : ''}>{m != null ? usd(Math.round(m * 100) / 100) : '—'}</b></div>
+              <div><span>Margin %</span><b>{m != null && g > 0 ? `${Math.round((m / g) * 100)}%` : '—'}</b></div>
+            </section>
+          ) : (
+            <section className="ld-sum">
+              <div><span>Gross</span><b>{usd(g)}</b></div>
+              <div><span>RPM</span><b>{fmtRpm(rpm(g, load.loadedMiles))}</b></div>
+              <div><span>All-in RPM</span><b>{fmtRpm(rpm(g, load.loadedMiles + load.emptyMiles))}</b></div>
+              <div><span>Dispatch fee</span><b>{fee != null ? usd(Math.round(fee * 100) / 100) : carrier?.feeType === 'flat' ? 'Weekly' : '—'}</b></div>
+            </section>
+          )}
 
           <section>
             <h3>Trip</h3>
@@ -171,11 +183,11 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
                 onSave={(v) => { const t = state.trucks.find((x) => String(x.id) === v); set({ truckId: t?.id ?? null, carrierId: t?.carrierId ?? load.carrierId }) }}
                 options={[['', '—'], ...state.trucks.filter((t) => load.carrierId == null || t.carrierId === load.carrierId || t.id === load.truckId)
                   .map((t): [string, string] => [String(t.id), [t.unit && `#${t.unit}`, t.driver].filter(Boolean).join(' · ')])]} />
-              <Pick label="Dispatcher" value={String(load.dispatcherId ?? '')} onSave={(v) => set({ dispatcherId: v ? Number(v) : null })}
+              <Pick label={w.dispatcher} value={String(load.dispatcherId ?? '')} onSave={(v) => set({ dispatcherId: v ? Number(v) : null })}
                 options={[['', '—'], ...state.dispatchers.map((d): [string, string] => [String(d.id), `${d.name} · ${d.percent}%`])]} />
-              <Field label="Broker" value={load.broker} onSave={(v) => set({ broker: v })} />
-              <Field label="Broker MC" value={load.brokerMc ?? ''} placeholder="To check the broker" onSave={(v) => set({ brokerMc: v.replace(/\D/g, '') })} />
-              {(load.brokerMc ?? '').length >= 3 && <div className="ld-field ld-check"><CheckBadge {...brokerCheck} details /></div>}
+              <Field label={w.customer} value={load.broker} onSave={(v) => set({ broker: v })} />
+              {!broker && <Field label="Broker MC" value={load.brokerMc ?? ''} placeholder="To check the broker" onSave={(v) => set({ brokerMc: v.replace(/\D/g, '') })} />}
+              {!broker && (load.brokerMc ?? '').length >= 3 && <div className="ld-field ld-check"><CheckBadge {...brokerCheck} details /></div>}
               <Field label="PRO# / load #" value={load.pro} onSave={(v) => set({ pro: v })} />
               <PlaceField label="Origin" value={load.origin} recent={places} onSave={(v) => set({ origin: v, loadedMiles: 0 })}
                 hint={load.origin && !looksLikePlace(load.origin) ? <span className="warn">Pick the city from the list or type City, ST</span> : undefined} />
@@ -191,30 +203,43 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
             </div>
             {note && <p className="ld-note">{note}</p>}
             <RouteMap from={load.origin} to={load.destination} theme={theme} lane={lane} />
-            {tracking && <TrackingLink loadId={load.id} make={tracking} toast={toast} hasDriver={!!state.drivers?.some((d) => d.truckId === load.truckId)} />}
+            {tracking && <TrackingLink loadId={load.id} make={tracking} toast={toast} hasDriver={!!state.drivers?.some((d) => d.truckId === load.truckId)} who={w.customerLower} />}
           </section>
 
           <section>
             <h3>Pay</h3>
             <div className="ld-grid three">
-              <Field label="Linehaul rate" type="number" prefix="$" value={String(load.rate || '')} placeholder="0" onSave={(v) => set({ rate: money(v) })} />
+              <Field label={broker ? 'Customer rate' : 'Linehaul rate'} type="number" prefix="$" value={String(load.rate || '')} placeholder="0" onSave={(v) => set({ rate: money(v) })} />
               <Field label="Detention" type="number" prefix="$" value={load.detention ? String(load.detention) : ''} placeholder="0" onSave={(v) => set({ detention: money(v) })} />
               <Field label="Layover" type="number" prefix="$" value={load.layover ? String(load.layover) : ''} placeholder="0" onSave={(v) => set({ layover: money(v) })} />
               <Field label="TONU" type="number" prefix="$" value={load.tonu ? String(load.tonu) : ''} placeholder="0" onSave={(v) => set({ tonu: money(v) })} />
               <Field label="Other" type="number" prefix="$" value={load.other ? String(load.other) : ''} placeholder="0" onSave={(v) => set({ other: money(v) })} />
               <Field label="Lumper (reimbursed)" type="number" prefix="$" value={load.lumper ? String(load.lumper) : ''} placeholder="0" onSave={(v) => set({ lumper: money(v) })} />
             </div>
+            {broker && (
+              <div className="ld-grid">
+                <Field label="Carrier pay" type="number" prefix="$" value={load.carrierPay ? String(load.carrierPay) : ''} placeholder="What the carrier gets"
+                  onSave={(v) => set({ carrierPay: money(v) })} hint={!load.carrierPay ? 'Needed for the margin and the carrier’s rate con' : undefined} />
+                <Field label="Carrier paid on" type="date" value={load.carrierPaidOn ?? ''} onSave={(v) => set({ carrierPaidOn: v || null })}
+                  action={!load.carrierPaidOn && load.carrierPay ? <button type="button" className="ld-calc" onClick={() => set({ carrierPaidOn: today() })}>Today</button> : undefined} />
+              </div>
+            )}
             <dl className="ld-math">
               <div><dt>Rate {extras(load) ? `+ accessorials ${usd(extras(load))}` : ''}</dt><dd>{usd(g)} gross</dd></div>
               {load.lumper > 0 && <div><dt>Lumper — paid back to the carrier, not in gross</dt><dd>{usd(load.lumper)}</dd></div>}
+              {broker ? <>
+                <div><dt>Carrier pay{carrier ? ` · ${carrier.name}` : ''}</dt><dd>{load.carrierPay ? `− ${usd(load.carrierPay)}` : '—'}</dd></div>
+                <div><dt>Margin</dt><dd>{m != null ? usd(Math.round(m * 100) / 100) : '—'}</dd></div>
+              </> : <>
               <div>
                 <dt>Dispatch fee · {carrier ? feeLabel(carrier) : 'no carrier'}</dt>
                 <dd>{fee != null && carrier?.fee ? usd(Math.round(fee * 100) / 100) : carrier?.feeType === 'flat' && carrier.fee ? 'on the weekly statement' : '—'}</dd>
               </div>
               {carrier && !carrier.fee && <FeeSetter carrier={carrier} save={saveCarrier} />}
               {!carrier && <p className="ld-hint">Pick the carrier above — its dispatch fee is counted here.</p>}
-              <div><dt>{dispatcher ? `${dispatcher.name}’s pay · ${dispatcher.percent}%` : 'Dispatcher pay'}</dt><dd>{dispatcher ? usd(Math.round(pay * 100) / 100) : '—'}</dd></div>
-              {!dispatcher && <p className="ld-hint">{state.dispatchers.length ? 'Pick the dispatcher above to count their pay.' : 'Add your dispatchers and their percent in the Dispatchers tab.'}</p>}
+              </>}
+              <div><dt>{dispatcher ? `${dispatcher.name}’s pay · ${dispatcher.percent}%${broker ? ' of margin' : ''}` : `${w.dispatcher} pay`}</dt><dd>{dispatcher ? usd(Math.round(pay * 100) / 100) : '—'}</dd></div>
+              {!dispatcher && <p className="ld-hint">{state.dispatchers.length ? `Pick the ${w.dispatcher.toLowerCase()} above to count their pay.` : `Add your ${w.dispatchers.toLowerCase()} and their percent in the ${w.dispatchers} tab.`}</p>}
             </dl>
           </section>
 
@@ -227,7 +252,7 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
                 onSave={(v) => set(v ? { paidOn: v, invoicedOn: load.invoicedOn ?? v, status: 'paid' } : { paidOn: null })} />
             </div>
             <p className="ld-billing">{billing}</p>
-            {carrier?.factoring && <p className="ld-billing">Factoring: <b>{carrier.factoring}</b></p>}
+            {carrier?.factoring && <p className="ld-billing">{broker ? 'Carrier factors with' : 'Factoring'}: <b>{carrier.factoring}</b>{broker ? ' — pay the carrier through them' : ''}</p>}
             {!load.paidOn && (
               <div className="ld-quick">
                 {!load.invoicedOn && <button onClick={() => set(withStatusDates(load, 'invoiced'))}>Invoiced today</button>}
@@ -236,7 +261,8 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
             )}
           </section>
 
-          <LoadDocs load={load} state={state} api={docs} toast={toast} changed={changed} demo={demo} />
+          <LoadDocs load={load} state={state} api={docs} toast={toast} changed={changed} demo={demo}
+            onPod={load.status === 'booked' || load.status === 'in_transit' ? () => { set({ status: 'delivered' }); toast('POD added — the load is marked delivered') } : undefined} />
 
           <section>
             <h3>Notes</h3>
@@ -254,20 +280,20 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
 }
 
 /** The broker's tracking link: copied in one click; it shows the truck on the lane (from the driver's Telegram location). */
-function TrackingLink({ loadId, make, toast, hasDriver }: { loadId: number; make: (id: number) => Promise<{ url: string }>; toast: (m: string) => void; hasDriver: boolean }) {
+function TrackingLink({ loadId, make, toast, hasDriver, who }: { loadId: number; make: (id: number) => Promise<{ url: string }>; toast: (m: string) => void; hasDriver: boolean; who: string }) {
   const [url, setUrl] = useState('')
   const get = async () => {
     try {
       const r = await make(loadId)
       setUrl(r.url)
-      await navigator.clipboard.writeText(r.url).then(() => toast('Tracking link copied — send it to the broker'), () => undefined)
+      await navigator.clipboard.writeText(r.url).then(() => toast(`Tracking link copied — send it to the ${who}`), () => undefined)
     } catch (e) {
       toast((e as Error).message)
     }
   }
   return (
     <div className="ld-track">
-      <button type="button" onClick={() => void get()}>🔗 Tracking link for the broker</button>
+      <button type="button" onClick={() => void get()}>🔗 Tracking link for the {who}</button>
       {url ? <a href={url} target="_blank" rel="noopener">{url.replace(/^https?:\/\//, '')}</a>
         : <small>{hasDriver ? 'Shows the truck on this lane, no rates.' : 'Connect the driver’s Telegram in Trucks to show the truck’s location.'}</small>}
     </div>
@@ -312,7 +338,7 @@ function useAutoMiles(from: string, to: string, off: boolean, miles: (a: string,
 
 type Draft = {
   date: string; broker: string; brokerMc: string; pro: string; origin: string; destination: string; loadedMiles: string; emptyMiles: string
-  rate: string; carrierId: string; truckId: string; dispatcherId: string; notes: string
+  rate: string; carrierId: string; truckId: string; dispatcherId: string; notes: string; carrierPay: string
 }
 
 /**
@@ -332,9 +358,11 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }:
 }) {
   const [rc, setRc] = useState<{ blob: Blob; name: string; note: string; busy: boolean } | null>(null)
   const rcPicker = useRef<HTMLInputElement>(null)
+  const broker = isBroker(state)
+  const w = words(broker)
   const only = (xs: { id: number }[]) => (xs.length === 1 ? String(xs[0].id) : '')
   const blank = (keep?: Partial<Draft>): Draft => ({
-    date: today(), broker: '', brokerMc: '', pro: '', origin: '', destination: '', loadedMiles: '', emptyMiles: '', rate: '', notes: '',
+    date: today(), broker: '', brokerMc: '', pro: '', origin: '', destination: '', loadedMiles: '', emptyMiles: '', rate: '', notes: '', carrierPay: '',
     carrierId: defaults.carrierId || only(state.carriers), truckId: '', dispatcherId: defaults.dispatcherId || only(state.dispatchers), ...keep,
   })
   const [v, setV] = useState<Draft>(() => blank())
@@ -375,6 +403,8 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }:
   const loaded = whole(v.loadedMiles)
   const emptyMi = whole(v.emptyMiles)
   const fee = carrier?.feeType === 'percent' ? (rate * carrier.fee) / 100 : null
+  const cpay = money(v.carrierPay)
+  const newMargin = cpay > 0 ? rate - cpay : null
 
   // The dispatcher who last worked this truck (or carrier) comes along, if none is chosen yet.
   const usualDispatcher = (match: (l: Load) => boolean) => {
@@ -397,12 +427,13 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }:
 
   const submit = (again: boolean) => {
     if (!v.date) return setErr('Pick the pickup date')
-    if (!v.broker.trim() && !rate) return setErr('Enter at least the broker or the rate')
+    if (!v.broker.trim() && !rate) return setErr(`Enter at least the ${w.customerLower} or the rate`)
     const load: LoadInput = {
       ...LOAD_EXTRAS,
       date: v.date, broker: v.broker.trim(), brokerMc: v.brokerMc.replace(/\D/g, ''), pro: v.pro.trim(), origin: v.origin.trim(), destination: v.destination.trim(),
       loadedMiles: loaded, emptyMiles: emptyMi, rate, notes: v.notes.trim(), status: 'booked',
       carrierId: v.carrierId ? Number(v.carrierId) : null, truckId, dispatcherId: v.dispatcherId ? Number(v.dispatcherId) : null,
+      carrierPay: broker ? cpay : 0,
     }
     const typed = v
     const file = rc && !rc.busy ? rc : null
@@ -412,7 +443,7 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }:
     }, () => { setV(typed); setAdded('') })
     setRc(null)
     if (!again) return close()
-    setAdded(`Added ${load.broker || 'load'}${rate ? ` · ${usd(rate)}` : ''}`)
+    setAdded(`Added ${load.broker || 'load'}${rate ? ` · ${usd(rate)}` : ''}${newMargin != null ? ` · margin ${usd(Math.round(newMargin))}` : ''}`)
     setTouched({ loaded: false, empty: false })
     setV(blank({ date: v.date, carrierId: v.carrierId, dispatcherId: v.dispatcherId }))
     first.current?.focus()
@@ -473,7 +504,7 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }:
       <aside className="ld" role="dialog" aria-label="New load" onKeyDown={onKey}>
         <header className="ld-head">
           <div>
-            <small>New load{added ? '' : ' · from the rate confirmation'}</small>
+            <small>New load{added ? '' : broker ? ' · from the customer’s order' : ' · from the rate confirmation'}</small>
             <h2>{v.broker.trim() || 'New load'}</h2>
             <p>{place(v.origin) || 'Origin'} <span>→</span> {place(v.destination) || 'Destination'}</p>
             {added && <p className="ld-added">✓ {added}. Next one:</p>}
@@ -488,12 +519,20 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }:
               onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void readRateCon(f) }}>
               <span className="ai-spark" aria-hidden="true">✦</span>
               {rc ? <span className="ai-note">{rc.note}</span> : (
-                <span className="ai-note"><b>Fill from the rate con</b> — drop the PDF or a photo here, AI reads broker, load #, lane, dates and rate</span>
+                <span className="ai-note"><b>{broker ? 'Fill from the order' : 'Fill from the rate con'}</b> — drop the PDF or a photo here, AI reads {w.customerLower}, load #, lane, dates and rate</span>
               )}
               <button type="button" disabled={rc?.busy} onClick={() => rcPicker.current?.click()}>{rc ? 'Another file' : 'Choose file'}</button>
               <input ref={rcPicker} type="file" hidden accept="application/pdf,image/*" onChange={(e) => { const f = e.target.files?.[0]; if (f) void readRateCon(f); e.target.value = '' }} />
             </div>
           )}
+          {broker ? (
+            <section className="ld-sum">
+              <div><span>Customer pays</span><b>{rate ? usd(rate) : '—'}</b></div>
+              <div><span>Carrier pay</span><b>{cpay ? usd(cpay) : '—'}</b></div>
+              <div><span>Margin</span><b className={newMargin != null && newMargin < 0 ? 'bad' : ''}>{newMargin != null ? usd(Math.round(newMargin)) : '—'}</b></div>
+              <div><span>RPM to carrier</span><b>{fmtRpm(rpm(cpay, loaded))}</b></div>
+            </section>
+          ) : (
           <section className="ld-sum">
             <div><span>Rate</span><b>{rate ? usd(rate) : '—'}</b></div>
             <div><span>RPM</span><b>{fmtRpm(rpm(rate, loaded))}</b></div>
@@ -501,15 +540,17 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }:
             <div><span>{dispatcher ? `${dispatcher.name}’s pay` : 'Dispatch fee'}</span>
               <b>{dispatcher ? usd(Math.round((rate * dispatcher.percent) / 100)) : fee != null ? usd(Math.round(fee)) : '—'}</b></div>
           </section>
+          )}
 
           <section>
             <h3>Load</h3>
             <div className="ld-grid">
-              {input('broker', 'Broker', { placeholder: 'C.H. Robinson', list: 'nl-brokers', ref: first })}
-              {input('brokerMc', 'Broker MC', { placeholder: 'Checked with FMCSA', numeric: true })}
-              {v.brokerMc.replace(/\D/g, '').length >= 3 && <div className="ld-field ld-check"><CheckBadge {...brokerCheck} details /></div>}
-              {input('pro', 'Load # / PRO#', { placeholder: 'From the rate con' })}
-              {input('rate', 'Rate', { prefix: '$', numeric: true, placeholder: '0' })}
+              {input('broker', w.customer, { placeholder: broker ? 'Acme Foods' : 'C.H. Robinson', list: 'nl-brokers', ref: first })}
+              {!broker && input('brokerMc', 'Broker MC', { placeholder: 'Checked with FMCSA', numeric: true })}
+              {!broker && v.brokerMc.replace(/\D/g, '').length >= 3 && <div className="ld-field ld-check"><CheckBadge {...brokerCheck} details /></div>}
+              {input('pro', 'Load # / PRO#', { placeholder: broker ? 'Order / PO #' : 'From the rate con' })}
+              {input('rate', broker ? 'Customer rate' : 'Rate', { prefix: '$', numeric: true, placeholder: '0' })}
+              {broker && input('carrierPay', 'Carrier pay', { prefix: '$', numeric: true, placeholder: '0', hint: rate && cpay ? `Margin ${usd(Math.round(rate - cpay))} · ${Math.round(((rate - cpay) / rate) * 100)}%` : 'What you pay the carrier' })}
               {input('date', 'Pickup date', { type: 'date' })}
             </div>
           </section>
@@ -557,7 +598,7 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }:
                 {drop && <small>Last drop: {place(drop.destination)}, {shortDate(drop.date)}</small>}
               </label>
               <label className="ld-field">
-                <span>Dispatcher</span>
+                <span>{w.dispatcher}</span>
                 <div className="ld-input">
                   <select value={v.dispatcherId} onChange={(e) => set({ dispatcherId: e.target.value })}>
                     <option value="">—</option>

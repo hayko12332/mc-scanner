@@ -1841,6 +1841,7 @@ button.linkish:hover { text-decoration: underline; }
 .au-types button b { font-size: 13.5px; }
 .au-types button small { font-size: 11.5px; color: var(--muted); line-height: 1.3; font-weight: 400; }
 .au-types button.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+.au-types.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .au-submit { height: 44px; margin-top: 4px; font-size: 15px !important; font-weight: 700; }
 .au-google { display: flex; justify-content: center; min-height: 44px; }
 .au-or { display: flex; align-items: center; gap: 10px; margin: 14px 0; color: var(--muted); font-size: 12.5px; }
@@ -3258,3 +3259,35 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 .la-time { position: absolute; top: 6px; right: 10px; font-size: 11px; color: var(--muted); }
 .la-confirm { padding: 10px 14px; border-radius: 10px; background: var(--warn-soft, #fffaeb); color: var(--text); font-size: 13.5px; }
 @media (max-width: 900px) { .la-main { grid-template-columns: 1fr 1fr; } .la-act { grid-column: 1 / -1; justify-content: flex-start; } }
+
+/* Company card in the sidebar opens the company settings */
+.w-org.click { cursor: pointer; border-radius: 8px; }
+.w-org.click:hover { background: color-mix(in srgb, #fff 6%, transparent); }
+.ld.ce .au-form { gap: 14px; }
+
+/* BOL / POD: documents read by AI, each matched to a load */
+.dd-drop { display: grid; gap: 4px; width: 100%; padding: 22px 16px !important; border: 1.5px dashed var(--border) !important; border-radius: 12px; background: var(--surface-2) !important; text-align: center; color: var(--text); }
+.dd-drop.on, .dd-drop:hover { border-color: var(--accent) !important; background: var(--accent-soft) !important; }
+.dd-drop small { color: var(--muted); font-weight: 400; }
+.dd-item { display: grid; gap: 6px; margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.dd-item.saved { opacity: .7; }
+.dd-item.error { border-color: color-mix(in srgb, var(--bad, #dc2626) 45%, var(--border)); }
+.dd-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dd-top b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.dd-tag { flex: none; font-size: 12px; color: var(--muted); }
+.dd-tag.ok { color: var(--ok, #16a34a); }
+.dd-tag.bad { color: var(--bad, #dc2626); white-space: normal; }
+.dd-read { margin: 0; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.dd-ok { margin: 0; font-size: 12.5px; color: var(--ok, #16a34a); }
+.dd-warn { margin: 0; font-size: 12.5px; color: var(--warn, #b45309); }
+.dd-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; }
+.dd-row select { width: 100%; min-width: 0; height: 34px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); padding: 0 8px; font: inherit; font-size: 13px; }
+.dd-row select.dd-need { border-color: var(--accent); }
+.dd-why { font-size: 12px; color: var(--muted); }
+
+/* Customers (brokerage boards) */
+.cu-row { cursor: pointer; }
+.cu-loads td { background: var(--surface-2); }
+.cu-loads ul { margin: 0; padding: 6px 0; list-style: none; display: grid; gap: 4px; }
+.cu-loads .w-link { text-align: left; font-size: 13px; }
+.ld-grid + .ld-grid { margin-top: 12px; }

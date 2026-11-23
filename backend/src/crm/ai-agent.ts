@@ -2,7 +2,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'node:crypto';
 import { api, friendly, modelParams } from './ai.js';
 import type { CompanyCheck } from './company-check.js';
-import type { CarrierInput, LoadInput } from './crm.store.js';
+import { forInvoice, type CarrierInput, type LoadInput } from './crm.store.js';
 import type { CrmCarrier, CrmState, Load, LoadStatus } from './crm.types.js';
 import { LOAD_STATUSES } from './crm.types.js';
 import { rankTrucks, type TruckSpot } from './inbox/match.js';
@@ -35,7 +35,8 @@ export interface Step { label: string; detail?: string; ms?: number; state: 'don
  */
 export interface DisplayItem { role: 'user' | 'assistant'; text?: string; file?: string; cards?: Card[]; pending?: string[]; actions?: string[]; steps?: (string | Step)[]; stopped?: boolean }
 
-type Undo = { kind: 'delete_load'; id: number } | { kind: 'restore_load'; id: number; before: LoadInput } | { kind: 'archive_carrier'; id: number };
+type Undo = { kind: 'delete_load'; id: number } | { kind: 'restore_load'; id: number; before: LoadInput } | { kind: 'archive_carrier'; id: number }
+  | { kind: 'delete_file'; id: number };
 export interface PendingAction {
   id: string; tool: string; input: Record<string, unknown>; summary: string;
   status: 'pending' | 'done' | 'declined' | 'failed' | 'undone'; result?: string;
@@ -94,6 +95,7 @@ function runningLabel(name: string, i: Record<string, unknown>): string {
   if (name === 'create_load') return 'Adding the load';
   if (name === 'update_load') return `Updating load #${String(i.id)}`;
   if (name === 'add_carrier') return `Adding carrier ${String(i.name ?? '')}`;
+  if (name === 'attach_document') return `Attaching the ${String(i.kind ?? 'document').toUpperCase()} to load #${String(i.load_id)}`;
   if (name === 'send_invoice') return 'Preparing the invoice email';
   if (name === 'send_to_factoring') return 'Preparing the factoring packet';
   if (name === 'email_broker') return `Writing to ${String(i.to ?? 'the broker')}`;
@@ -116,6 +118,7 @@ function stepDone(name: string, i: Record<string, unknown>, data: unknown): { la
   if (name === 'create_load') return { label: 'Added the load', detail: str(i.broker) && `${str(i.broker)} · ${str(i.origin)} → ${str(i.destination)}` };
   if (name === 'update_load') return { label: `Updated load #${String(i.id)}`, detail: Object.keys(i).filter((k) => k !== 'id').map((k) => k.replace(/_/g, ' ')).join(', ') };
   if (name === 'add_carrier') return { label: `Added carrier ${str(i.name)}` };
+  if (name === 'attach_document') return { label: `Attached the ${String(i.kind ?? 'document').toUpperCase()} to load #${String(i.load_id)}` };
   if (name === 'send_invoice') return { label: 'Sent the invoice', detail: d.to ? `to ${String(d.to)}` : undefined };
   if (name === 'send_to_factoring') return { label: `Sent to ${String(d.factor ?? 'factoring')}`, detail: d.to ? String(d.to) : undefined };
   if (name === 'email_broker') return { label: `Emailed ${String(d.to ?? i.to ?? 'the broker')}` };
@@ -137,14 +140,15 @@ export interface AgentCtx {
   emailBroker(to: string, subject: string, body: string): Promise<{ to: string }>;
   addCarrier(c: CarrierInput): Promise<CrmCarrier>;
   trackingLink(loadId: number): Promise<string>;
-  attachFile(loadId: number, name: string, mime: string, data: Buffer): Promise<unknown>;
+  attachFile(loadId: number, name: string, mime: string, data: Buffer, kind?: 'ratecon' | 'bol' | 'pod' | 'other'): Promise<{ id: number }>;
   /** For Undo. */
   deleteLoad(id: number): Promise<void>;
+  deleteFile(id: number): Promise<void>;
   archiveCarrier(id: number): Promise<void>;
 }
 
 /** Board changes the assistant makes by itself (each can be undone). */
-const AUTO_TOOLS = new Set(['create_load', 'update_load', 'add_carrier']);
+const AUTO_TOOLS = new Set(['create_load', 'update_load', 'add_carrier', 'attach_document']);
 /** Actions that leave the board (emails) and wait for the user's OK. */
 const CONFIRM_TOOLS = new Set(['send_invoice', 'send_to_factoring', 'email_broker']);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -218,6 +222,7 @@ const TOOL_DEFS: Anthropic.Beta.BetaTool[] = [
     input_schema: obj({
       date: D, broker: S, broker_mc: S, load_number: S, origin: { type: 'string', description: 'City, ST' }, destination: { type: 'string', description: 'City, ST' },
       rate: N, loaded_miles: N, empty_miles: N, carrier: S, truck: S, dispatcher: S, status: STATUS, notes: S,
+      carrier_pay: { type: 'number', description: 'Brokerage boards only: what the carrier is paid' },
     }, ['date', 'broker', 'origin', 'destination', 'rate']),
   },
   {
@@ -226,7 +231,13 @@ const TOOL_DEFS: Anthropic.Beta.BetaTool[] = [
     input_schema: obj({
       id: N, status: STATUS, rate: N, detention: N, layover: N, tonu: N, other: N, lumper: N, loaded_miles: N, empty_miles: N,
       carrier: S, truck: S, dispatcher: S, broker: S, broker_mc: S, load_number: S, origin: S, destination: S, date: D, invoiced_on: D, paid_on: D, notes: S,
+      carrier_pay: { type: 'number', description: 'Brokerage boards only: what the carrier is paid' }, carrier_paid_on: { type: 'string', description: 'Brokerage boards only: YYYY-MM-DD the carrier was paid' },
     }, ['id']),
+  },
+  {
+    name: 'attach_document',
+    description: 'Attach the file sent in this chat (a BOL, POD, rate con or other document) to an existing load. Find the load first (load # / reference numbers on the document, else lane and dates). For a POD signed by the receiver, also set the load delivered with update_load if it is still booked or in transit.',
+    input_schema: obj({ load_id: N, kind: { type: 'string', enum: ['bol', 'pod', 'ratecon', 'other'] } }, ['load_id', 'kind']),
   },
   {
     name: 'send_invoice',
@@ -285,6 +296,8 @@ Rules:
 - Start the answer with one bold line that says the result ("**3 invoices ready — $6,450.**"), then the 1–3 key numbers or reasons, then what to do next if useful. Tool results appear to the user as cards (load lists, tables, charts, checks, maps); don't repeat them row by row. You can show maps and charts: route_miles draws a lane on a map, fleet_status shows where the trucks are, summarize with a group_by draws a bar chart, match_trucks ranks the trucks for a load. Never say you can't draw or show a map, chart or graph.
 - Gross = rate + detention + layover + TONU + other (lumper is a reimbursement). RPM = gross / loaded miles; all-in includes empty miles. Overdue = invoiced over 30 days ago and unpaid. Weeks run Monday–Sunday.
 - If a rate confirmation (PDF or photo) is sent, read it and call create_load with what it says; mention anything unclear.
+- If a BOL or POD is sent, read its load / PRO / BOL / PO numbers, lane and dates, find the load (find_loads with text = a number, or lane), and attach_document it. A POD signed by the receiver means delivered: update_load status delivered unless the load is already delivered, invoiced or paid. Always say if the receiver noted a shortage, damage, overage or refusal, and if the signature is missing. If no load fits, say so and ask which load it is; never create a load from a BOL or POD.
+- Brokerage boards (the <board_summary> says the company is a freight broker): a load's "broker" field is the brokerage's customer (the shipper who pays) — call it the customer. carrier_pay is what the carrier gets; margin = gross − carrier pay. Invoices go to the customer in the brokerage's name (send_invoice); never use send_to_factoring there. Dispatchers are the brokerage's agents.
 - Be brief and practical, like an experienced dispatcher. Answer in the language the user writes in.`;
 
 /** Finds a carrier / truck / dispatcher id by name (exact, then partial). */
@@ -309,12 +322,15 @@ function row(st: St, l: Load) {
     id: l.id, date: l.date, status: l.status, broker: l.broker, broker_mc: l.brokerMc, load_number: l.pro, origin: l.origin, destination: l.destination,
     rate: l.rate, gross: gross(l), loaded_miles: l.loadedMiles, empty_miles: l.emptyMiles, carrier: n.carrier(l.carrierId), truck: n.truck(l.truckId),
     dispatcher: n.dispatcher(l.dispatcherId), invoiced_on: l.invoicedOn, paid_on: l.paidOn,
+    ...(l.carrierPay ? { carrier_pay: l.carrierPay, margin: Math.round((gross(l) - l.carrierPay) * 100) / 100, carrier_paid_on: l.carrierPaidOn ?? null } : {}),
   };
 }
 
 const totals = (ls: Load[]) => {
   const g = ls.reduce((s, l) => s + gross(l), 0), mi = ls.reduce((s, l) => s + l.loadedMiles, 0), em = ls.reduce((s, l) => s + l.emptyMiles, 0);
-  return { count: ls.length, gross: Math.round(g), loaded_miles: mi, empty_miles: em, rpm: mi ? Math.round((g / mi) * 100) / 100 : null, all_in_rpm: mi + em ? Math.round((g / (mi + em)) * 100) / 100 : null };
+  const paid = ls.filter((l) => (l.carrierPay ?? 0) > 0);
+  const margin = paid.length ? { carrier_pay: Math.round(paid.reduce((s, l) => s + (l.carrierPay ?? 0), 0)), margin: Math.round(paid.reduce((s, l) => s + gross(l) - (l.carrierPay ?? 0), 0)), loads_with_carrier_pay: paid.length } : {};
+  return { count: ls.length, gross: Math.round(g), loaded_miles: mi, empty_miles: em, rpm: mi ? Math.round((g / mi) * 100) / 100 : null, all_in_rpm: mi + em ? Math.round((g / (mi + em)) * 100) / 100 : null, ...margin };
 };
 
 function findLoads(st: St, i: Record<string, unknown>): Load[] {
@@ -356,7 +372,9 @@ function summarize(st: St, i: Record<string, unknown>): { data: unknown; card: C
   for (const l of ls) groups.set(key(l), [...(groups.get(key(l)) ?? []), l]);
   const rows = [...groups.entries()].map(([k, g]) => {
     const t = totals(g);
-    const pay = g.reduce((s, l) => s + (l.dispatcherId != null ? (gross(l) * (pct.get(l.dispatcherId) ?? 0)) / 100 : 0), 0);
+    // A brokerage pays its agents a percent of the margin; a dispatch service pays its dispatchers a percent of gross.
+    const base = (l: Load) => ((st.company as { type?: string }).type === 'broker' ? Math.max(0, gross(l) - (l.carrierPay || gross(l))) : gross(l));
+    const pay = g.reduce((s, l) => s + (l.dispatcherId != null ? (base(l) * (pct.get(l.dispatcherId) ?? 0)) / 100 : 0), 0);
     return { group: k, ...t, deadhead_pct: t.loaded_miles + t.empty_miles ? Math.round((t.empty_miles / (t.loaded_miles + t.empty_miles)) * 100) : 0, dispatcher_pay: Math.round(pay) };
   }).sort((a, b) => (by === 'week' ? b.group.localeCompare(a.group) : b.gross - a.gross));
   // Without dates every load counts, booked ones ahead included, so the label must not say "today".
@@ -430,6 +448,8 @@ function applyChanges(st: St, base: Load, i: Record<string, unknown>): { load: L
   if (typeof i.status === 'string' && (LOAD_STATUSES as readonly string[]).includes(i.status)) l = { ...l, ...withStatus(base, i.status as LoadStatus) };
   if (isDate(i.invoiced_on)) set('invoicedOn', i.invoiced_on as string);
   if (isDate(i.paid_on)) { set('paidOn', i.paid_on as string); l = { ...l, status: 'paid', invoicedOn: l.invoicedOn ?? (i.paid_on as string) }; }
+  const cp = num(i.carrier_pay); if (cp !== undefined) set('carrierPay', Math.max(0, Math.round(cp * 100) / 100));
+  if (isDate(i.carrier_paid_on)) set('carrierPaidOn', i.carrier_paid_on as string);
   return { load: l, problems };
 }
 
@@ -461,6 +481,10 @@ function summary(st: St, tool: string, i: Record<string, unknown>): string {
     return `Send the invoice packet for ${l ? `${l.broker} ${lane(l.origin, l.destination)}, ${usd(gross(l) + l.lumper)}` : `load #${String(i.load_id)}`} to ${c?.factoring || 'the factoring company'}${str(i.to) || c?.factoringEmail ? ` (${str(i.to) || c?.factoringEmail})` : ''}`;
   }
   if (tool === 'email_broker') return `Email ${str(i.to)}: ${str(i.subject)}`;
+  if (tool === 'attach_document') {
+    const l = st.loads.find((x) => x.id === num(i.load_id));
+    return `Attach the ${String(i.kind).toUpperCase()} to load ${l ? `${l.broker || '#' + l.id} (${lane(l.origin, l.destination)}, ${l.date})` : `#${String(i.load_id)}`}`;
+  }
   if (tool === 'add_carrier') return `Add carrier ${str(i.name)}${str(i.mc) ? `, MC ${str(i.mc)}` : ''}${num(i.fee_percent) ? `, fee ${num(i.fee_percent)}%` : num(i.fee_weekly) ? `, fee $${num(i.fee_weekly)}/week` : ''}`;
   return tool;
 }
@@ -521,19 +545,28 @@ async function runWrite(ctx: AgentCtx, st: St, t: Thread, name: string, i: Recor
       ? { data: { updated: row(st, saved), problems }, card: { type: 'loads', title: 'Load updated', ids: [saved.id] }, undo: { kind: 'restore_load', id: base.id, before } }
       : { data: { error: 'Load not found' } };
   }
+  if (name === 'attach_document') {
+    const l = st.loads.find((x) => x.id === num(i.load_id));
+    if (!l) return { data: { error: `No load #${String(i.load_id)} on this board` } };
+    if (!t.file) return { data: { error: 'No file in this chat to attach — ask the user to send it' } };
+    const kind = (['bol', 'pod', 'ratecon', 'other'] as const).find((k) => k === i.kind) ?? 'other';
+    const f = await ctx.attachFile(l.id, t.file.name, t.file.mime, Buffer.from(t.file.data, 'base64'), kind);
+    t.file = null;
+    return { data: { attached: true, load_id: l.id, kind, status: l.status }, card: { type: 'loads', title: `${kind.toUpperCase()} attached`, ids: [l.id] }, undo: { kind: 'delete_file', id: f.id } };
+  }
   if (name === 'send_invoice') {
     const l = st.loads.find((x) => x.id === num(i.load_id));
     if (!l) return { data: { error: `No load #${String(i.load_id)} on this board` } };
     const to = str(i.to) || st.brokerEmails[lc(l.broker)] || '';
     if (!to) return { data: { error: 'No billing email for this broker yet — ask the user for it' } };
-    const attach = i.attach_documents === false ? [] : st.files.filter((f) => f.loadId === l.id && f.kind !== 'invoice').map((f) => f.id);
+    const attach = i.attach_documents === false ? [] : st.files.filter((f) => f.loadId === l.id && forInvoice(f.kind)).map((f) => f.id);
     const r = await ctx.sendInvoice(l.id, to, attach);
     return { data: { sent: true, number: r.number, to, documents: attach.length }, card: { type: 'note', text: `Invoice ${r.number} sent to ${to}` } };
   }
   if (name === 'send_to_factoring') {
     const l = st.loads.find((x) => x.id === num(i.load_id));
     if (!l) return { data: { error: `No load #${String(i.load_id)} on this board` } };
-    const attach = i.attach_documents === false ? [] : st.files.filter((f) => f.loadId === l.id && f.kind !== 'invoice').map((f) => f.id);
+    const attach = i.attach_documents === false ? [] : st.files.filter((f) => f.loadId === l.id && forInvoice(f.kind)).map((f) => f.id);
     const r = await ctx.sendFactoring(l.id, attach, str(i.to) || undefined);
     return { data: { sent: true, number: r.number, to: r.to, factor: r.factor, documents: attach.length }, card: { type: 'note', text: `Invoice ${r.number} sent to ${r.factor} (${r.to})` } };
   }
@@ -560,7 +593,7 @@ function preview(st: St, tool: string, i: Record<string, unknown>): PendingActio
     const l = st.loads.find((x) => x.id === num(i.load_id));
     if (!l) return undefined;
     const c = st.carriers.find((x) => x.id === l.carrierId);
-    const docs = i.attach_documents === false ? 0 : st.files.filter((f) => f.loadId === l.id && f.kind !== 'invoice').length;
+    const docs = i.attach_documents === false ? 0 : st.files.filter((f) => f.loadId === l.id && forInvoice(f.kind)).length;
     return {
       to: str(i.to) || c?.factoringEmail || 'no factoring email yet',
       subject: `Invoice for factoring · ${c?.name ?? 'carrier'}${l.pro ? ` · Load ${l.pro}` : ''} · ${l.broker}`,
@@ -579,7 +612,7 @@ function preview(st: St, tool: string, i: Record<string, unknown>): PendingActio
 function emailPreview(st: St, i: Record<string, unknown>): PendingAction['preview'] {
   const l = st.loads.find((x) => x.id === num(i.load_id));
   if (!l) return undefined;
-  const docs = i.attach_documents === false ? 0 : st.files.filter((f) => f.loadId === l.id && f.kind !== 'invoice').length;
+  const docs = i.attach_documents === false ? 0 : st.files.filter((f) => f.loadId === l.id && forInvoice(f.kind)).length;
   return {
     to: str(i.to) || st.brokerEmails[lc(l.broker)] || 'no billing email yet',
     subject: `Invoice — ${st.company.name || 'our company'}${l.pro ? `, load ${l.pro}` : ''}`,
@@ -895,6 +928,7 @@ export async function undo(ctx: AgentCtx, t: Thread, actionId: string): Promise<
   if (!a?.undo) return null;
   if (a.undo.kind === 'delete_load') await ctx.deleteLoad(a.undo.id);
   else if (a.undo.kind === 'restore_load') await ctx.updateLoad(a.undo.id, a.undo.before);
+  else if (a.undo.kind === 'delete_file') await ctx.deleteFile(a.undo.id);
   else await ctx.archiveCarrier(a.undo.id);
   a.status = 'undone';
   (t.notes ??= []).push(`the user undid “${a.summary}”`);
@@ -910,7 +944,7 @@ export function currentLoad<T extends Pick<Load, 'truckId' | 'status' | 'date'>>
 /** Short board summary, sent with the user's message when it changes (names only; numbers come from the tools). */
 export function boardContext(st: St, me: { role: string }): string {
   return [
-    `Company: ${st.company.name || '—'}. Today: ${today()}. The user is the ${me.role === 'dispatcher' ? 'dispatcher (sees only their own loads)' : 'owner of the board'}.`,
+    `Company: ${st.company.name || '—'} (${(st.company as { type?: string }).type === 'broker' ? 'a freight broker: loads come from customers, carriers are paid carrier_pay. Say "customer", never "broker", for who pays a load; the carrier’s factoring doesn’t matter for invoices' : 'a dispatch service: loads come from brokers for its carriers'}). Today: ${today()}. The user is the ${me.role === 'dispatcher' ? 'dispatcher (sees only their own loads)' : 'owner of the board'}.`,
     `Board: ${st.loads.length} loads.`,
     `Carriers: ${st.carriers.map((c) => `${c.name}${c.mc ? ` (MC ${c.mc})` : ''}`).join('; ') || 'none'}.`,
     `Trucks: ${st.trucks.map((x) => `#${x.unit || '—'} ${x.driver}`.trim()).join('; ') || 'none'}.`,
