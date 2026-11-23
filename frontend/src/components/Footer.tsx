@@ -34,6 +34,8 @@ export function Footer({ telegram, backendOk }: { telegram: Links; lastLookup?: 
         ...(telegram.support ? [{ label: 'Support in Telegram', href: telegram.support, external: true }] : []),
         { label: 'FMCSA SAFER', href: 'https://safer.fmcsa.dot.gov/CompanySnapshot.aspx', external: true },
         { label: 'FMCSA open data', href: 'https://data.transportation.gov/browse?q=fmcsa', external: true },
+        { label: 'Privacy Policy', href: '/privacy.html' },
+        { label: 'Terms of Service', href: '/terms.html' },
       ],
     },
   ]

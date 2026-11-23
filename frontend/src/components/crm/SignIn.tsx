@@ -268,7 +268,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup', invite 
                   <button type="button" className="ghost" onClick={() => setStep(1)}>Back</button>
                   <button className="primary au-submit" disabled={busy}>{busy ? 'Creating your account…' : 'Create account'}</button>
                 </div>
-                <p className="au3-legal">We’ll email you a 6-digit code to confirm your address.</p>
+                <p className="au3-legal">We’ll email you a 6-digit code to confirm your address. By creating an account you agree to the <a href="/terms.html" target="_blank" rel="noopener">Terms</a> and <a href="/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</p>
               </>
             )}
           </form>
