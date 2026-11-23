@@ -57,7 +57,8 @@ export function seoHtml(html: string, path: string, page: SeoPage): string {
         <h1>${esc(page.h1)}</h1>
         <p>${esc(page.intro)}</p>
         <ul>${page.points.map((p) => `<li>${esc(p)}</li>`).join('')}</ul>
-        <p>Part of <a href="${SITE}/">HaulPanel</a> — the TMS for truck dispatch companies. Data: official FMCSA open data and SAFER.</p>
+        <p>Part of <a href="${SITE}/">HaulPanel</a> — the AI TMS for truck dispatchers and freight brokers. Data: official FMCSA open data and SAFER.</p>
+        <p>More tools: ${Object.entries(SEO_PAGES).filter(([p]) => p !== path).map(([p, x]) => `<a href="${SITE}${p}">${esc(x.h1.split(' — ')[0])}</a>`).join(' · ')} · <a href="${SITE}/">HaulPanel TMS</a></p>
       </main>`;
   return html
     .replace(/<title>[\s\S]*?<\/title>/, `<title>${esc(page.title)}</title>`)

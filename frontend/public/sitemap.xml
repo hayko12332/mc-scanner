@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://haulpanel.com/</loc><lastmod>2026-11-15</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
-  <url><loc>https://haulpanel.com/new-mc-leads</loc><lastmod>2026-11-15</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
-  <url><loc>https://haulpanel.com/mc-number-lookup</loc><lastmod>2026-11-15</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>
-  <url><loc>https://haulpanel.com/mc-scanner</loc><lastmod>2026-11-15</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://haulpanel.com/</loc><lastmod>2026-11-23</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://haulpanel.com/new-mc-leads</loc><lastmod>2026-11-23</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://haulpanel.com/mc-number-lookup</loc><lastmod>2026-11-23</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>
+  <url><loc>https://haulpanel.com/mc-scanner</loc><lastmod>2026-11-23</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+  <url><loc>https://haulpanel.com/privacy.html</loc><lastmod>2026-11-23</lastmod><changefreq>yearly</changefreq><priority>0.2</priority></url>
+  <url><loc>https://haulpanel.com/terms.html</loc><lastmod>2026-11-23</lastmod><changefreq>yearly</changefreq><priority>0.2</priority></url>
 </urlset>
