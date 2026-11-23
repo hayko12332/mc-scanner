@@ -4,6 +4,8 @@ import { slug, titleCase } from './companies.store.js';
 import { FEATURES, featurePage } from './features.js';
 import { kindsOf } from './companies.pages.js';
 import { sitePage } from './router.js';
+import { indexNowBody, INDEXNOW_KEY } from './indexnow.service.js';
+import { existsSync, readFileSync } from 'node:fs';
 
 describe('public site', () => {
   it('turns a census record into one company per MC, without contact details', () => {
@@ -45,5 +47,15 @@ describe('public site', () => {
     expect(r?.type).toBe('xml');
     for (const p of Object.keys(FEATURES)) expect(r?.body).toContain(`<loc>https://haulpanel.com${p}</loc>`);
     expect(r?.body).toContain('<loc>https://haulpanel.com/mc-number-lookup</loc>');
+  });
+
+  it('sends IndexNow with our host and the key file that is on the site', () => {
+    expect(indexNowBody(['/mc/109', '/freight-broker-tms'])).toEqual({
+      host: 'haulpanel.com', key: INDEXNOW_KEY, keyLocation: `https://haulpanel.com/${INDEXNOW_KEY}.txt`,
+      urlList: ['https://haulpanel.com/mc/109', 'https://haulpanel.com/freight-broker-tms'],
+    });
+    const file = new URL(`../../../frontend/public/${INDEXNOW_KEY}.txt`, import.meta.url);
+    expect(existsSync(file)).toBe(true);
+    expect(readFileSync(file, 'utf8')).toBe(INDEXNOW_KEY);
   });
 });
