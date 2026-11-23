@@ -16,7 +16,7 @@ declare global {
   interface Window { google?: { accounts: { id: GoogleId } } }
 }
 
-const GSI = 'https://accounts.google.com/gsi/client'
+const GSI = 'https://accounts.google.com/gsi/client?hl=en'
 
 function loadGsi(): Promise<GoogleId> {
   if (window.google?.accounts?.id) return Promise.resolve(window.google.accounts.id)
@@ -174,7 +174,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup', invite 
         callback: ({ credential }) => crm.google(credential).then((r) => onSignedIn(r.user), (e: Error) => setError(e.message)),
       })
       g.renderButton(google.current, {
-        theme: 'outline', size: 'large', shape: 'rectangular', text: screen === 'signup' ? 'signup_with' : 'continue_with', width: 380,
+        theme: 'outline', size: 'large', shape: 'rectangular', text: screen === 'signup' ? 'signup_with' : 'continue_with', width: 380, locale: 'en',
       })
     }, (e: Error) => setError(e.message))
     return () => { live = false }
