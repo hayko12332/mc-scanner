@@ -3291,3 +3291,67 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 .cu-loads ul { margin: 0; padding: 6px 0; list-style: none; display: grid; gap: 4px; }
 .cu-loads .w-link { text-align: left; font-size: 13px; }
 .ld-grid + .ld-grid { margin-top: 12px; }
+
+/* Account pages, light and calm: form on white, the product on a soft blue side (real board screenshot + AI card) */
+.au3 { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
+.au3-form { max-width: 400px; }
+.au3-form h2 { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; }
+.au3-form .au-sub { font-size: 15px; color: #64748b; }
+.au3-form .au-field > span { font-size: 13px; font-weight: 600; color: #334155; }
+.au3-form .au-field input, .au3-form .au-pass { height: 44px; border-radius: 10px; border-color: #d5dce6; font-size: 15px; }
+.au3-form .au-field input::placeholder { color: #a3adbb; }
+.au3-form .au-submit { height: 46px; border-radius: 10px !important; font-size: 15px !important; box-shadow: 0 6px 16px rgba(37, 99, 235, 0.22); }
+.au3-form .au-google { justify-content: flex-start; min-height: 44px; }
+.au3-form .au-or { margin: 18px 0; }
+.au3-steps { margin-bottom: 26px; }
+.au3-steps i { width: 20px; height: 20px; font-size: 11px; }
+.au3-side { color: #0f172a; padding: 40px 0 40px 56px;
+  background: radial-gradient(700px 520px at 80% 30%, #dbe7ff 0%, rgba(219, 231, 255, 0) 70%), linear-gradient(160deg, #f7f9fe 0%, #eef3fd 100%);
+  border-left: 1px solid #e6ebf3; }
+.au3-side::before { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(37, 99, 235, 0.12) 1.1px, transparent 1.2px); background-size: 24px 24px;
+  mask-image: linear-gradient(180deg, #000 0%, transparent 85%); }
+.au3-side-in { position: relative; }
+.au3-kicker { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 14px; padding: 6px 12px; border-radius: 99px;
+  background: #eef2ff; border: 1px solid #c7d2fe; color: #4338ca; font-size: 12.5px; font-weight: 700; letter-spacing: 0; }
+.au3-kicker .icon { color: #7c3aed; }
+.au3-side h2 { max-width: 540px; margin: 0 56px 24px 0; font-size: 34px; line-height: 1.12; font-weight: 800; letter-spacing: -0.035em; color: #0b1736; }
+.au3-stage { position: relative; margin-bottom: 30px; }
+.au3-frame { width: 112%; border-radius: 14px 0 0 14px; overflow: hidden; background: #fff; border: 1px solid #dbe3ef; border-right: 0;
+  box-shadow: 0 30px 70px rgba(15, 23, 42, 0.16), 0 6px 18px rgba(15, 23, 42, 0.06); }
+.au3-bar { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; }
+.au3-bar i { width: 9px; height: 9px; border-radius: 50%; background: #cbd5e1; }
+.au3-bar span { margin-left: 10px; width: 240px; height: 18px; border-radius: 6px; background: #fff; border: 1px solid #e2e8f0; font-size: 11px; color: #64748b; display: flex; align-items: center; padding-left: 8px; }
+.au3-frame img { display: block; width: 100%; height: auto; }
+.au3-ai { position: absolute; left: -28px; bottom: -22px; width: 300px; padding: 14px 15px; border-radius: 14px; background: #fff; border: 1px solid #e2e8f0;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18); font-size: 13px; color: #334155; }
+.au3-ai-h { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: #64748b; }
+.au3-ai-h em { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(135deg, #7c3aed, #2563eb); color: #fff; font-style: normal; font-size: 11px; }
+.au3-ai-q { width: max-content; max-width: 100%; margin: 9px 0 8px auto; padding: 6px 10px; border-radius: 10px 10px 3px 10px; background: #2563eb; color: #fff; font-size: 12px; font-weight: 600; }
+.au3-ai p { margin: 0; line-height: 1.4; } .au3-ai p b { color: #0f172a; }
+.au3-ai-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; padding: 8px 10px; border-radius: 9px; background: #f8fafc; border: 1px solid #e2e8f0; }
+.au3-ai-row b { display: block; font-size: 12.5px; color: #0f172a; } .au3-ai-row small { display: block; font-size: 11.5px; color: #64748b; }
+.au3-ai-row i { font-style: normal; padding: 5px 11px; border-radius: 7px; background: #2563eb; color: #fff; font-weight: 700; font-size: 12px; }
+.au3-points { max-width: 540px; gap: 14px; margin: 0 56px 22px 0; }
+.au3-points li > span { width: 34px; height: 34px; border-radius: 10px; color: #2563eb; background: #fff; border: 1px solid #dbe3ef; box-shadow: 0 2px 6px rgba(15, 23, 42, 0.05); }
+.au3-points b { color: #0f172a; font-size: 14.5px; }
+.au3-points small { color: #64748b; font-size: 13px; }
+.au3-trust { color: #64748b; }
+.au3-trust .icon { color: #16a34a; }
+@media (max-height: 800px) { .au3-side h2 { font-size: 28px; margin-bottom: 18px; } .au3-stage { margin-bottom: 26px; } .au3-points small { display: none; } }
+.work.theme-dark .au3-side { color: var(--text); border-left-color: var(--border);
+  background: radial-gradient(700px 520px at 80% 30%, rgba(37, 99, 235, 0.18) 0%, transparent 70%), linear-gradient(160deg, #0f172a 0%, #0b1220 100%); }
+.work.theme-dark .au3-side h2, .work.theme-dark .au3-points b { color: #f8fafc; }
+.work.theme-dark .au3-points li > span { background: #111a2e; border-color: #1e293b; color: #93c5fd; }
+.work.theme-dark .au3-form .au-field > span { color: var(--text); }
+.work.theme-dark .au3-form .au-field input, .work.theme-dark .au3-form .au-pass { border-color: var(--border); }
+.au3-side { padding-top: 36px; padding-bottom: 36px; }
+.au3-side h2 { font-size: 31px; margin-bottom: 22px; }
+.au3-frame { max-height: 330px; }
+.au3-stage { margin-bottom: 34px; }
+.au3-ai { bottom: -26px; width: 290px; }
+.au3-points { gap: 12px; }
+@media (max-height: 860px) { .au3-frame { max-height: 270px; } .au3-points small { display: none; } .au3-side h2 { font-size: 27px; } }
+.au3-side h2, .au3-form h2 { text-wrap: balance; }
+@media (max-width: 1100px) { .au3 { grid-template-columns: 1fr; } .au3-side { display: none; } }
+@media (max-width: 560px) { .au3-form h2 { font-size: 24px; line-height: 1.2; } .au3-steps { margin-bottom: 18px; } }

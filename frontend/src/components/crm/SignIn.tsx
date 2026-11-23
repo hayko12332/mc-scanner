@@ -6,7 +6,6 @@ import {
 import { track } from '../../lib/analytics'
 import { formatPhone } from '../../lib/format'
 import { Icon, type IconName } from '../Icon'
-import { ProductShot } from '../ProductShot'
 
 interface GoogleId {
   initialize(o: { client_id: string; callback: (r: { credential: string }) => void; ux_mode?: string }): void
@@ -75,14 +74,14 @@ function useFmcsaFill(set: (patch: { company: string; dot: string; mc: string; p
 }
 
 const SIDE_POINTS: [IconName, string, string][] = [
-  ['file', 'Every load on one board', 'Broker, lane, miles, truck, rate per mile and status — grouped by week.'],
-  ['dollar', 'Carrier statements in one click', 'Percent or flat weekly fees, PDF statements, dispatcher pay.'],
-  ['search', 'Check any company', 'MC, USDOT, email or phone lookup and new MC leads every day.'],
+  ['spark', 'An AI assistant that does the work', 'Rate cons become loads, BOLs and PODs find their loads, invoices are ready to send.'],
+  ['users', 'For dispatchers and freight brokers', 'Dispatch fees and statements, or customers, carrier pay and margin.'],
+  ['search', 'Check any MC before you book', 'FMCSA authority, insurance and fraud signals, plus new MC leads every day.'],
 ]
 
 /**
- * Account pages, laid out like the sign-up pages of professional TMSs: the form on a clean white side,
- * the product itself on the dark side (a picture of the board and what you get).
+ * Account pages, laid out like the sign-up pages of professional SaaS products: the form on a clean white side,
+ * the product itself on a light side — a real screenshot of the board, the AI at work, and what you get.
  */
 function AuthLayout({ top, children, foot }: { top?: ReactNode; children: ReactNode; foot?: ReactNode }) {
   return (
@@ -95,20 +94,31 @@ function AuthLayout({ top, children, foot }: { top?: ReactNode; children: ReactN
         <div className="au3-form">{children}</div>
         <footer className="au3-foot">
           {foot}
-          <span>© {new Date().getFullYear()} HaulPanel · <a href="mailto:support@haulpanel.com">support@haulpanel.com</a></span>
+          <span>© {new Date().getFullYear()} HaulPanel · <a href="/terms.html" target="_blank" rel="noopener">Terms</a> · <a href="/privacy.html" target="_blank" rel="noopener">Privacy</a> · <a href="mailto:support@haulpanel.com">support@haulpanel.com</a></span>
         </footer>
       </section>
       <aside className="au3-side" aria-hidden="true">
         <div className="au3-side-in">
-          <span className="au3-kicker">TMS for dispatch companies</span>
-          <h2>Run your whole dispatch company from one panel</h2>
-          <div className="au3-shot"><ProductShot /></div>
+          <span className="au3-kicker"><Icon name="spark" size={13} />AI TMS for dispatchers &amp; freight brokers</span>
+          <h2>The TMS that does the paperwork for you</h2>
+          <div className="au3-stage">
+            <div className="au3-frame">
+              <div className="au3-bar"><i /><i /><i /><span>haulpanel.com</span></div>
+              <img src="/auth-board.jpg" alt="" width="1600" height="941" />
+            </div>
+            <div className="au3-ai">
+              <div className="au3-ai-h"><em>✦</em>HaulPanel AI</div>
+              <div className="au3-ai-q">Invoice everything delivered this week</div>
+              <p><b>3 invoices ready — $6,450.</b> Rate cons and PODs attached.</p>
+              <div className="au3-ai-row"><span><b>Coyote Logistics · $2,450</b><small>Dallas, TX → Atlanta, GA</small></span><i>Send</i></div>
+            </div>
+          </div>
           <ul className="au3-points">
             {SIDE_POINTS.map(([icon, title, text]) => (
               <li key={title}><span><Icon name={icon} size={16} /></span><div><b>{title}</b><small>{text}</small></div></li>
             ))}
           </ul>
-          <p className="au3-trust"><Icon name="shield" size={14} />Free during beta · No credit card · Your data is private to your company</p>
+          <p className="au3-trust"><Icon name="shield" size={14} />Free during beta · No credit card · Your data stays private to your company</p>
         </div>
       </aside>
     </div>
@@ -174,7 +184,7 @@ export function SignIn({ config, onSignedIn, onDemo, initial = 'signup', invite 
         callback: ({ credential }) => crm.google(credential).then((r) => onSignedIn(r.user), (e: Error) => setError(e.message)),
       })
       g.renderButton(google.current, {
-        theme: 'outline', size: 'large', shape: 'rectangular', text: screen === 'signup' ? 'signup_with' : 'continue_with', width: 380, locale: 'en',
+        theme: 'outline', size: 'large', shape: 'rectangular', text: screen === 'signup' ? 'signup_with' : 'continue_with', width: 400, locale: 'en',
       })
     }, (e: Error) => setError(e.message))
     return () => { live = false }
