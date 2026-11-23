@@ -13,6 +13,17 @@ if (view && !location.hash.startsWith('#/')) {
   history.replaceState(null, '', location.pathname + '#/' + target)
 }
 initAnalytics()
+// After a new version is deployed, a page opened earlier asks for code files (the map, the AI panel) whose names
+// changed: reload once to get the new version instead of showing a broken part. At most once a minute.
+addEventListener('vite:preloadError', (e) => {
+  try {
+    const last = Number(sessionStorage.getItem('hp.reloadedForUpdate') ?? 0)
+    if (Date.now() - last < 60_000) return
+    sessionStorage.setItem('hp.reloadedForUpdate', String(Date.now()))
+  } catch { /* no storage: still reload */ }
+  e.preventDefault()
+  location.reload()
+})
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

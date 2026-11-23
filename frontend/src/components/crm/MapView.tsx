@@ -31,13 +31,22 @@ function useMapLibre(theme: Theme, ready: (map: MlMap) => void) {
     let gone = false
     loadLib().then((ml) => {
       if (gone || !el.current) return
-      m = new ml.Map({
-        container: el.current, style: styleUrl(theme), bounds: US_BOUNDS, fitBoundsOptions: { padding: 20 },
-        attributionControl: { compact: true }, cooperativeGestures: true, dragRotate: false, pitchWithRotate: false,
-      })
+      try {
+        m = new ml.Map({
+          container: el.current, style: styleUrl(theme), bounds: US_BOUNDS, fitBoundsOptions: { padding: 20 },
+          attributionControl: { compact: true }, cooperativeGestures: true, dragRotate: false, pitchWithRotate: false,
+        })
+      } catch {
+        // No WebGL (an old browser, or too many maps open at once).
+        return setFailed(true)
+      }
       m.addControl(new ml.NavigationControl({ showCompass: false }), 'top-right')
       m.on('load', () => { if (!gone && m) { onReady.current(m); setMap(m) } })
-    }, () => setFailed(true))
+    }, () => {
+      // The map code didn't load (offline, or the site was updated since this page opened): try again next time.
+      lib = null
+      setFailed(true)
+    })
     return () => { gone = true; m?.remove() }
   }, [theme])
   return { el, map, failed }
@@ -97,7 +106,7 @@ export function RouteMap({ from, to, theme, lane }: {
   return (
     <div className="rm">
       <div className="rm-map" ref={el} role="img" aria-label={`Map of the route from ${from} to ${to}`}>
-        {(failed || err) && <p className="rm-msg">{err || 'The map could not load.'}</p>}
+        {(failed || err) && <p className="rm-msg">{err || <>The map could not load. <button type="button" className="w-link" onClick={() => location.reload()}>Reload</button></>}</p>}
       </div>
       <div className="rm-foot">
         <span><i className="rm-dot a" />{place(from)}</span><span className="rm-arrow">→</span><span><i className="rm-dot b" />{place(to)}</span>

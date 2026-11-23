@@ -586,7 +586,7 @@ function CardView({ card, state, theme, openLoad }: { card: AiCard; state: CrmSt
         {!loads.length ? <p className="ah-muted ah-pad">No loads.</p> : (
           <div className="ah-table-wrap">
             <table className="ah-table">
-              <thead><tr><th>Pickup</th><th>Broker</th><th>Lane</th><th className="num">Miles</th><th className="num">Gross</th><th className="num">RPM</th><th>Status</th></tr></thead>
+              <thead><tr><th>Pickup</th><th>{isBroker(state) ? 'Customer' : 'Broker'}</th><th>Lane</th><th className="num">Miles</th><th className="num">Gross</th><th className="num">RPM</th><th>Status</th></tr></thead>
               <tbody>
                 {shown.map((l) => (
                   <tr key={l.id} className="click" onClick={() => openLoad(l.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') openLoad(l.id) }}>
