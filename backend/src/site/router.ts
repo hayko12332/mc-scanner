@@ -1,7 +1,7 @@
 import { cityPage, companyPage, directoryPage, statePage } from './companies.pages.js';
 import { companiesStore } from './companies.store.js';
 import { FEATURES, featurePage } from './features.js';
-import { SITE } from './layout.js';
+import { COVER, SITE } from './layout.js';
 
 // Which server-rendered public page answers a path: feature pages, the company directory and company pages,
 // and the sitemaps. Anything else falls through to the app.
@@ -58,7 +58,9 @@ export async function sitePage(path: string, query: Record<string, unknown>): Pr
     });
   }
   if (path === '/sitemap-pages.xml') {
-    return xml(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${STATIC_PAGES.map(([p, freq, pr]) => `  <url><loc>${SITE}${p}</loc><lastmod>${today()}</lastmod><changefreq>${freq}</changefreq><priority>${pr.toFixed(1)}</priority></url>`).join('\n')}\n</urlset>`);
+    // Each page's main picture too (Google's image sitemap extension), so search can show it as the thumbnail.
+    const pic = (p: string) => (p.endsWith('.html') ? '' : `<image:image><image:loc>${FEATURES[p] ? SITE + FEATURES[p].image : COVER.url}</image:loc></image:image>`);
+    return xml(`<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n${STATIC_PAGES.map(([p, freq, pr]) => `  <url><loc>${SITE}${p}</loc><lastmod>${today()}</lastmod><changefreq>${freq}</changefreq><priority>${pr.toFixed(1)}</priority>${pic(p)}</url>`).join('\n')}\n</urlset>`);
   }
   if (path === '/sitemap-cities.xml') {
     return cached('cities', 24 * 3600_000, async () => {

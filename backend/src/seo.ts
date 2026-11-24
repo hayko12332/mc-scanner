@@ -7,6 +7,9 @@ import { fileURLToPath } from 'node:url';
 
 export interface SeoPage { title: string; description: string; h1: string; intro: string; points: string[] }
 
+/** The picture search results and link previews show for the tool pages. */
+export const SEO_IMAGE = { path: '/haulpanel-cover.jpg', width: 1600, height: 900 };
+
 const SITE = 'https://haulpanel.com';
 
 export const SEO_PAGES: Record<string, SeoPage> = {
@@ -60,7 +63,11 @@ export function seoHtml(html: string, path: string, page: SeoPage): string {
         <p>Part of <a href="${SITE}/">HaulPanel</a> — the AI TMS for truck dispatchers and freight brokers. Data: official FMCSA open data and SAFER.</p>
         <p>More tools: ${Object.entries(SEO_PAGES).filter(([p]) => p !== path).map(([p, x]) => `<a href="${SITE}${p}">${esc(x.h1.split(' — ')[0])}</a>`).join(' · ')} · <a href="${SITE}/">HaulPanel TMS</a></p>
       </main>`;
+  const img = SITE + SEO_IMAGE.path;
+  const ld = JSON.stringify({ '@context': 'https://schema.org', '@type': 'WebPage', url, name: page.title,
+    primaryImageOfPage: { '@type': 'ImageObject', url: img, width: SEO_IMAGE.width, height: SEO_IMAGE.height }, image: img, isPartOf: { '@id': `${SITE}/#site` } }).replace(/</g, '\\u003c');
   return html
+    .replace(/<script type="application\/ld\+json" id="ld-page">[\s\S]*?<\/script>/, `<script type="application/ld+json" id="ld-page">${ld}</script>`)
     .replace(/<title>[\s\S]*?<\/title>/, `<title>${esc(page.title)}</title>`)
     .replace(/(<meta name="description" content=")[^"]*(")/, `$1${esc(page.description)}$2`)
     .replace(/(<link rel="canonical" href=")[^"]*(")/, `$1${url}$2`)

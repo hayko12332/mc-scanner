@@ -136,7 +136,7 @@ ${f.faq.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></
 <div class="actions"><a class="btn primary big" href="/#/crm?signup">Create a free account</a><a class="btn big" href="/#/crm?demo=1">Open the demo board</a></div>
 <p class="note">Also: ${others.map(([p, l]) => `<a href="${p}">${esc(l)}</a>`).join(' · ')} · <a href="/mc-number-lookup">MC number lookup</a></p></div></section>`;
   return page({
-    path, title: f.title, description: f.description, body, image: SITE + f.image,
+    path, title: f.title, description: f.description, body, image: SITE + f.image, imageSize: f.image === '/haulpanel-demo.jpg' ? [1280, 720] : [1600, 941],
     jsonLd: [
       { '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'HaulPanel', url: SITE + path, applicationCategory: 'BusinessApplication', operatingSystem: 'Web browser',
         description: f.description, offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', description: 'Free during beta' }, screenshot: SITE + f.image },

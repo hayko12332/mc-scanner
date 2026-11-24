@@ -87,21 +87,29 @@ export interface PageOpts {
   /** schema.org objects for this page. */
   jsonLd?: object[];
   noindex?: boolean;
+  /** Full URL of the page's main picture (search thumbnail, link previews); the HaulPanel cover by default. */
   image?: string;
+  imageSize?: [number, number];
 }
+
+export const COVER = { url: `${SITE}/haulpanel-cover.jpg`, size: [1600, 900] as [number, number] };
 
 /** A full HTML page in the site frame. */
 export function page(o: PageOpts): string {
   const url = SITE + o.path;
-  const image = o.image ?? `${SITE}/og-haulpanel.jpg`;
-  const ld = (o.jsonLd ?? []).map((x) => `<script type="application/ld+json">${JSON.stringify(x).replace(/</g, '\\u003c')}</script>`).join('');
+  const image = o.image ?? COVER.url;
+  const [w, h] = o.image ? (o.imageSize ?? [0, 0]) : COVER.size;
+  // The page's preferred picture for search results.
+  const pageLd = o.noindex ? [] : [{ '@context': 'https://schema.org', '@type': 'WebPage', url, name: o.title, image,
+    primaryImageOfPage: { '@type': 'ImageObject', url: image, ...(w ? { width: w, height: h } : {}) } }];
+  const ld = [...pageLd, ...(o.jsonLd ?? [])].map((x) => `<script type="application/ld+json">${JSON.stringify(x).replace(/</g, '\\u003c')}</script>`).join('');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(o.title)}</title><meta name="description" content="${esc(o.description)}">
-${o.noindex ? '<meta name="robots" content="noindex">' : `<link rel="canonical" href="${esc(url)}">`}
+${o.noindex ? '<meta name="robots" content="noindex">' : `<meta name="robots" content="index, follow, max-image-preview:large"><link rel="canonical" href="${esc(url)}">`}
 <meta property="og:type" content="website"><meta property="og:site_name" content="HaulPanel"><meta property="og:url" content="${esc(url)}">
-<meta property="og:title" content="${esc(o.title)}"><meta property="og:description" content="${esc(o.description)}"><meta property="og:image" content="${esc(image)}">
-<meta name="twitter:card" content="summary_large_image">
+<meta property="og:title" content="${esc(o.title)}"><meta property="og:description" content="${esc(o.description)}"><meta property="og:image" content="${esc(image)}">${w ? `<meta property="og:image:width" content="${w}"><meta property="og:image:height" content="${h}">` : ''}
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:image" content="${esc(image)}">
 <link rel="icon" href="/favicon.ico" sizes="48x48"><link rel="icon" type="image/svg+xml" href="/logo.svg"><link rel="apple-touch-icon" href="/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
