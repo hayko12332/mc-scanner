@@ -465,9 +465,9 @@ export function NewLoadDrawer({ state, defaults, add, close, miles, check, ai }:
         notes: [x.notes, r.notes, r.deliveryDate ? `Delivery ${r.deliveryDate}` : '', r.brokerEmail ? `Billing: ${r.brokerEmail}` : ''].filter(Boolean).join(' · ').slice(0, 1000),
       }))
       if (r.miles) setTouched((t) => ({ ...t, loaded: true }))
-      setRc({ ...prepared, busy: false, note: r.isRateConfirmation
+      setRc({ ...prepared, busy: false, note: r.isRateConfirmation && !r.advice
         ? `✓ Filled from ${prepared.name} — check the fields; the file is kept with the load`
-        : `⚠ ${prepared.name} doesn’t look like a rate confirmation — check every field` })
+        : `⚠ ${r.advice || `${prepared.name} doesn’t look like a rate confirmation.`} Check every field.` })
       setErr('')
     } catch (e) {
       setRc(null)

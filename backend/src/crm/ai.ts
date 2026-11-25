@@ -39,6 +39,7 @@ const RateCon = z.object({
   rate: z.number().describe('Total pay to the carrier in USD (all-in linehaul incl. fuel), 0 if not found'),
   miles: z.number().describe('Loaded miles if printed, else 0'),
   notes: z.string().describe('One short line each: pickup and delivery appointment times, commodity, weight, equipment, reference / PO numbers, extra stops. Max 400 chars.'),
+  advice: z.string().describe('Empty for a readable rate confirmation or load tender. Otherwise one or two plain, friendly sentences to the person: what this document is and what to add instead (for example: "This is an invoice, not a rate confirmation. Add the rate con the broker sent for this load." or "The photo is too blurry to read the rate. Take it again in good light, flat and in focus."). Never blame the person.'),
 });
 export type RateConFields = z.infer<typeof RateCon>;
 
@@ -60,6 +61,7 @@ const DeliveryDoc = z.object({
   pieces: z.string().describe('Pieces / pallets / handling units as printed, or empty'),
   weight: z.string().describe('Total weight as printed (with units), or empty'),
   exceptions: z.string().describe('Shortage, damage, overage, refused, "subject to count" or other notes the receiver wrote, in one short line; empty if clean'),
+  advice: z.string().describe('Empty for a readable BOL or POD. Otherwise one or two plain, friendly sentences to the person: what this document is and what to add instead (for example: "This is a rate confirmation, not a BOL or POD. Add it in the load’s rate con field; here add the signed delivery receipt." or "Too dark to read the numbers. Take the photo again in good light."). Never blame the person.'),
 });
 export type DeliveryDocFields = z.infer<typeof DeliveryDoc>;
 

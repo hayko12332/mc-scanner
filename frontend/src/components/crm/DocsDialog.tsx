@@ -138,6 +138,7 @@ export function DocsDialog({ state, close, read, upload, apply, done }: {
                         d.deliveryDate && `delivered ${shortDate(d.deliveryDate)}`, d.pieces, d.weight].filter(Boolean).join(' · ') || 'Nothing legible on it'}
                     </p>
                     {d.kind === 'pod' && <p className={d.signedByReceiver ? 'dd-ok' : 'dd-warn'}>{d.signedByReceiver ? `✓ Signed by the receiver${d.receiver ? ` (${d.receiver})` : ''}` : '⚠ No receiver signature found'}</p>}
+                    {d.advice && <p className="dd-warn">⚠ {d.advice}</p>}
                     {d.exceptions && <p className="dd-warn">⚠ {d.exceptions} <small>— goes into the load’s notes</small></p>}
                     <div className="dd-row">
                       <select aria-label="Document type" value={it.kind} disabled={it.state === 'saved'} onChange={(e) => set(it.key, { kind: e.target.value as FileKind, deliver: e.target.value === 'pod' && !!l && open(l) && !!d.signedByReceiver })}>

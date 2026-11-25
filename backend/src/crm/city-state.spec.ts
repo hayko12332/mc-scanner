@@ -26,7 +26,7 @@ describe('fixOffset', () => {
 11/02/2026,DG Global Cargo Inc,T882496,"Red Lion, PA 17356","Altoona, IA 50009","$2,000",Sergo,`;
   const t = { source: '', rows: readCsv(csv) };
   const fields = ['date', 'broker', 'load_number', 'origin', 'destination', 'rate', 'dispatcher'] as const;
-  const map = (start: number): TableMap => ({ kind: 'loads', what: '', header_row: 0, date_order: 'MDY', statuses: [], columns: fields.map((field, i) => ({ field, column: start + i })) });
+  const map = (start: number): TableMap => ({ kind: 'loads', what: '', header_row: 0, date_order: 'MDY', statuses: [], advice: '', columns: fields.map((field, i) => ({ field, column: start + i })) });
 
   it('moves a map that is one column off back into place, and keeps a right one', () => {
     const r = rowsToRecords(t, map(1), 'x');

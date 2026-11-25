@@ -4,7 +4,7 @@ import { askBoard, modelParams, readRateCon, setAiClient } from './ai.js';
 
 const fields = {
   isRateConfirmation: true, broker: 'Total Quality Logistics', brokerMc: '411443', brokerEmail: 'ap@tql.com', loadNumber: 'TQL-1',
-  pickupDate: '2026-11-18', deliveryDate: '2026-11-19', origin: 'Nashville, TN', destination: 'Orlando, FL', rate: 2100, miles: 686, notes: 'PU 08:00',
+  pickupDate: '2026-11-18', deliveryDate: '2026-11-19', origin: 'Nashville, TN', destination: 'Orlando, FL', rate: 2100, miles: 686, notes: 'PU 08:00', advice: '',
 };
 
 function fake(text: string) {

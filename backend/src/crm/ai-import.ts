@@ -26,6 +26,8 @@ export interface ImportPlan {
   id: string;
   sources: { name: string; what: string; rows: number }[];
   skipped: { name: string; reason: string }[];
+  /** Plain words for the person when a file can't give the board anything: what it is and what to add instead. */
+  advice: { name: string; text: string }[];
   dispatchers: PlanDispatcher[]; carriers: PlanCarrier[]; trucks: PlanTruck[]; loads: PlanLoad[]; brokers: PlanBroker[];
 }
 
@@ -141,6 +143,7 @@ const TableMap = z.object({
     .describe('Only columns that clearly hold one of the fields. For loads: name=nothing; carrier/truck/driver/dispatcher are names on the load row. For carriers: name, mc, dot, phone, email, fee_percent, factoring. For trucks: unit, driver, driver_phone, carrier. For dispatchers: name, dispatcher_percent. For brokers: name, mc, billing_email.'),
   date_order: z.enum(['MDY', 'DMY', 'YMD']).describe('How dates like 03/04/2026 are written in this table (US is MDY)'),
   statuses: z.array(z.object({ value: z.string(), status: z.enum(LOAD_STATUSES) })).describe('Every distinct status word seen in the status column mapped to booked / in_transit / delivered / invoiced / paid'),
+  advice: z.string().describe('Empty when this file has records to import. Otherwise one or two plain, friendly sentences to the person: what this file is, why nothing from it can go on the board, and what to add instead (for example: "This is a W-9 form, it has no loads. Add your load log (Excel or a Google Sheet), rate confirmations or a carrier list."). Never blame the person.'),
 });
 export type TableMap = z.infer<typeof TableMap>;
 
@@ -157,18 +160,24 @@ const DocExtract = z.object({
   trucks: z.array(z.object({ unit: z.string(), driver: z.string(), driver_phone: z.string(), carrier: z.string() })),
   dispatchers: z.array(z.object({ name: z.string() })),
   brokers: z.array(z.object({ name: z.string(), mc: z.string(), billing_email: z.string() })),
+  advice: z.string().describe('Empty when this file has records to import. Otherwise one or two plain, friendly sentences to the person: what this file is, why nothing from it can go on the board, and what to add instead (for example: "This is a W-9 form, it has no loads. Add your load log (Excel or a Google Sheet), rate confirmations or a carrier list."). Never blame the person.'),
 });
 type DocExtract = z.infer<typeof DocExtract>;
 
+/** Who is moving in: the AI reads the same papers differently for a dispatch office and a brokerage. */
+const intro = (broker: boolean) => broker
+  ? 'A freight brokerage is moving its data into a TMS. In its papers the "broker" fields mean the customer who pays for the load (a shipper, or another broker); carriers are the trucking companies it books. Its own company details (letterhead, W-9, MC certificate) are not records to import.'
+  : 'A truck dispatch company is moving its data into a TMS. Its own company details (letterhead, W-9, MC certificate) are not records to import.';
+
 /** The first rows of a table → which column is what (the low-cost model reads only a sample). */
-export async function mapTable(t: Table, fileName: string): Promise<TableMap> {
+export async function mapTable(t: Table, fileName: string, broker = false): Promise<TableMap> {
   // Each cell carries its column number, so the row number in front can't be taken for column 0.
   const sample = t.rows.slice(0, 25).map((r, i) => `row ${i}: ${r.map((c, j) => `[${j}] ${clean(c, 60)}`).join('  ')}`).join('\n');
   try {
     const r = await api().beta.messages.parse({
       model: FAST_MODEL, max_tokens: 3000,
       output_config: { effort: 'low', format: betaZodOutputFormat(TableMap) },
-      messages: [{ role: 'user', content: `A truck dispatch company is moving its data into a TMS. This is a sample of a table from the file "${fileName}"${t.source ? `, sheet "${t.source}"` : ''} (${t.rows.length} rows in all). Each line is one row; every cell is written as [column number] value, starting from [0].\n\n${sample}\n\nSay what one row is and which column holds which field. Leave out columns you are not sure about. In a load log, a \"Company\", \"Company Name\", \"Customer\" or \"Shipper/Broker\" column is the broker (who pays for the load) unless the sheet clearly lists carriers; a column of people's first names next to the rate (often titled with initials) is the dispatcher.` }],
+      messages: [{ role: 'user', content: `${intro(broker)} This is a sample of a table from the file "${fileName}"${t.source ? `, sheet "${t.source}"` : ''} (${t.rows.length} rows in all). Each line is one row; every cell is written as [column number] value, starting from [0].\n\n${sample}\n\nSay what one row is and which column holds which field. Leave out columns you are not sure about. In a load log, a \"Company\", \"Company Name\", \"Customer\" or \"Shipper/Broker\" column is the broker (who pays for the load) unless the sheet clearly lists carriers; a column of people's first names next to the rate (often titled with initials) is the dispatcher.` }],
     });
     if (r.stop_reason === 'refusal' || !r.parsed_output) throw new Error('AI could not read this table');
     return r.parsed_output;
@@ -178,7 +187,7 @@ export async function mapTable(t: Table, fileName: string): Promise<TableMap> {
 }
 
 /** A PDF or picture → the records in it (the stronger model, since layouts vary a lot). */
-async function readDoc(f: ImportFile, kind: 'pdf' | 'image'): Promise<DocExtract> {
+async function readDoc(f: ImportFile, kind: 'pdf' | 'image', broker = false): Promise<DocExtract> {
   const b64 = f.data.toString('base64');
   const media = f.data[0] === 0x89 ? 'image/png' : 'image/jpeg';
   try {
@@ -189,7 +198,7 @@ async function readDoc(f: ImportFile, kind: 'pdf' | 'image'): Promise<DocExtract
         role: 'user',
         content: [
           kind === 'pdf' ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 }, title: f.name } : { type: 'image', source: { type: 'base64', media_type: media, data: b64 } },
-          { type: 'text', text: `A truck dispatch company is moving its data into a TMS. Take every load, carrier, truck/driver, dispatcher and broker from this file ("${f.name}"). It may be a rate confirmation (one load + the broker), a carrier packet (one carrier), a screenshot or export of another TMS, a list or an invoice. Use only what is printed; leave unknown fields empty or 0. Dates YYYY-MM-DD (today is ${today()}), places "City, ST".` },
+          { type: 'text', text: `${intro(broker)} Take every load, carrier, truck/driver, dispatcher and broker from this file ("${f.name}"). It may be a rate confirmation (one load + the broker), a carrier packet (one carrier), a screenshot or export of another TMS, a list or an invoice. Use only what is printed; leave unknown fields empty or 0. Dates YYYY-MM-DD (today is ${today()}), places "City, ST".` },
         ],
       }],
     });
@@ -347,13 +356,37 @@ export function buildPlan(state: Pick<CrmState, 'loads' | 'carriers' | 'trucks' 
     l.pro && l.broker ? `${lc(l.broker)}|${lc(l.pro)}` : `${l.date}|${lc(l.origin)}|${lc(l.destination)}|${l.rate}`;
   const onBoard = new Set(state.loads.map(key));
   const loads = uniq(all.loads, key).map((l) => ({ ...l, duplicate: onBoard.has(key(l)) }));
-  return { id: randomUUID(), sources, skipped, dispatchers, carriers, trucks, loads, brokers };
+  return { id: randomUUID(), sources, skipped, advice: [], dispatchers, carriers, trucks, loads, brokers };
+}
+
+const EMAIL = /^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i;
+
+/** When nothing new would go on the board, says why and what to add instead (the AI's words per file come first). */
+export function explain(plan: ImportPlan, found: { customers: string[] }, broker: boolean): ImportPlan['advice'] {
+  const fresh = plan.loads.filter((l) => !l.duplicate).length + plan.carriers.filter((c) => !c.existing).length + plan.trucks.filter((t) => !t.existing).length
+    + plan.dispatchers.filter((d) => !d.existing).length + plan.brokers.filter((b) => EMAIL.test(b.email)).length; // a customer alone is saved only for its billing email
+  if (fresh) return plan.advice;
+  if (plan.advice.length) return plan.advice;
+  const what = broker
+    ? 'your load log (Excel, CSV or a Google Sheet), load tenders or rate confirmations, a carrier list, or a screenshot of your old TMS'
+    : 'your load log (Excel, CSV or a Google Sheet), rate confirmations, a carrier or driver list, or a screenshot of your old TMS';
+  const any = plan.loads.length + plan.carriers.length + plan.trucks.length + plan.dispatchers.length;
+  if (any) return [{ name: '', text: 'Everything in these files is already on your board, so there is nothing new to add.' }];
+  const names = [...new Set(found.customers)].slice(0, 3);
+  if (names.length) {
+    return [{ name: '', text: `I only found ${names.join(', ')} — a company name without loads or a billing email, so there is nothing to save yet. ${broker ? 'Customers' : 'Brokers'} come in with their loads: add ${what}.` }];
+  }
+  return [{ name: '', text: `I couldn’t find loads, carriers, trucks or ${broker ? 'customers' : 'brokers'} in ${plan.skipped.length + plan.sources.length === 1 ? 'this file' : 'these files'}. Add ${what}.` }];
 }
 
 /** Reads the files the person dropped and returns what would go on the board. */
-export async function planImport(state: Parameters<typeof buildPlan>[0], files: ImportFile[]): Promise<ImportPlan> {
+export async function planImport(state: Parameters<typeof buildPlan>[0] & { company?: { type?: string } }, files: ImportFile[]): Promise<ImportPlan> {
+  const broker = state.company?.type === 'broker';
   const sources: ImportPlan['sources'] = [];
   const skipped: ImportPlan['skipped'] = [];
+  const advice: ImportPlan['advice'] = [];
+  const customers: string[] = [];
+  const say = (name: string, text: string) => { const t = clean(text, 400); if (t) advice.push({ name, text: t }); };
   const parts: ReturnType<typeof rowsToRecords>[] = [];
   await Promise.all(files.map(async (f) => {
     const kind = fileKind(f.name, f.data);
@@ -363,27 +396,37 @@ export async function planImport(state: Parameters<typeof buildPlan>[0], files: 
         if (!tables.length) { skipped.push({ name: f.name, reason: 'empty' }); return; }
         for (const t of tables) {
           const name = t.source ? `${f.name} · ${t.source}` : f.name;
-          const map = await mapTable(t, f.name);
-          if (map.kind === 'ignore') { skipped.push({ name, reason: map.what || 'nothing to import' }); continue; }
+          const map = await mapTable(t, f.name, broker);
+          if (map.kind === 'ignore') { skipped.push({ name, reason: map.what || 'nothing to import' }); say(name, map.advice); continue; }
           const recs = rowsToRecords(t, map, name);
           const n = recs.loads.length + recs.carriers.length + recs.trucks.length + recs.dispatchers.length + recs.brokers.length;
-          if (!n) { skipped.push({ name, reason: 'no rows could be read' }); continue; }
+          if (!n) {
+            skipped.push({ name, reason: 'no rows could be read' });
+            say(name, map.advice || `I saw ${map.what || 'a table'}, but no row had a date, lane, rate or name I could use. Check that the first rows are the column titles and the data, not a report header.`);
+            continue;
+          }
           parts.push(recs);
           sources.push({ name, what: map.what, rows: n });
         }
       } else if (kind === 'pdf' || kind === 'image') {
-        const d = await readDoc(f, kind);
+        const d = await readDoc(f, kind, broker);
         const recs = docToRecords(d, f.name);
-        const n = recs.loads.length + recs.carriers.length + recs.trucks.length + recs.dispatchers.length + recs.brokers.length;
-        if (!n) { skipped.push({ name: f.name, reason: d.what || 'nothing to import' }); return; }
+        customers.push(...recs.brokers.filter((b) => !EMAIL.test(b.email)).map((b) => b.name));
+        const n = recs.loads.length + recs.carriers.length + recs.trucks.length + recs.dispatchers.length + recs.brokers.filter((b) => EMAIL.test(b.email)).length;
+        if (!n) { skipped.push({ name: f.name, reason: d.what || 'nothing to import' }); say(f.name, d.advice); return; }
         parts.push(recs);
         sources.push({ name: f.name, what: d.what, rows: n });
       } else {
         skipped.push({ name: f.name, reason: 'not a spreadsheet, PDF or picture' });
+        say(f.name, /\.docx?$/i.test(f.name) ? 'This is a Word file, which I can’t read. Save it as PDF (File → Save As → PDF) and add it again.'
+          : /\.(numbers|pages|xlsb|ods)$/i.test(f.name) ? 'I can’t open this file type. Export it as Excel (.xlsx) or CSV and add it again.'
+          : 'I can read Excel, CSV, PDF and photos (JPEG or PNG). Save this file in one of those formats and add it again.');
       }
     } catch (e) {
       skipped.push({ name: f.name, reason: (e as Error).message });
+      say(f.name, `I couldn’t read this file this time (${(e as Error).message.replace(/\.$/, '')}). Try again in a minute — nothing was lost.`);
     }
   }));
-  return buildPlan(state, parts, sources, skipped);
+  const plan = { ...buildPlan(state, parts, sources, skipped), advice };
+  return { ...plan, advice: explain(plan, { customers }, broker) };
 }

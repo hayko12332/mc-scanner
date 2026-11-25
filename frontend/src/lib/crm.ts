@@ -149,6 +149,8 @@ export interface CompanyCheck {
 export interface DeliveryDoc {
   kind: 'bol' | 'pod' | 'other'; references: string[]; shipper: string; consignee: string; origin: string; destination: string
   pickupDate: string; deliveryDate: string; signedByReceiver: boolean; receiver: string; pieces: string; weight: string; exceptions: string
+  /** The AI's words when this isn't a readable BOL/POD: what it is and what to add instead. */
+  advice?: string
 }
 export interface DocMatch { loadId: number | null; why: string; candidates: { loadId: number; score: number; why: string }[] }
 export interface MilesResult { miles: number; estimate: boolean }
@@ -242,6 +244,8 @@ export interface ImportPlan {
   id: string
   sources: { name: string; what: string; rows: number }[]
   skipped: { name: string; reason: string }[]
+  /** Why a file gave nothing and what to add instead. */
+  advice?: { name: string; text: string }[]
   dispatchers: { name: string; percent: number; existing?: boolean }[]
   carriers: { name: string; mc: string; dot: string; phone: string; email: string; feePercent: number; factoring: string; existing?: boolean }[]
   trucks: { unit: string; driver: string; phone: string; carrier: string; existing?: boolean }[]
@@ -252,6 +256,8 @@ export interface ImportPlan {
 export interface RateConFields {
   isRateConfirmation: boolean; broker: string; brokerMc: string; brokerEmail: string; loadNumber: string; pickupDate: string; deliveryDate: string
   origin: string; destination: string; rate: number; miles: number; notes: string
+  /** The AI's words when this isn't a readable rate con: what it is and what to add instead. */
+  advice?: string
 }
 export interface ImportRow {
   date: string; broker: string; pro: string; origin: string; destination: string; rate: number; dispatcher: string; carrier: string

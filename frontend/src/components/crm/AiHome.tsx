@@ -514,6 +514,9 @@ export function ImportCard({ initial, close, done }: { initial: File[]; close: (
     } catch (e) { setErr((e as Error).message); setBusy('') }
   }
   const nNew = (xs: { existing?: boolean; duplicate?: boolean }[]) => xs.filter((x) => !x.existing && !x.duplicate).length
+  const fresh = plan ? nNew(plan.loads) + nNew(plan.carriers) + nNew(plan.trucks) + nNew(plan.dispatchers) + plan.brokers.length : 0
+  const advice = plan?.advice ?? []
+  const again = () => { setPlan(null); setFiles([]); setSheet(''); setErr('') }
   return (
     <div className="ah-ai">
       <Avatar spin={!!busy} />
@@ -534,6 +537,18 @@ export function ImportCard({ initial, close, done }: { initial: File[]; close: (
             </div>
             <input ref={pick} type="file" hidden multiple accept=".xlsx,.xls,.csv,.tsv,application/pdf,image/*" onChange={(e) => { setFiles((f) => [...f, ...(e.target.files ?? [])]); e.target.value = '' }} />
           </div>
+        ) : !fresh ? (
+          <>
+            <div className="ah-text">
+              <p><b>Nothing to add to your board from {plan.sources.length + plan.skipped.length === 1 ? 'this file' : 'these files'}.</b></p>
+              {advice.map((a, i) => <p key={i}>{a.name && advice.length > 1 ? <><b>{a.name}:</b> </> : null}{a.text}</p>)}
+            </div>
+            <div className="ah-card ah-imp-f">
+              <small>Nothing was saved.</small>
+              <button className="ghost" onClick={close}>Close</button>
+              <button className="primary" onClick={again}>Add other files</button>
+            </div>
+          </>
         ) : (
           <>
             <div className="ah-text"><p><b>Here’s what I found.</b> {plan.sources.map((s) => `${s.name} — ${s.what}`).join('; ') || 'Nothing readable.'}</p></div>
@@ -561,10 +576,11 @@ export function ImportCard({ initial, close, done }: { initial: File[]; close: (
               </div>
             )}
             {!!plan.skipped.length && <p className="ah-muted">Skipped: {plan.skipped.map((s) => `${s.name} (${s.reason})`).join('; ')}</p>}
+            {advice.map((a, i) => <p key={i} className="ah-muted">⚠ {a.name && <b>{a.name}: </b>}{a.text}</p>)}
             <div className="ah-card ah-imp-f">
               {busy ? <span className="ah-status"><span className="ah-spin" /> {busy}</span> : <small>Items already on your board are not added twice. Carriers with an MC are checked in FMCSA after import.</small>}
               <button className="ghost" disabled={!!busy} onClick={close}>Cancel</button>
-              <button className="primary" disabled={!!busy || !(nNew(plan.loads) + nNew(plan.carriers) + nNew(plan.trucks) + nNew(plan.dispatchers) + plan.brokers.length)} onClick={() => void apply()}>Import to my board</button>
+              <button className="primary" disabled={!!busy || !fresh} onClick={() => void apply()}>Import to my board</button>
             </div>
           </>
         )}

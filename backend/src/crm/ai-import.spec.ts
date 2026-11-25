@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { deflateRawSync } from 'node:zlib';
 import { afterEach, describe, expect, it } from 'vitest';
 import { setAiClient } from './ai.js';
-import { buildPlan, fileKind, planImport, readCsv, readXlsx, rowsToRecords, toDate } from './ai-import.js';
+import { buildPlan, explain, fileKind, planImport, readCsv, readXlsx, rowsToRecords, toDate } from './ai-import.js';
 
 /** A minimal .xlsx (ZIP) with deflated parts, the way Excel writes them. */
 function xlsx(sheets: { name: string; rows: (string | number)[][] }[]): Buffer {
@@ -64,7 +64,7 @@ describe('turning rows into a plan', () => {
     columns: [{ field: 'date', column: 0 }, { field: 'broker', column: 1 }, { field: 'origin_city', column: 2 }, { field: 'origin_state', column: 3 },
       { field: 'destination', column: 4 }, { field: 'rate', column: 5 }, { field: 'carrier', column: 6 }, { field: 'truck', column: 7 }, { field: 'driver', column: 8 },
       { field: 'status', column: 9 }, { field: 'load_number', column: 10 }] as { field: 'date'; column: number }[],
-    statuses: [{ value: 'Paid', status: 'paid' as const }, { value: 'Picked up', status: 'in_transit' as const }],
+    statuses: [{ value: 'Paid', status: 'paid' as const }, { value: 'Picked up', status: 'in_transit' as const }], advice: '',
   };
   const table = { source: '', rows: [
     ['Date', 'Broker', 'From', 'ST', 'To', 'Rate', 'Carrier', 'Truck', 'Driver', 'Status', 'Load #'],
@@ -110,5 +110,26 @@ describe('turning rows into a plan', () => {
     expect(plan.sources).toEqual([{ name: 'loads.csv', what: 'Load log', rows: 3 }]);
     expect(plan.loads).toHaveLength(2);
     expect(plan.skipped).toEqual([]);
+  });
+});
+
+describe('explaining an import that adds nothing', () => {
+  const empty = { loads: [], carriers: [], trucks: [], dispatchers: [] };
+  it('says a company name alone is not enough, and what to add instead', () => {
+    const plan = buildPlan(empty, [], [{ name: 'w9.pdf', what: 'W-9 of Eternity Logistics', rows: 1 }], []);
+    const a = explain({ ...plan, brokers: [{ name: 'Eternity Logistics', mc: '', email: '' }] }, { customers: ['Eternity Logistics'] }, true);
+    expect(a).toHaveLength(1);
+    expect(a[0].text).toMatch(/only found Eternity Logistics/);
+    expect(a[0].text).toMatch(/load tenders or rate confirmations/);
+  });
+  it('keeps the AI’s own words, and stays quiet when something new will be added', () => {
+    const plan = { ...buildPlan(empty, [], [], [{ name: 'x.pdf', reason: 'Invoice' }]), advice: [{ name: 'x.pdf', text: 'This is an invoice.' }] };
+    expect(explain(plan, { customers: [] }, false)).toEqual([{ name: 'x.pdf', text: 'This is an invoice.' }]);
+    const withCarrier = { ...plan, advice: [], carriers: [{ name: 'Beku LLC', mc: '', dot: '', phone: '', email: '', feePercent: 0, factoring: '' }] };
+    expect(explain(withCarrier, { customers: [] }, false)).toEqual([]);
+  });
+  it('tells when everything is already on the board', () => {
+    const plan = buildPlan({ ...empty, carriers: [{ name: 'Beku LLC', mc: '' }] } as never, [{ loads: [], carriers: [{ name: 'Beku LLC', mc: '', dot: '', phone: '', email: '', feePercent: 0, factoring: '' }], trucks: [], dispatchers: [], brokers: [] }], [], []);
+    expect(explain(plan, { customers: [] }, false)[0].text).toMatch(/already on your board/);
   });
 });

@@ -60,11 +60,12 @@ const EVENTS: Record<string, [string, ((b: Body, p: Record<string, string>, out:
   'POST loads/:id/carrier-ratecon': ['carrier_ratecon_send', (_b, p) => ({ load: Number(p.id) })],
   'POST ai/import': ['ai_import_preview', (b, _p, out) => {
     const o = (out ?? {}) as { loads?: unknown[]; carriers?: unknown[]; trucks?: unknown[]; dispatchers?: unknown[]; skipped?: unknown[] };
-    return { files: len(b.files), sheet: has(b.sheetUrl), loads: len(o.loads), carriers: len(o.carriers), trucks: len(o.trucks), dispatchers: len(o.dispatchers), skipped: len(o.skipped) };
+    const o2 = o as { brokers?: unknown[]; advice?: unknown[] };
+    return { files: len(b.files), sheet: has(b.sheetUrl), loads: len(o.loads), carriers: len(o.carriers), trucks: len(o.trucks), dispatchers: len(o.dispatchers), brokers: len(o2.brokers), skipped: len(o.skipped), advice: len(o2.advice) };
   }],
   'POST ai/import/apply': ['ai_import_apply', (_b, _p, out) => {
     const o = (out ?? {}) as Record<string, unknown>;
-    return { loads: Number(o.loads ?? 0), carriers: Number(o.carriers ?? 0), trucks: Number(o.trucks ?? 0), dispatchers: Number(o.dispatchers ?? 0) };
+    return { loads: Number(o.loads ?? 0), carriers: Number(o.carriers ?? 0), trucks: Number(o.trucks ?? 0), dispatchers: Number(o.dispatchers ?? 0), brokers: Number(o.brokers ?? 0) };
   }],
   'POST integrations/eld/:provider': ['integration_connect', (_b, p) => ({ provider: p.provider })],
   'POST integrations/eld/:provider/sync': ['integration_sync', (_b, p) => ({ provider: p.provider })],
