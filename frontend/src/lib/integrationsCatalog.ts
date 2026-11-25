@@ -174,7 +174,7 @@ const hub = (kind: 'requested' | 'planned', id: string, name: string, maker: str
 
 const MORE: App[] = [
   // Connect hubs — one integration, many companies
-  hub('requested', 'terminal', 'Terminal', 'Terminal (YC)', 'Tm', '#111827', 'Hundreds of ELD and telematics brands', 'The “Plaid for telematics”: one connection reaches Samsara, Motive, Geotab, Omnitracs and hundreds of smaller ELDs.', ['Your carriers connect any ELD with one consent link', 'Locations, HOS and vehicles in one format', 'No separate partner deal with each ELD']),
+  hub('planned', 'terminal', 'Terminal', 'Terminal (YC)', 'Tm', '#111827', 'Hundreds of ELD and telematics brands', 'The “Plaid for telematics”: one connection reaches Samsara, Motive, Geotab, Omnitracs and hundreds of smaller ELDs.', ['Your carriers connect any ELD with one consent link', 'Locations, HOS and vehicles in one format', 'No separate partner deal with each ELD']),
   hub('requested', 'truckercloud', 'TruckerCloud', 'TruckerCloud', 'TC', '#0ea5e9', '40+ ELD brands', 'ELD data from 40+ providers through one API — used by insurers and brokers.', ['Carrier consent once, data from their ELD', 'Locations and HOS']),
   hub('planned', 'axle', 'Axle', 'Axle Technologies', 'Ax', '#4f46e5', 'ELDs and fleet systems', 'Unified API for ELD and fleet data.', ['Locations and HOS from many ELDs']),
   hub('planned', 'zapier', 'Zapier', 'Zapier', 'Z', '#ff4f00', '8,000+ apps, incl. Samsara and Motive', 'Zapier’s MCP server lets HaulPanel’s AI take actions in 8,000+ apps you connect in Zapier.', ['Your Zapier apps as tools for HaulPanel’s AI', 'Triggers: load added, status changed, invoice paid', 'Actions: add a load, add a carrier']),
