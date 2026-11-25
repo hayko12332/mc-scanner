@@ -34,7 +34,7 @@ const soon = (kind: 'requested' | 'planned', id: string, name: string, maker: st
   ({ id, name, maker, category, tile, tint, kind, blurb, does, reads, pending: kind === 'requested' ? REQUESTED : PLANNED })
 
 // Hubs that reach many companies at once
-const ELD_HUBS = ['terminal', 'truckercloud', 'axle']
+const ELD_HUBS = ['terminal', 'truckercloud', 'catena', 'pathstack']
 const SAAS_HUBS = ['zapier', 'pipedream', 'composio']
 const ACCT_HUBS = ['merge', 'codat', 'rutter', ...SAAS_HUBS]
 const MAIL_HUBS = ['nylas', ...SAAS_HUBS]
@@ -176,7 +176,9 @@ const MORE: App[] = [
   // Connect hubs — one integration, many companies
   hub('planned', 'terminal', 'Terminal', 'Terminal (YC)', 'Tm', '#111827', 'Hundreds of ELD and telematics brands', 'The “Plaid for telematics”: one connection reaches Samsara, Motive, Geotab, Omnitracs and hundreds of smaller ELDs.', ['Your carriers connect any ELD with one consent link', 'Locations, HOS and vehicles in one format', 'No separate partner deal with each ELD']),
   hub('requested', 'truckercloud', 'TruckerCloud', 'TruckerCloud', 'TC', '#0ea5e9', '40+ ELD brands', 'ELD data from 40+ providers through one API — used by insurers and brokers.', ['Carrier consent once, data from their ELD', 'Locations and HOS']),
-  hub('planned', 'axle', 'Axle', 'Axle Technologies', 'Ax', '#4f46e5', 'ELDs and fleet systems', 'Unified API for ELD and fleet data.', ['Locations and HOS from many ELDs']),
+  hub('planned', 'catena', 'Catena Telematics', 'Catena Clearing (formerly Axle)', 'Ca', '#4f46e5', '380 ELD providers', 'One telematics API across 380 ELD providers, built to verify carriers’ real ELD data.', ['Locations, HOS and vehicles from 380 ELDs', 'One consent from the carrier', 'ELD data that can’t be faked — useful against fraud']),
+  hub('planned', 'pathstack', 'PathStack', 'PathStack.io', 'PS', '#0f766e', 'Tracking platforms and ELDs', 'Single API for location data from connected assets on any tracking platform.', ['Truck locations from many tracking platforms']),
+  hub('planned', 'loadboardnetwork', 'LoadBoard Network', 'LoadBoard Network', 'LBN', '#1e40af', '123Loadboard, Trucker Path, HaulPay, dexFreight and more', 'Post a load once and it goes to many load boards at the same time.', ['One post to dozens of load boards', 'Carrier calls and replies back in one place']),
   hub('planned', 'zapier', 'Zapier', 'Zapier', 'Z', '#ff4f00', '8,000+ apps, incl. Samsara and Motive', 'Zapier’s MCP server lets HaulPanel’s AI take actions in 8,000+ apps you connect in Zapier.', ['Your Zapier apps as tools for HaulPanel’s AI', 'Triggers: load added, status changed, invoice paid', 'Actions: add a load, add a carrier']),
   hub('planned', 'make', 'Make', 'Make', 'Mk', '#6d00cc', '2,000+ apps', 'Run your Make scenarios from HaulPanel and its AI.', ['Make scenarios as tools for HaulPanel’s AI']),
   hub('planned', 'pipedream', 'Pipedream Connect', 'Pipedream', 'Pd', '#22c55e', '3,000+ APIs', 'One connection layer for 3,000+ APIs with sign-in handled for you — Gmail, QuickBooks, Stripe, Slack and more.', ['Connect accounts with their own sign-in', 'Each connected app becomes a tool for HaulPanel’s AI']),
@@ -205,8 +207,8 @@ const META: Record<string, Partial<App>> = {
   isaac: { domain: 'isaacinstruments.com', via: ELD_HUBS }, eroad: { domain: 'eroad.com', via: ELD_HUBS },
   zonar: { domain: 'zonarsystems.com', via: ELD_HUBS }, teletrac: { domain: 'teletracnavman.com', via: ELD_HUBS },
   aggregator: { domain: 'withterminal.com' },
-  dat: { domain: 'dat.com' }, '123lb': { domain: '123loadboard.com' }, directfreight: { domain: 'directfreight.com' },
-  truckstop: { domain: 'truckstop.com', mcp: 'mcp.truckstop.com' }, truckerpath: { domain: 'truckerpath.com' },
+  dat: { domain: 'dat.com' }, '123lb': { domain: '123loadboard.com', via: ['loadboardnetwork'] }, directfreight: { domain: 'directfreight.com' },
+  truckstop: { domain: 'truckstop.com', mcp: 'mcp.truckstop.com' }, truckerpath: { domain: 'truckerpath.com', via: ['loadboardnetwork'] },
   chrobinson: { domain: 'chrobinson.com' }, uberfreight: { domain: 'uberfreight.com' }, flexport: { domain: 'flexport.com', mcp: 'Flexport MCP' }, shipwell: { domain: 'shipwell.com', mcp: 'Shipwell MCP' },
   otr: { domain: 'otrsolutions.com' }, apex: { domain: 'apexcapitalcorp.com' }, haulpay: { domain: 'haulpay.io' }, rts: { domain: 'rtsfinancial.com' },
   triumph: { domain: 'triumph.io' }, tafs: { domain: 'tafs.com' }, ecapital: { domain: 'ecapital.com' }, denim: { domain: 'denim.com' },
@@ -223,7 +225,7 @@ const META: Record<string, Partial<App>> = {
   twilio: { domain: 'twilio.com', via: SAAS_HUBS }, ringcentral: { domain: 'ringcentral.com', via: SAAS_HUBS },
   docusign: { domain: 'docusign.com', mcp: 'mcp.docusign.com', via: SAAS_HUBS }, boldsign: { domain: 'boldsign.com' }, gdrive: { domain: 'drive.google.com', mcp: 'Google Workspace MCP', via: SAAS_HUBS },
   telegram: { domain: 'telegram.org' },
-  terminal: { domain: 'withterminal.com' }, truckercloud: { domain: 'truckercloud.com' }, axle: { domain: 'axleapi.com' },
+  terminal: { domain: 'withterminal.com' }, truckercloud: { domain: 'truckercloud.com' }, catena: { domain: 'catenatelematics.com' }, pathstack: { domain: 'pathstack.io' }, loadboardnetwork: { domain: 'loadboardnetwork.com' },
   zapier: { domain: 'zapier.com', mcp: 'Zapier MCP' }, make: { domain: 'make.com', mcp: 'Make MCP' }, pipedream: { domain: 'pipedream.com', mcp: 'Pipedream MCP' }, composio: { domain: 'composio.dev', mcp: 'Composio MCP' },
   merge: { domain: 'merge.dev' }, codat: { domain: 'codat.io' }, rutter: { domain: 'rutter.com' }, nylas: { domain: 'nylas.com' },
 }
@@ -236,7 +238,7 @@ export const appById = (id: string) => APPS.find((a) => a.id === id)
 
 
 /** Companies whose logo is in /logos (downloaded once from their site icon; the others show their initials). */
-export const LOGOS = new Set('123lb,apex,atob,axle,bestpass,bill,boldsign,carrierassure,chrobinson,coast,codat,comdata,composio,coverwhale,dat,denim,directfreight,docusign,ecapital,efs,eroad,flexport,fmcsa,freshbooks,gdrive,gmail,greenscreens,haulpay,highway,isaac,luckytruck,make,merge,motive,nextins,otr,outlook,paypal,pcmiler,peoplenet,pipedream,plaid,platformscience,prepass,quickbooks,relay,reliance,rmis,roadflex,rutter,samsara,shipwell,sonar,stripe,tafs,tcs,telegram,teletrac,terminal,tollguru,triumph,truckercloud,truckerpath,truckstop,twilio,uberfreight,verizon,xero,zapier,zonar'.split(','))
+export const LOGOS = new Set('123lb,apex,atob,bestpass,bill,boldsign,carrierassure,catena,chrobinson,coast,codat,comdata,composio,coverwhale,dat,denim,directfreight,docusign,ecapital,efs,eroad,flexport,fmcsa,freshbooks,gdrive,gmail,greenscreens,haulpay,highway,isaac,luckytruck,make,merge,motive,nextins,otr,outlook,pathstack,paypal,pcmiler,peoplenet,pipedream,plaid,platformscience,prepass,quickbooks,relay,reliance,rmis,roadflex,rutter,samsara,shipwell,sonar,stripe,tafs,tcs,telegram,teletrac,terminal,tollguru,triumph,truckercloud,truckerpath,truckstop,twilio,uberfreight,verizon,xero,zapier,zonar'.split(','))
 
 /**
  * Companies with an app on Zapier (zapier.com/apps/<app>, checked 2026-11-25): the owner connects their own Zapier
