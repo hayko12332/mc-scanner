@@ -6,6 +6,7 @@ import { CompanyCheckService } from './crm/company-check.service.js';
 import { InvoiceRemindersService } from './crm/invoice-reminders.service.js';
 import { EldSyncService } from './crm/integrations/eld-sync.service.js';
 import { QboService } from './crm/integrations/qbo.service.js';
+import { McpService } from './crm/integrations/mcp.service.js';
 import { InboxService } from './crm/inbox/inbox.service.js';
 import { InboundController } from './crm/inbox/inbound.controller.js';
 import { CrmController } from './crm/crm.controller.js';
@@ -38,6 +39,6 @@ import { TelegramModule } from './telegram/telegram.module.js';
     TelegramModule,
   ],
   controllers: [HealthController, ExportController, CrmController, InboundController],
-  providers: [KeepAliveService, CompanyCheckService, InvoiceRemindersService, EldSyncService, QboService, InboxService],
+  providers: [KeepAliveService, CompanyCheckService, InvoiceRemindersService, EldSyncService, QboService, InboxService, McpService],
 })
 export class AppModule {}

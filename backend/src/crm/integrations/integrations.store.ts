@@ -28,6 +28,15 @@ const SCHEMA = `
     pushed_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     paid_at       TIMESTAMPTZ
   );
+  -- HaulPanel's OAuth client at each MCP server (registered on the fly, once per return address)
+  CREATE TABLE IF NOT EXISTS crm_mcp_clients (
+    app           TEXT NOT NULL,
+    redirect      TEXT NOT NULL,
+    client_id     TEXT NOT NULL,
+    client_secret TEXT NOT NULL DEFAULT '',
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (app, redirect)
+  );
   -- Vehicles as the ELD reports them; truck_id is the board truck it's linked to (by unit number, or by hand)
   CREATE TABLE IF NOT EXISTS crm_eld_units (
     workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
@@ -83,6 +92,23 @@ export class IntegrationsStore {
     const { rows } = await this.pool.query('SELECT secret FROM crm_integrations WHERE workspace_id = $1 AND provider = $2', [ws, provider]);
     if (!rows[0]) return null;
     try { return open(String(rows[0].secret)); } catch { return null; }
+  }
+
+  async mcpClient(app: string, redirect: string): Promise<{ clientId: string; clientSecret: string } | null> {
+    await this.ready;
+    const { rows } = await this.pool.query('SELECT client_id, client_secret FROM crm_mcp_clients WHERE app = $1 AND redirect = $2', [app, redirect]);
+    if (!rows[0]) return null;
+    let secret = '';
+    try { secret = rows[0].client_secret ? open(String(rows[0].client_secret)) : '' } catch { return null }
+    return { clientId: String(rows[0].client_id), clientSecret: secret };
+  }
+
+  async saveMcpClient(app: string, redirect: string, c: { clientId: string; clientSecret: string }) {
+    await this.ready;
+    await this.pool.query(
+      `INSERT INTO crm_mcp_clients (app, redirect, client_id, client_secret) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (app, redirect) DO UPDATE SET client_id = EXCLUDED.client_id, client_secret = EXCLUDED.client_secret, created_at = now()`,
+      [app, redirect, c.clientId, c.clientSecret ? seal(c.clientSecret) : '']);
   }
 
   /** Rotated tokens are saved right away (the old ones stop working). */

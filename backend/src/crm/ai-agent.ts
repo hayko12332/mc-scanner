@@ -145,7 +145,10 @@ export interface AgentCtx {
   deleteLoad(id: number): Promise<void>;
   deleteFile(id: number): Promise<void>;
   archiveCarrier(id: number): Promise<void>;
+  /** Services the owner connected through their own MCP server (Motive, Stripe, Zapier…), with fresh tokens. */
+  mcp?(): Promise<McpServer[]>;
 }
+export interface McpServer { name: string; url: string; token: string; label: string }
 
 /** Board changes the assistant makes by itself (each can be undone). */
 const AUTO_TOOLS = new Set(['create_load', 'update_load', 'add_carrier', 'attach_document']);
@@ -285,7 +288,7 @@ export function invalidInput(name: string, input: unknown): string | null {
   return null;
 }
 
-const SYSTEM = `You are HaulPanel's assistant inside a dispatch company's TMS board. The TMS adds a <board_summary> to the user's message whenever the board changes (company, today's date, who the user is, carriers, trucks, dispatchers); it is accurate, and the newest one is current. You work the board for the user: find and total their loads, check brokers and carriers with FMCSA, look up companies, get miles and routes on a map, build tables and charts, see where trucks are and their drivers' hours (connected ELD or Telegram), pick the best truck for a load, make broker tracking links, read rate cons and other documents, and do the work (create or change loads, mark paid, add carriers, send invoices to brokers or factoring, email brokers about loads). Before saying you can't do something, check the tools: if a tool does it, use it.
+const SYSTEM = `You are HaulPanel's assistant inside a dispatch company's TMS board. The TMS adds a <board_summary> to the user's message whenever the board changes (company, today's date, who the user is, carriers, trucks, dispatchers); it is accurate, and the newest one is current. You work the board for the user: find and total their loads, check brokers and carriers with FMCSA, look up companies, get miles and routes on a map, build tables and charts, see where trucks are and their drivers' hours (connected ELD or Telegram), pick the best truck for a load, make broker tracking links, read rate cons and other documents, and do the work (create or change loads, mark paid, add carriers, send invoices to brokers or factoring, email brokers about loads). Before saying you can't do something, check the tools: if a tool does it, use it. Tools whose names come from a connected outside service (through its MCP server — e.g. Motive, Geotab, Stripe, PayPal, Square, Zapier) work inside the user's own account there: use them for questions about that account, and say which service the answer came from.
 
 Rules:
 - Get every number from the tools; never guess or invent loads, amounts or companies. If the data isn't there, say what's missing.
@@ -648,19 +651,29 @@ function stripThinking(t: Thread) {
 }
 
 /** The model's turn, streamed: text goes to the screen as it is written. Retries a turn whose tool input didn't parse. */
-async function turn(t: Thread, emit: Emit, signal?: AbortSignal): Promise<Anthropic.Beta.BetaMessage> {
+async function turn(t: Thread, emit: Emit, signal?: AbortSignal, servers: McpServer[] = []): Promise<Anthropic.Beta.BetaMessage> {
   let stripped = false;
+  let mcp = servers;
+  const p = modelParams();
   for (let attempt = 0; ; attempt++) {
+    // Connected services ride along through Claude's MCP connector; their tools run on Anthropic's side.
+    const connector = mcp.length ? {
+      betas: [...(p.betas ?? []), 'mcp-client-2025-11-20'] as Anthropic.Beta.AnthropicBeta[],
+      mcp_servers: mcp.map((m) => ({ type: 'url' as const, url: m.url, name: m.name, authorization_token: m.token })),
+    } : {};
+    const tools: Anthropic.Beta.BetaToolUnion[] = mcp.length ? [...TOOLS, ...mcp.map((m) => ({ type: 'mcp_toolset' as const, mcp_server_name: m.name }))] : TOOLS;
     const stream = api().beta.messages.stream({
-      ...modelParams(), max_tokens: 8000, output_config: { effort: 'medium' },
+      ...p, ...connector, max_tokens: 8000, output_config: { effort: 'medium' },
       system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
-      tools: TOOLS, messages: t.messages,
+      tools, messages: t.messages,
     }, { signal });
     stream.on('text', (delta) => emit({ type: 'text', delta }));
     try {
       return await stream.finalMessage();
     } catch (e) {
       if (!stripped && !signal?.aborted && boundElsewhere(e)) { stripThinking(t); stripped = true; attempt--; continue; }
+      // A connected service that is down (or no longer accepts its sign-in) must not break the assistant: answer without it.
+      if (mcp.length && !signal?.aborted && e instanceof Error && 'status' in e && Number(e.status) >= 400 && Number(e.status) < 500 && /mcp/i.test(e.message)) { mcp = []; attempt--; continue; }
       // Only a tool input that could not be parsed is worth asking again; API errors and a stop go up.
       if (signal?.aborted || e instanceof Error && 'status' in e || attempt >= 2) throw e;
     }
@@ -682,13 +695,14 @@ async function loop(ctx: AgentCtx, t: Thread, emit: Emit, signal?: AbortSignal) 
     finish();
     if (!item.text && !item.steps!.length) item.text = 'Stopped.';
   };
+  const mcp = (await ctx.mcp?.().catch(() => [] as McpServer[])) ?? []
   for (let step = 0; step < 12; step++) {
     if (signal?.aborted) return stopped();
     emit({ type: 'thinking' });
     let r: Anthropic.Beta.BetaMessage;
     try {
       if (texts.length) emit({ type: 'text', delta: '\n\n' });
-      r = await turn(t, emit, signal);
+      r = await turn(t, emit, signal, mcp);
     } catch (e) {
       if (signal?.aborted) {
         // Keep the conversation valid for the next message: the stopped turn becomes a short assistant reply.
@@ -699,8 +713,19 @@ async function loop(ctx: AgentCtx, t: Thread, emit: Emit, signal?: AbortSignal) 
       throw friendly(e);
     }
     t.messages.push({ role: 'assistant', content: r.content });
+    // What the AI did in connected services shows as steps, like the board's own tools.
+    for (const b of r.content) {
+      if (b.type !== 'mcp_tool_use') continue
+      const res = r.content.find((x): x is Anthropic.Beta.BetaMCPToolResultBlock => x.type === 'mcp_tool_result' && x.tool_use_id === b.id)
+      const label = `${mcp.find((m) => m.name === b.server_name)?.label ?? b.server_name}: ${b.name.replace(/[_-]+/g, ' ')}`
+      const s: Step = { label, state: res?.is_error ? 'error' : 'done' }
+      item.steps!.push(s)
+      emit({ type: 'step', id: b.id, ...s })
+    }
     const text = r.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('\n').trim();
     if (text) texts.push(text);
+    // A long server-side tool run can pause the turn: let the model continue.
+    if (r.stop_reason === 'pause_turn') continue
     if (r.stop_reason === 'refusal') {
       texts.push('I can’t help with that one — ask me about your loads, money, carriers, trucks or dispatchers.');
       return finish();

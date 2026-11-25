@@ -96,7 +96,11 @@ export interface EldUnit {
   lat: number | null; lon: number | null; at: string | null; speedMph: number | null; heading?: number | null; address: string; driver: string; hos: EldHos | null
 }
 export interface Connection { provider: string; region: string; label: string; status: 'ok' | 'error'; error: string; connectedAt: string; syncedAt: string | null; invoices?: number }
-export interface Integrations { ready: boolean; providers: EldProvider[]; quickbooks: boolean; connections: Connection[]; units: EldUnit[] }
+export interface Integrations {
+  ready: boolean; providers: EldProvider[]; quickbooks: boolean; connections: Connection[]; units: EldUnit[]
+  /** Services the owner can connect for the AI assistant through their own MCP server. */
+  mcp?: string[]
+}
 /** "11h00" from minutes; '' when unknown. */
 export const hoursLeft = (min: number | null | undefined) => (min == null ? '' : `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`)
 export const dutyLabel = (s: string) => ({ off_duty: 'Off duty', sleeper: 'Sleeper', driving: 'Driving', on_duty: 'On duty', yard_move: 'Yard move', personal_conveyance: 'Personal conveyance' } as Record<string, string>)[s] ?? ''
@@ -412,6 +416,8 @@ export const crm = {
   qboConnect: () => call<{ url: string }>('POST', '/integrations/quickbooks/connect'),
   qboSync: () => call<{ ok: true; pushed: number; paid: number }>('POST', '/integrations/quickbooks/sync'),
   disconnect: (provider: string) => call<{ ok: true }>('DELETE', `/integrations/${provider}`),
+  mcpConnect: (app: string) => call<{ url: string }>('POST', `/integrations/mcp/${app}/connect`),
+  mcpTools: (app: string) => call<{ tools: { name: string; description: string }[] }>('GET', `/integrations/mcp/${app}/tools`),
   linkUnit: (provider: EldProvider, vehicleId: string, v: { truckId?: number | null; create?: boolean }) => call<{ ok: true; truckId: number | null }>('PATCH', `/integrations/eld/${provider}/units/${encodeURIComponent(vehicleId)}`, v),
   sendFactoring: (loadId: number, v: Omit<InvoiceSend, 'remind'> & { factoring?: string }) => call<{ ok: true; number: string }>('POST', `/loads/${loadId}/factoring`, v),
   setInvoiceReminders: (loadId: number, remind: boolean) => call('PATCH', `/loads/${loadId}/invoice`, { remind }),

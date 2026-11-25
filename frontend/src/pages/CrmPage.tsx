@@ -203,6 +203,8 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
   }, [reload])
   // With AI on, the AI is the main screen: the board opens on it (once; the person can switch sections after).
   const openedOnAi = useRef(false)
+  /** The integration to open when a service sends the owner back after connecting. */
+  const [igApp, setIgApp] = useState<string | null>(null)
   useEffect(() => {
     if (config?.ai && !demo && !openedOnAi.current) { openedOnAi.current = true; setTab('ai') }
   }, [config?.ai, demo])
@@ -212,6 +214,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
     if (msg == null) return
     openedOnAi.current = true
     setTab('integrations')
+    setIgApp(hashParams().get('app'))
     if (msg) toast(msg)
     history.replaceState(null, '', '#/crm')
   }, [toast])
@@ -452,7 +455,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
       )}
       {!tool && tab === 'statements' && <StatementsView state={state} toast={toast} />}
       {!tool && tab === 'alerts' && !demo && config?.loadAlerts && <LoadAlertsView owner={state.me?.role !== 'dispatcher'} toast={toast} changed={() => void reload()} />}
-      {!tool && tab === 'integrations' && !demo && <IntegrationsView state={state} owner={state.me?.role !== 'dispatcher'} changed={() => void reload()} toast={toast} openTab={(t) => { setTab(t); scrollTo(0, 0) }} />}
+      {!tool && tab === 'integrations' && !demo && <IntegrationsView state={state} owner={state.me?.role !== 'dispatcher'} changed={() => void reload()} toast={toast} openTab={(t) => { setTab(t); scrollTo(0, 0) }} initialApp={igApp} />}
       {!tool && tab === 'trucks' && (
         <TrucksView
           state={state}

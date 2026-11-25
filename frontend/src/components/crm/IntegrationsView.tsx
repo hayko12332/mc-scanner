@@ -46,7 +46,18 @@ const ELD: Record<EldProvider, { name: string; what: string; field: string; step
 }
 
 
+const mcpConn = (app: App, data: Integrations) => data.connections.find((c) => c.provider === `mcp:${app.id}`)
+const mcpReady = (app: App, data: Integrations) => !!data.mcp?.includes(app.id)
+
 function statusOf(app: App, data: Integrations, state: CrmState): Status {
+  const mc = mcpConn(app, data)
+  const direct = directStatus(app, data, state)
+  if (mc && direct.tone !== 'ok') return mc.status === 'ok' ? { label: 'Connected', tone: 'ok' } : { label: 'Needs attention', tone: 'bad' }
+  if (mcpReady(app, data) && !['ok', 'bad', 'built'].includes(direct.tone) && direct.label !== 'Available') return { label: 'Available', tone: 'muted' }
+  return direct
+}
+
+function directStatus(app: App, data: Integrations, state: CrmState): Status {
   if (app.kind === 'eld') {
     const conn = data.connections.find((c) => c.provider === app.provider)
     if (conn) return conn.status === 'ok' ? { label: 'Connected', tone: 'ok' } : { label: 'Needs attention', tone: 'bad' }
@@ -61,7 +72,9 @@ function statusOf(app: App, data: Integrations, state: CrmState): Status {
   if (app.kind === 'telegram') return (state.drivers?.length ?? 0) > 0 ? { label: `${state.drivers!.length} ${state.drivers!.length === 1 ? 'driver' : 'drivers'}`, tone: 'ok' } : { label: 'Built in', tone: 'built' }
   return app.kind === 'requested' ? { label: 'Access requested', tone: 'review' } : { label: 'Planned', tone: 'muted' }
 }
-const isLive = (app: App, data: Integrations) =>
+const isLive = (app: App, data: Integrations) => mcpReady(app, data) || directLive(app, data)
+/** Works without MCP: built in, or the direct connection is switched on. */
+const directLive = (app: App, data: Integrations) =>
   app.kind === 'factoring' || app.kind === 'telegram' || app.kind === 'fmcsa' || (app.kind === 'eld' && data.providers.includes(app.provider!)) || (app.kind === 'quickbooks' && data.quickbooks)
 const rank = (app: App, data: Integrations, state: CrmState) => {
   const t = statusOf(app, data, state).tone
@@ -73,16 +86,19 @@ const Tile = ({ app, big }: { app: App; big?: boolean }) => LOGOS.has(app.id)
   ? <span className={`ig-tile logo ${big ? 'big' : ''}`} aria-hidden="true"><img src={`/logos/${app.id}.png`} alt="" loading="lazy" /></span>
   : <span className={`ig-tile ${big ? 'big' : ''}`} style={{ background: app.tint }} aria-hidden="true">{app.tile}</span>
 
-export function IntegrationsView({ state, owner, changed, toast, openTab }: {
+export function IntegrationsView({ state, owner, changed, toast, openTab, initialApp }: {
   state: CrmState; owner: boolean; changed: () => void; toast: (m: string) => void
-  /** Opens another section of the board (Trucks, Loads, the fleet map). */
-  openTab?: (tab: 'trucks' | 'loads' | 'map') => void
+  /** Opens another section of the board (Trucks, Loads, the fleet map, the AI assistant). */
+  openTab?: (tab: 'trucks' | 'loads' | 'map' | 'ai') => void
+  /** Open this company's panel first (back from connecting it). */
+  initialApp?: string | null
 }) {
   const [data, setData] = useState<Integrations | null>(null)
   const [err, setErr] = useState('')
   const [tab, setTab] = useState<Tab>('all')
   const [q, setQ] = useState('')
-  const [open, setOpen] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(initialApp ?? null)
+  useEffect(() => { if (initialApp) setOpen(initialApp) }, [initialApp])
   const [wanted, setWanted] = useState(readWanted)
   const load = useCallback(() => crm.integrations().then(setData, (e: Error) => setErr(e.message)), [])
   useEffect(() => { void load() }, [load])
@@ -98,7 +114,7 @@ export function IntegrationsView({ state, owner, changed, toast, openTab }: {
   if (err) return <p className="w-msg error">{err}</p>
   if (!data) return <IntegrationsSkeleton />
 
-  const connected = APPS.filter((a) => (a.kind === 'eld' || a.kind === 'quickbooks') && ['ok', 'bad'].includes(statusOf(a, data, state).tone))
+  const connected = APPS.filter((a) => (a.kind === 'eld' || a.kind === 'quickbooks' || !!mcpConn(a, data)) && ['ok', 'bad'].includes(statusOf(a, data, state).tone))
   const needle = q.trim().toLowerCase()
   const match = (a: App) => !needle || `${a.name} ${a.maker} ${a.blurb} ${a.reaches ?? ''}`.toLowerCase().includes(needle)
   const inTab = (a: App, t: Tab) => t === 'all' || (t === 'mcp' ? !!a.mcp : a.category === t)
@@ -133,7 +149,7 @@ export function IntegrationsView({ state, owner, changed, toast, openTab }: {
                 <button key={a.id} className="ig-conn-row" onClick={() => setOpen(a.id)}>
                   <Tile app={a} />
                   <span className="ig-conn-main"><b>{a.name}</b>
-                    <small>{a.kind === 'eld' ? `${units.length} ${units.length === 1 ? 'vehicle' : 'vehicles'} · ${units.filter((u) => u.truckId).length} matched` : `${conn?.invoices ?? 0} invoices`}{conn?.syncedAt ? ` · synced ${ago(conn.syncedAt)}` : ''}</small>
+                    <small>{mcpConn(a, data) && !conn ? `AI assistant connected · since ${ago(mcpConn(a, data)!.connectedAt)}` : a.kind === 'eld' ? `${units.length} ${units.length === 1 ? 'vehicle' : 'vehicles'} · ${units.filter((u) => u.truckId).length} matched` : `${conn?.invoices ?? 0} invoices`}{conn?.syncedAt ? ` · synced ${ago(conn.syncedAt)}` : ''}</small>
                   </span>
                   <em className={`ig-pill ${st.tone}`}><i />{st.label}</em>
                   <span className="ig-manage">Manage →</span>
@@ -183,7 +199,7 @@ export function IntegrationsView({ state, owner, changed, toast, openTab }: {
 }
 
 function AppCard({ app, st, live, wanted, onOpen }: { app: App; st: Status; live: boolean; wanted: boolean; onOpen: () => void }) {
-  const cta = st.tone === 'ok' || st.tone === 'bad' ? 'Manage' : live ? (app.kind === 'eld' || app.kind === 'quickbooks' ? 'Connect' : 'Set up') : 'Details'
+  const cta = st.tone === 'ok' || st.tone === 'bad' ? 'Manage' : live ? (app.kind === 'eld' || app.kind === 'quickbooks' || app.mcp ? 'Connect' : 'Set up') : 'Details'
   return (
     <button className={`ig-app ${live ? '' : 'soon'}`} onClick={onOpen}>
       <span className="ig-app-top">
@@ -208,7 +224,7 @@ function AppCard({ app, st, live, wanted, onOpen }: { app: App; st: Status; live
 /** The side panel of one company: about, the ways to connect, then setup or the live connection, and access. */
 function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, want, openApp, close }: {
   app: App; data: Integrations; state: CrmState; owner: boolean; refresh: () => void; toast: (m: string) => void
-  openTab?: (tab: 'trucks' | 'loads' | 'map') => void; wanted: boolean; want: () => void; openApp: (id: string) => void; close: () => void
+  openTab?: (tab: 'trucks' | 'loads' | 'map' | 'ai') => void; wanted: boolean; want: () => void; openApp: (id: string) => void; close: () => void
 }) {
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
@@ -219,7 +235,10 @@ function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, wa
   const live = isLive(app, data)
   const hubs = (app.via ?? []).map(appById).filter(Boolean) as App[]
   const reached = app.category === 'hubs' ? APPS.filter((a) => a.via?.includes(app.id)) : []
-  const direct = live ? (st.tone === 'ok' ? 'Connected' : st.tone === 'bad' ? 'Needs attention' : 'Works now') : app.kind === 'requested' || app.kind === 'eld' ? 'Access requested' : 'Planned'
+  const dLive = directLive(app, data)
+  const dSt = directStatus(app, data, state)
+  const direct = dLive ? (dSt.tone === 'ok' ? 'Connected' : dSt.tone === 'bad' ? 'Needs attention' : 'Works now') : app.kind === 'requested' || app.kind === 'eld' ? 'Access requested' : 'Planned'
+  const directTone = dLive ? (dSt.tone === 'muted' ? 'built' : dSt.tone) : app.kind === 'requested' || app.kind === 'eld' ? 'review' : 'muted'
   return (
     <div className="ld-backdrop" onClick={close}>
       <aside className="ld ig-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={app.name}>
@@ -242,6 +261,7 @@ function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, wa
             </div>
           )}
           {app.kind === 'fmcsa' && <div className="ig-box"><b>Always on</b><p className="ig-muted">Type an MC on a load or a carrier and the check runs by itself. New MCs every day are in <b>New MC leads</b>.</p></div>}
+          {mcpReady(app, data) && <McpConnect app={app} data={data} owner={owner} refresh={refresh} toast={toast} askAi={openTab ? () => { close(); openTab('ai') } : undefined} />}
           {!live && app.pending && (
             <div className="ig-box ig-wait">
               <b>Not available yet</b>
@@ -255,9 +275,9 @@ function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, wa
           <section className="ig-sub">
             <h3>Ways to connect</h3>
             <ul className="ig-ways">
-              {app.category !== 'hubs' && <li><Icon name="plug" size={16} /><span><b>Direct connection</b><small>{app.kind === 'eld' ? 'API token from your account' : app.kind === 'quickbooks' ? 'Sign in with Intuit' : live ? 'Built into HaulPanel' : 'Their API, with your permission'}</small></span><em className={`ig-pill ${live ? (st.tone === 'muted' ? 'built' : st.tone) : st.tone}`}><i />{direct}</em></li>}
+              {app.category !== 'hubs' && <li><Icon name="plug" size={16} /><span><b>Direct connection</b><small>{app.kind === 'eld' ? 'API token from your account' : app.kind === 'quickbooks' ? 'Sign in with Intuit' : dLive ? 'Built into HaulPanel' : 'Their API, with your permission'}</small></span><em className={`ig-pill ${directTone}`}><i />{direct}</em></li>}
               {app.category === 'hubs' && <li><Icon name="plug" size={16} /><span><b>One connection</b><small>Reaches: {app.reaches}</small></span><em className={`ig-pill ${st.tone}`}><i />{st.label}</em></li>}
-              {app.mcp && <li><Icon name="bot" size={16} /><span><b>AI assistant · MCP</b><small>{app.name}’s own MCP server{app.mcp.includes('.') ? ` (${app.mcp})` : ''} — HaulPanel’s AI works in your account after you sign in</small></span><em className="ig-pill muted"><i />Planned</em></li>}
+              {app.mcp && <li><Icon name="bot" size={16} /><span><b>AI assistant · MCP</b><small>{app.name}’s own MCP server{app.mcp.includes('.') ? ` (${app.mcp})` : ''} — HaulPanel’s AI works in your account after you sign in</small></span>{mcpConn(app, data) ? <em className="ig-pill ok"><i />Connected</em> : mcpReady(app, data) ? <em className="ig-pill built"><i />Ready to connect</em> : <em className="ig-pill muted"><i />Planned</em>}</li>}
               {hubs.length > 0 && (
                 <li><Icon name="refresh" size={16} /><span><b>Through a connect hub</b>
                   <small className="ig-hubs">{hubs.map((h) => <button key={h.id} className="ig-chip" onClick={() => openApp(h.id)}><Tile app={h} />{h.name}</button>)}</small></span>
@@ -284,6 +304,62 @@ function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, wa
           </section>
         </div>
       </aside>
+    </div>
+  )
+}
+
+/** Connecting a service's own MCP server for the AI assistant: sign in there, then the AI can use its tools. */
+function McpConnect({ app, data, owner, refresh, toast, askAi }: {
+  app: App; data: Integrations; owner: boolean; refresh: () => void; toast: (m: string) => void; askAi?: () => void
+}) {
+  const conn = mcpConn(app, data)
+  const [busy, setBusy] = useState(false)
+  const [tools, setTools] = useState<{ name: string; description: string }[] | null>(null)
+  const [err, setErr] = useState('')
+  useEffect(() => {
+    if (!conn) return
+    let live = true
+    crm.mcpTools(app.id).then((r) => { if (live) setTools(r.tools) }, (e: Error) => { if (live) setErr(e.message) })
+    return () => { live = false }
+  }, [app.id, conn?.connectedAt]) // eslint-disable-line react-hooks/exhaustive-deps
+  const connect = async () => {
+    setBusy(true)
+    try { location.href = (await crm.mcpConnect(app.id)).url } catch (e) { toast((e as Error).message); setBusy(false) }
+  }
+  const disconnect = async () => {
+    if (!confirm(`Disconnect ${app.name}? The AI assistant stops using it.`)) return
+    setBusy(true)
+    try { await crm.disconnect(`mcp:${app.id}`); refresh() } catch (e) { toast((e as Error).message) } finally { setBusy(false) }
+  }
+  if (!conn) return (
+    <div className="ig-box">
+      <b>Connect {app.name} to the AI assistant</b>
+      <p className="ig-muted">You sign in on {app.name}’s own page and choose what to allow. Then ask the assistant about your {app.name} account in plain words. You can disconnect any time.</p>
+      <div className="ig-actions">
+        <button className="primary" disabled={busy || !owner || !data.ready} onClick={() => void connect()}>{busy ? 'Opening…' : `Connect ${app.name}`}</button>
+      </div>
+      {!owner && <small className="ig-muted">Only the owner of the board can connect it.</small>}
+    </div>
+  )
+  return (
+    <div className="ig-box">
+      <div className="ig-stats">
+        <span><em>AI assistant</em><b>{conn.status === 'ok' ? 'Connected' : 'Needs attention'}</b></span>
+        <span><em>Tools</em><b>{tools ? tools.length : err ? '—' : '…'}</b></span>
+        <span><em>Since</em><b>{ago(conn.connectedAt)}</b></span>
+      </div>
+      {(conn.status === 'error' || err) && <p className="ig-error">{conn.error || err}</p>}
+      <div className="ig-actions">
+        {askAi && <button className="primary" onClick={askAi}>Ask the AI</button>}
+        {(conn.status === 'error' || err) && owner && <button onClick={() => void connect()} disabled={busy}>Connect again</button>}
+        {owner && <button className="ghost danger" disabled={busy} onClick={() => void disconnect()}>Disconnect</button>}
+      </div>
+      {tools && tools.length > 0 && (
+        <details className="ig-tools">
+          <summary>What the AI can do in {app.name} ({tools.length})</summary>
+          <ul>{tools.slice(0, 80).map((t) => <li key={t.name}><code>{t.name}</code>{t.description ? ` — ${t.description}` : ''}</li>)}</ul>
+        </details>
+      )}
     </div>
   )
 }

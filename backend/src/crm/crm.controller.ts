@@ -36,6 +36,8 @@ import { emailOk as validEmail } from './password.js';
 import { PlacesService } from './places.js';
 import { planImport, type ImportFile, type ImportPlan } from './ai-import.js';
 import { CrmActivityInterceptor, type ScopedRequest } from './activity.interceptor.js';
+import { McpService } from './integrations/mcp.service.js';
+import { McpError } from './integrations/mcp.js';
 
 const COOKIE = 'lh_crm';
 const COMPANY_TYPES = ['dispatch', 'carrier', 'broker'];
@@ -79,7 +81,7 @@ export class CrmController {
   /** AI import previews waiting for "Import" (an hour at most). */
   private readonly importPlans = new Map<string, { at: number; plan: ImportPlan }>();
 
-  constructor(private readonly checks: CompanyCheckService, private readonly telegram: TelegramService, private readonly lookup: LookupService, private readonly eld: EldSyncService, private readonly qbo: QboService, private readonly inbox: InboxService) {
+  constructor(private readonly checks: CompanyCheckService, private readonly telegram: TelegramService, private readonly lookup: LookupService, private readonly eld: EldSyncService, private readonly qbo: QboService, private readonly inbox: InboxService, private readonly mcp: McpService) {
     const pool = db();
     this.store = pool ? new CrmStore(pool) : null;
   }
@@ -487,6 +489,7 @@ export class CrmController {
       deleteFile: async (id) => { const f = await this.store!.file(s.ws, id); if (!f) return; await this.loadAccess(s, f.loadId); await this.store!.deleteFile(s.ws, id); },
       deleteLoad: async (id) => { await this.loadAccess(s, id); await this.store!.deleteLoad(s.ws, id); },
       archiveCarrier: async (id) => { if (s.role !== 'owner') throw new Error('Only the owner can remove carriers'); await this.store!.archiveCarrier(s.ws, id); },
+      mcp: () => this.mcp.forAi(s.ws),
     };
   }
 
@@ -591,7 +594,48 @@ export class CrmController {
       quickbooks: this.qbo.enabled(),
       connections: store ? await store.connections(ws) : [],
       units: store ? await store.units(ws) : [],
+      /** Services the owner can connect for the AI assistant through their own MCP server. */
+      mcp: this.mcp.enabled() ? this.mcp.apps().map((a) => a.id) : [],
     };
+  }
+
+  /** Starts connecting a service's MCP server: the page goes to the service's sign-in, which calls back below. */
+  @Post('integrations/mcp/:app/connect')
+  @HttpCode(200)
+  async mcpConnect(@Req() req: Request, @Param('app') app: string) {
+    const { ws } = await this.owner(req);
+    if (!this.mcp.enabled()) throw new ServiceUnavailableException('Integrations are not switched on yet');
+    try {
+      return { url: await this.mcp.start(ws, text(app, 40)) };
+    } catch (e) {
+      if (e instanceof McpError) throw new BadRequestException(e.message);
+      throw e;
+    }
+  }
+
+  @Get('integrations/mcp/callback')
+  async mcpCallback(@Req() req: Request, @Res() res: Response, @Query('code') code = '', @Query('state') state = '', @Query('error') error = '', @Query('error_description') desc = '') {
+    const back = (msg: string, app = '') => res.redirect(302, `/#/crm?integrations=${encodeURIComponent(msg)}${app ? `&app=${encodeURIComponent(app)}` : ''}`);
+    if (error) return back(error === 'access_denied' ? 'Not connected — the sign-in was cancelled' : `Not connected: ${desc || error}`);
+    try {
+      const { ws } = await this.owner(req);
+      const r = await this.mcp.finish(text(state, 100), text(code, 2000), ws);
+      return back(`${r.app.name} connected${r.tools ? ` — ${r.tools} tools for the AI assistant` : ''}`, r.app.id);
+    } catch (e) {
+      return back((e as Error).message);
+    }
+  }
+
+  /** What the AI assistant can do in a connected service now. */
+  @Get('integrations/mcp/:app/tools')
+  async mcpTools(@Req() req: Request, @Param('app') app: string) {
+    const { ws } = await this.auth(req);
+    try {
+      return { tools: await this.mcp.tools(ws, text(app, 40)) };
+    } catch (e) {
+      if (e instanceof McpError) throw new BadRequestException(e.message);
+      throw e;
+    }
   }
 
   /** Connects an ELD with the carrier's own token: it's checked against the ELD right away and the fleet is read. */
@@ -637,6 +681,7 @@ export class CrmController {
   async disconnect(@Req() req: Request, @Param('provider') provider: string) {
     const { ws } = await this.owner(req);
     if (provider === 'quickbooks') await this.qbo.disconnect(ws);
+    else if (/^mcp:[a-z0-9]{2,30}$/.test(provider) && this.eld.store) await this.eld.store.disconnect(ws, provider);
     else await this.eld.store!.disconnect(ws, this.eldProvider(provider));
     return { ok: true };
   }
