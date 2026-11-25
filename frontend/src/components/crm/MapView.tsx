@@ -167,8 +167,8 @@ export interface TruckLook { color: string; heading: number | null; moving: bool
 /** A truck on the map: a colored disc (status) with an arrow pointing where it drives, and its unit number under it. */
 export function truckMarkerEl(): HTMLDivElement {
   const el = document.createElement('div')
-  el.className = 'tm'
-  el.innerHTML = '<div class="tm-dot"><svg class="tm-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 19.5 20.5 12 16.2 4.5 20.5Z"/></svg><i class="tm-stop"></i></div><span class="tm-tag"></span>'
+  el.className = 'fm'
+  el.innerHTML = '<div class="fm-dot"><svg class="fm-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 19.5 20.5 12 16.2 4.5 20.5Z"/></svg><i class="fm-stop"></i></div><span class="fm-tag"></span>'
   return el
 }
 
@@ -178,7 +178,7 @@ export function setTruckMarker(el: HTMLElement, t: TruckLook) {
   el.classList.toggle('moving', t.moving && t.heading != null)
   el.classList.toggle('sel', !!t.selected)
   el.classList.toggle('stale', !!t.stale)
-  el.querySelector('.tm-tag')!.textContent = t.label
+  el.querySelector('.fm-tag')!.textContent = t.label
   el.setAttribute('aria-label', t.label)
 }
 

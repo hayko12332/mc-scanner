@@ -2830,16 +2830,16 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 }
 
 /* A truck on a map: status color, an arrow for the heading while driving, the unit number under it */
-.tm { position: relative; width: 30px; height: 30px; cursor: pointer; }
-.tm-dot { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--c); border: 2.5px solid #fff; box-shadow: 0 1px 5px rgba(15, 23, 42, .45); box-sizing: border-box; transition: transform .15s; }
-.tm-arrow { display: none; width: 15px; height: 15px; fill: #fff; transform: rotate(var(--h)); }
-.tm-stop { display: block; width: 8px; height: 8px; border-radius: 2px; background: #fff; }
-.tm.moving .tm-arrow { display: block; }
-.tm.moving .tm-stop { display: none; }
-.tm-tag { position: absolute; top: 33px; left: 50%; transform: translateX(-50%); padding: 1px 7px; border-radius: 6px; background: #0f172a; color: #fff; font: 600 11.5px/1.5 Inter, system-ui, sans-serif; white-space: nowrap; box-shadow: 0 1px 3px rgba(15, 23, 42, .35); pointer-events: none; }
-.tm.sel .tm-dot { transform: scale(1.22); box-shadow: 0 0 0 5px color-mix(in srgb, var(--c) 30%, transparent), 0 2px 8px rgba(15, 23, 42, .5); }
-.tm.sel .tm-tag { background: var(--c); }
-.tm.stale .tm-dot { opacity: .6; }
+.fm { position: relative; width: 30px; height: 30px; cursor: pointer; }
+.fm-dot { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--c); border: 2.5px solid #fff; box-shadow: 0 1px 5px rgba(15, 23, 42, .45); box-sizing: border-box; transition: transform .15s; }
+.fm-arrow { display: none; width: 15px; height: 15px; fill: #fff; transform: rotate(var(--h)); }
+.fm-stop { display: block; width: 8px; height: 8px; border-radius: 2px; background: #fff; }
+.fm.moving .fm-arrow { display: block; }
+.fm.moving .fm-stop { display: none; }
+.fm-tag { position: absolute; top: 33px; left: 50%; transform: translateX(-50%); padding: 1px 7px; border-radius: 6px; background: #0f172a; color: #fff; font: 600 11.5px/1.5 Inter, system-ui, sans-serif; white-space: nowrap; box-shadow: 0 1px 3px rgba(15, 23, 42, .35); pointer-events: none; }
+.fm.sel .fm-dot { transform: scale(1.22); box-shadow: 0 0 0 5px color-mix(in srgb, var(--c) 30%, transparent), 0 2px 8px rgba(15, 23, 42, .5); }
+.fm.sel .fm-tag { background: var(--c); }
+.fm.stale .fm-dot { opacity: .6; }
 .tk-live { display: inline-block; margin-right: 4px; padding: 1px 8px; border-radius: 99px; background: #fef3c7; color: #92400e; font-weight: 600; font-size: 12.5px; }
 .tk-live.on { background: #dcfce7; color: #166534; }
 @media (max-width: 600px) { .rm-map { height: 180px; } }
