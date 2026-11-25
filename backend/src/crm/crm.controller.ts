@@ -885,6 +885,13 @@ export class CrmController {
   }
 
   /** A lane for the map in the load panel: both ends, the road line, miles and driving hours. Public like miles. */
+  /** Where one truck of this board has been in the last hours (the breadcrumb trail on the fleet map). */
+  @Get('trucks/:id/trail')
+  async trail(@Req() req: Request, @Param('id', ParseIntPipe) id: number, @Query('hours') hours = '24') {
+    const s = await this.auth(req);
+    return { points: await this.store!.trail(s.ws, id, Number(hours) || 24) };
+  }
+
   @Get('lane')
   async lane(@Req() req: Request, @Query('from') from = '', @Query('to') to = '') {
     if (!from.trim() || !to.trim() || from.length > 200 || to.length > 200) throw new BadRequestException('Enter both places');

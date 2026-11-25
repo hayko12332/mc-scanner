@@ -2,18 +2,9 @@ import { useEffect, useState } from 'react'
 import { TrackMap, hoursText } from '../components/crm/MapView'
 import { place } from '../components/crm/LoadsTable'
 import { crm, shortDate, type TrackingView } from '../lib/crm'
+import { agoText, clockAt, compass, milesBetween, splitRoute, type LngLat } from '../lib/geo'
 
 const STEPS = [['booked', 'Booked'], ['in_transit', 'In transit'], ['delivered', 'Delivered']] as const
-
-const ago = (iso: string) => {
-  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60_000)
-  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`
-}
-const miles = (a: [number, number], b: [number, number]) => {
-  const r = (d: number) => (d * Math.PI) / 180
-  const h = Math.sin(r(b[1] - a[1]) / 2) ** 2 + Math.cos(r(a[1])) * Math.cos(r(b[1])) * Math.sin(r(b[0] - a[0]) / 2) ** 2
-  return 2 * 3958.8 * Math.asin(Math.sqrt(h))
-}
 
 /**
  * The page a dispatcher sends to the broker (#/track/<token>): where the truck is on the lane and the load's status.
@@ -32,9 +23,17 @@ export function TrackPage({ token }: { token: string }) {
 
   const step = t ? Math.max(0, STEPS.findIndex(([s]) => s === t.status)) : 0
   const done = t && ['delivered', 'invoiced', 'paid'].includes(t.status)
-  const truck = t?.position ? [t.position.lon, t.position.lat] as [number, number] : null
-  // Miles left: straight line from the truck to the delivery × 1.2 (roads), at ~50 mph with stops.
-  const left = truck && t?.lane && !done ? Math.round(miles(truck, t.lane.b) * 1.2) : null
+  const pos = t?.position && !done ? t.position : null
+  const at: LngLat | null = pos ? [pos.lon, pos.lat] : null
+  // Miles and hours left: along the road from where the truck is (plus the way back to the road if it is off it).
+  const left = (() => {
+    if (!at || !t?.lane || t.status !== 'in_transit') return null
+    const s = splitRoute(t.lane.line, at)
+    return { miles: Math.round(t.lane.miles * s.leftShare + s.offMiles * 1.2), hours: t.lane.hours * s.leftShare + (s.offMiles * 1.2) / 50 }
+  })()
+  const moving = pos?.speedMph != null ? pos.speedMph > 3 : null
+  const trail = (t?.trail ?? []).map((p) => [p[0], p[1]] as LngLat)
+  const toPickup = at && t?.lane && t.status === 'booked' ? Math.round(milesBetween(at, t.lane.a) * 1.2) : null
 
   return (
     <div className="work theme-light tk">
@@ -55,11 +54,17 @@ export function TrackPage({ token }: { token: string }) {
             </ol>
             <p className="tk-where">
               {done ? '✅ Delivered.'
-                : t.position ? <>📍 Truck location updated <b>{ago(t.position.at)}</b>{t.position.live ? ' · live' : ''}{left != null ? <> · about <b>{left.toLocaleString('en-US')} mi</b> to delivery (~{hoursText(left / 50)} driving)</> : null}</>
-                  : 'The driver has not shared a location yet — this page updates by itself.'}
+                : pos ? <>
+                    <span className={`tk-live ${moving ? 'on' : ''}`}>{moving ? `Moving${pos.speedMph ? ` · ${Math.round(pos.speedMph)} mph` : ''}${pos.heading != null ? ` ${compass(pos.heading)}` : ''}` : moving === false ? 'Stopped' : 'Location'}</span>
+                    {' '}updated <b>{agoText(pos.at)}</b>{pos.live ? ' · live' : ''}
+                    {left && <> · <b>{left.miles.toLocaleString('en-US')} mi</b> to delivery · ETA about <b>{clockAt(Date.now() + left.hours * 3600_000)}</b> (~{hoursText(left.hours)} driving)</>}
+                    {toPickup != null && <> · about <b>{toPickup.toLocaleString('en-US')} mi</b> to pickup</>}
+                  </>
+                  : 'The truck’s location is not shared yet — this page updates by itself.'}
             </p>
           </section>
-          <TrackMap lane={t.lane} truck={done ? null : truck} label={t.truck ? `#${t.truck}` : 'Truck'} />
+          <TrackMap lane={t.lane} trail={trail}
+            truck={at ? { at, color: moving ? '#16a34a' : '#d97706', heading: pos?.heading ?? null, moving: !!moving, label: t.truck ? `#${t.truck}` : 'Truck' } : null} />
           <p className="tk-foot">This page refreshes every minute. Powered by <a href="https://haulpanel.com">HaulPanel</a> — the TMS for dispatch companies.</p>
         </main>
       )}

@@ -179,6 +179,39 @@ async function motive(c: EldCredential, fetcher: Fetch): Promise<{ units: EldUni
   return { units, hos };
 }
 
+export interface EldPoint { lat: number; lon: number; at: string; speedMph: number | null }
+
+/**
+ * Where these vehicles drove between two times, at most one point per 2 minutes per vehicle — so the map has a
+ * trail right after a truck is connected. Samsara only (vehicle stats history, the same "vehicle statistics" read
+ * permission the map already needs); Motive gets its trail from our own syncs.
+ */
+export async function readHistory(c: EldCredential, vehicleIds: string[], start: Date, end: Date, fetcher: Fetch = fetch): Promise<Map<string, EldPoint[]>> {
+  const out = new Map<string, EldPoint[]>();
+  if (c.provider !== 'samsara' || !vehicleIds.length) return out;
+  for (let i = 0; i < vehicleIds.length; i += 50) {
+    const ids = vehicleIds.slice(i, i + 50);
+    const q = new URLSearchParams({ types: 'gps', startTime: start.toISOString(), endTime: end.toISOString(), vehicleIds: ids.join(',') });
+    const rows = await pages(c, `/fleet/vehicles/stats/history?${q}`, 'data', fetcher, 30);
+    for (const r of rows) {
+      const id = str(r.id);
+      const list = out.get(id) ?? [];
+      let last = list.length ? Date.parse(list[list.length - 1].at) : 0;
+      for (const g of ((r.gps as Json[] | undefined) ?? [])) {
+        const lat = num(g.latitude), lon = num(g.longitude), t = Date.parse(str(g.time));
+        if (lat == null || lon == null || !Number.isFinite(t) || t - last < 120_000) continue;
+        // A parked truck needs a point every 30 minutes, not every 2.
+        const prev = list[list.length - 1];
+        if (prev && t - last < 30 * 60_000 && Math.abs(prev.lat - lat) < 0.0007 && Math.abs(prev.lon - lon) < 0.0007) continue;
+        list.push({ lat, lon, at: new Date(t).toISOString(), speedMph: num(g.speedMilesPerHour) });
+        last = t;
+      }
+      out.set(id, list);
+    }
+  }
+  return out;
+}
+
 /** The fleet as the ELD sees it now. Throws EldError (auth=true when the token itself is the problem). */
 export function readFleet(c: EldCredential, fetcher: Fetch = fetch) {
   return c.provider === 'samsara' ? samsara(c, fetcher) : motive(c, fetcher);

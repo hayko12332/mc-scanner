@@ -186,6 +186,20 @@ const SCHEMA = `
     at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     live_until    TIMESTAMPTZ
   );
+  -- Speed and heading come with ELD points (a Telegram location has neither); source: 'eld' or 'telegram'
+  ALTER TABLE crm_positions ADD COLUMN IF NOT EXISTS speed_mph REAL;
+  ALTER TABLE crm_positions ADD COLUMN IF NOT EXISTS heading REAL;
+  ALTER TABLE crm_positions ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'telegram';
+  -- Where each truck has been (the breadcrumb trail on the map): ELD points every sync, Telegram live locations; kept 8 days
+  CREATE TABLE IF NOT EXISTS crm_trail (
+    truck_id      BIGINT NOT NULL REFERENCES crm_trucks(id) ON DELETE CASCADE,
+    workspace_id  BIGINT NOT NULL REFERENCES crm_workspaces(id) ON DELETE CASCADE,
+    at            TIMESTAMPTZ NOT NULL,
+    lat           DOUBLE PRECISION NOT NULL,
+    lon           DOUBLE PRECISION NOT NULL,
+    speed_mph     REAL,
+    PRIMARY KEY (truck_id, at)
+  );
   -- Tracking links a dispatcher sends to the broker: the truck on a map for one load, no money shown
   CREATE TABLE IF NOT EXISTS crm_tracking (
     token_hash    TEXT PRIMARY KEY,
@@ -240,15 +254,38 @@ const toFile = (r: Record<string, unknown>): CrmFile => ({
 });
 
 export interface DriverInfo { ws: number; truckId: number; unit: string; driver: string; company: string }
-export interface Position { truckId: number; lat: number; lon: number; at: string; live: boolean }
+export interface Position {
+  truckId: number; lat: number; lon: number; at: string; live: boolean
+  /** From the ELD (null from Telegram). Heading in degrees, 0 = north. */
+  speedMph: number | null; heading: number | null; source: 'eld' | 'telegram'
+}
+/** A breadcrumb: [lon, lat, unix seconds, mph or -1]. */
+export type TrailPoint = [number, number, number, number];
 export interface TrackingView {
   date: string; pro: string; origin: string; destination: string; status: LoadStatus; miles: number; company: string; truck: string
   position: Position | null
+  /** Where the truck has driven since the day before pickup (in transit only). */
+  trail: TrailPoint[]
 }
+const numOrNull = (v: unknown) => (v == null ? null : Number(v));
 const toPosition = (r: Record<string, unknown>): Position => ({
   truckId: Number(r.truck_id), lat: Number(r.lat), lon: Number(r.lon), at: new Date(r.at as string).toISOString(),
   live: r.live_until != null && new Date(r.live_until as string).getTime() > Date.now(),
+  speedMph: numOrNull(r.speed_mph), heading: numOrNull(r.heading), source: r.source === 'eld' ? 'eld' : 'telegram',
 });
+/** Keeps every n-th point (and always the last) so a long trail stays light. */
+export function thin<T>(pts: T[], max: number): T[] {
+  if (pts.length <= max) return pts;
+  const step = pts.length / max;
+  const out: T[] = [];
+  for (let i = 0; i < max - 1; i++) out.push(pts[Math.floor(i * step)]);
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+const toTrail = (r: Record<string, unknown>): TrailPoint => [
+  Math.round(Number(r.lon) * 1e5) / 1e5, Math.round(Number(r.lat) * 1e5) / 1e5, Math.round(new Date(r.at as string).getTime() / 1000),
+  r.speed_mph == null ? -1 : Math.round(Number(r.speed_mph)),
+];
 export type MemberRole = 'owner' | 'dispatcher';
 export interface Invite { id: number; email: string; dispatcherId: number | null; expiresAt: string }
 export interface Team { members: { userId: number; name: string; email: string; dispatcherId: number | null }[]; invites: Invite[] }
@@ -511,7 +548,7 @@ export class CrmStore {
       this.pool.query(`SELECT load_id, number, sent_to, sent_at, remind, reminders FROM crm_invoices WHERE workspace_id = $1`, [ws]),
       this.pool.query('SELECT broker, email FROM crm_broker_emails WHERE workspace_id = $1', [ws]),
       this.pool.query('SELECT truck_id, name FROM crm_drivers WHERE workspace_id = $1', [ws]),
-      this.pool.query('SELECT truck_id, lat, lon, at, live_until FROM crm_positions WHERE workspace_id = $1', [ws]),
+      this.pool.query('SELECT truck_id, lat, lon, at, live_until, speed_mph, heading, source FROM crm_positions WHERE workspace_id = $1', [ws]),
     ]);
     return {
       user, company: await this.company(ws),
@@ -672,11 +709,20 @@ export class CrmStore {
   async savePosition(ws: number, truckId: number, lat: number, lon: number, liveSeconds: number | null) {
     await this.pool.query(
       `INSERT INTO crm_positions (truck_id, workspace_id, lat, lon, at, live_until) VALUES ($1,$2,$3,$4, now(), CASE WHEN $5::int IS NULL THEN NULL ELSE now() + make_interval(secs => $5::int) END)
-       ON CONFLICT (truck_id) DO UPDATE SET lat = EXCLUDED.lat, lon = EXCLUDED.lon, at = now(),
+       ON CONFLICT (truck_id) DO UPDATE SET lat = EXCLUDED.lat, lon = EXCLUDED.lon, at = now(), speed_mph = NULL, heading = NULL, source = 'telegram',
          live_until = CASE WHEN $5::int IS NULL THEN crm_positions.live_until ELSE EXCLUDED.live_until END`,
       [truckId, ws, lat, lon, liveSeconds]);
+    await this.pool.query('INSERT INTO crm_trail (truck_id, workspace_id, at, lat, lon) VALUES ($1,$2, now(), $3,$4) ON CONFLICT DO NOTHING', [truckId, ws, lat, lon]);
   }
 
+  /** Where a truck of this board has been in the last hours, oldest first (thinned to at most `max` points). */
+  async trail(ws: number, truckId: number, hours: number, max = 1500): Promise<TrailPoint[]> {
+    await this.ready;
+    const { rows } = await this.pool.query(
+      `SELECT lat, lon, at, speed_mph FROM crm_trail WHERE workspace_id = $1 AND truck_id = $2 AND at > now() - make_interval(hours => $3::int) ORDER BY at`,
+      [ws, truckId, Math.max(1, Math.min(192, Math.round(hours)))]);
+    return thin(rows.map(toTrail), max);
+  }
   // Tracking links for brokers
 
   /** The tracking link token of a load (the same link every time it is asked for). */
@@ -695,16 +741,27 @@ export class CrmStore {
     await this.ready;
     const { rows } = await this.pool.query(
       `SELECT l.id, to_char(l.load_date, 'YYYY-MM-DD') AS date, l.pro, l.origin, l.destination, l.status, l.loaded_miles,
-              w.company_name, t.unit, p.lat, p.lon, p.at, p.live_until
+              l.workspace_id, l.truck_id, w.company_name, t.unit, p.lat, p.lon, p.at, p.live_until, p.speed_mph, p.heading, p.source
          FROM crm_tracking k JOIN crm_loads l ON l.id = k.load_id JOIN crm_workspaces w ON w.id = k.workspace_id
          LEFT JOIN crm_trucks t ON t.id = l.truck_id LEFT JOIN crm_positions p ON p.truck_id = l.truck_id
         WHERE k.token_hash = $1`, [hash(token)]);
     const r = rows[0];
     if (!r) return null;
+    const status = String(r.status) as LoadStatus;
+    // The broker sees the road driven for this load only: from the day before pickup, at most two days back.
+    let trail: TrailPoint[] = [];
+    if (status === 'in_transit' && r.truck_id != null) {
+      const since = Math.max(Date.now() - 48 * 3600_000, new Date(`${r.date}T00:00:00Z`).getTime() - 24 * 3600_000);
+      const t = await this.pool.query(
+        'SELECT lat, lon, at, speed_mph FROM crm_trail WHERE workspace_id = $1 AND truck_id = $2 AND at > $3 ORDER BY at',
+        [r.workspace_id, r.truck_id, new Date(since).toISOString()]);
+      trail = thin(t.rows.map(toTrail), 600);
+    }
     return {
-      date: String(r.date), pro: String(r.pro), origin: String(r.origin), destination: String(r.destination), status: String(r.status) as LoadStatus,
+      date: String(r.date), pro: String(r.pro), origin: String(r.origin), destination: String(r.destination), status,
       miles: Number(r.loaded_miles ?? 0), company: String(r.company_name ?? ''), truck: r.unit ? String(r.unit) : '',
-      position: r.lat == null || !['booked', 'in_transit'].includes(String(r.status)) ? null : toPosition({ ...r, truck_id: 0 }),
+      position: r.lat == null || !['booked', 'in_transit'].includes(status) ? null : toPosition({ ...r, truck_id: 0 }),
+      trail,
     };
   }
 

@@ -3,7 +3,7 @@ import { CarriersView, DispatchersView, TrucksView } from '../components/crm/Peo
 import { StatementsView } from '../components/crm/StatementsView'
 import { LoadDrawer, NewLoadDrawer } from '../components/crm/LoadDrawer'
 import { LoadsTable } from '../components/crm/LoadsTable'
-import { BoardMap } from '../components/crm/MapView'
+import { FleetView } from '../components/crm/FleetView'
 import { ReportsView } from '../components/crm/ReportsView'
 import { AiHome } from '../components/crm/AiHome'
 import { Onboarding } from '../components/crm/Onboarding'
@@ -444,7 +444,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
           remove={(id) => act(() => api.removeCarrier(id))}
         />
       )}
-      {!tool && tab === 'map' && <BoardMap state={state} theme={theme} openLoad={setOpenId} points={api.points} />}
+      {!tool && tab === 'map' && <FleetView state={state} theme={theme} openLoad={setOpenId} lane={api.lane} trail={api.trail} refresh={() => void reload()} tracking={demo ? undefined : crm.trackingLink} toast={toast} />}
       {!tool && tab === 'reports' && <ReportsView state={state} />}
       {!tool && tab === 'ai' && aiOn && (
         <AiHome state={state} theme={theme} openLoad={setOpenId} changed={() => void reload()} prompt={aiPrompt} onPromptUsed={() => setAiPrompt(null)}

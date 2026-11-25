@@ -1,26 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { GeoJSONSource, Map as MlMap, MapLayerMouseEvent } from 'maplibre-gl'
+import { useEffect, useRef, useState } from 'react'
+import type * as maplibregl from 'maplibre-gl'
+import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl'
 import type * as GeoJSON from 'geojson'
-import { gross, looksLikePlace, shortDate, STATUSES, usd, type CrmState, type LaneResult, type Load, type LoadStatus } from '../../lib/crm'
+import { looksLikePlace, type LaneResult, type LoadStatus } from '../../lib/crm'
+import { splitRoute } from '../../lib/geo'
 import { place } from './LoadsTable'
 
 // Maps: MapLibre with free OpenStreetMap tiles from OpenFreeMap (no key). The library (~250 KB gzip) loads only
 // when a map is first shown, so the site itself stays light.
 
-type Theme = 'light' | 'dark'
+export type Theme = 'light' | 'dark'
 type LngLat = [number, number]
 
 export const STATUS_COLOR: Record<LoadStatus, string> = {
   booked: '#3b82f6', in_transit: '#eab308', delivered: '#8b5cf6', invoiced: '#f97316', paid: '#22c55e',
 }
-const styleUrl = (theme: Theme) => `https://tiles.openfreemap.org/styles/${theme === 'dark' ? 'dark' : 'positron'}`
+/** Normal map colors (green land, blue water, roads) in both themes — a dark or grey map reads badly for trucking. */
+const styleUrl = (_theme: Theme) => 'https://tiles.openfreemap.org/styles/liberty'
 const US_BOUNDS: [LngLat, LngLat] = [[-125, 24], [-66, 49.5]]
 
 let lib: Promise<typeof import('maplibre-gl')> | null = null
-const loadLib = () => (lib ??= Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]).then(([m]) => m))
+export const loadLib = () => (lib ??= Promise.all([import('maplibre-gl'), import('maplibre-gl/dist/maplibre-gl.css')]).then(([m]) => m))
 
 /** Creates a map in the element once the library is loaded; `ready` runs when the style is in, with the map. */
-function useMapLibre(theme: Theme, ready: (map: MlMap) => void) {
+export function useMapLibre(theme: Theme, ready: (map: MlMap) => void, opts: { app?: boolean } = {}) {
   const el = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<MlMap | null>(null)
   const [failed, setFailed] = useState(false)
@@ -32,15 +35,17 @@ function useMapLibre(theme: Theme, ready: (map: MlMap) => void) {
     loadLib().then((ml) => {
       if (gone || !el.current) return
       try {
+        // A small map inside a page needs Ctrl/two fingers to zoom (so the page scrolls); the fleet map is the page.
         m = new ml.Map({
           container: el.current, style: styleUrl(theme), bounds: US_BOUNDS, fitBoundsOptions: { padding: 20 },
-          attributionControl: { compact: true }, cooperativeGestures: true, dragRotate: false, pitchWithRotate: false,
+          attributionControl: { compact: true }, cooperativeGestures: !opts.app, dragRotate: false, pitchWithRotate: false,
         })
       } catch {
         // No WebGL (an old browser, or too many maps open at once).
         return setFailed(true)
       }
       m.addControl(new ml.NavigationControl({ showCompass: false }), 'top-right')
+      if (opts.app) m.addControl(new ml.FullscreenControl(), 'top-right')
       m.on('load', () => { if (!gone && m) { onReady.current(m); setMap(m) } })
     }, () => {
       // The map code didn't load (offline, or the site was updated since this page opened): try again next time.
@@ -52,7 +57,7 @@ function useMapLibre(theme: Theme, ready: (map: MlMap) => void) {
   return { el, map, failed }
 }
 
-const fit = (map: MlMap, pts: LngLat[], padding = 40) => {
+export const fit = (map: MlMap, pts: LngLat[], padding = 40) => {
   if (!pts.length) return
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1])
   map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]], { padding, maxZoom: 9, duration: 0 })
@@ -119,187 +124,93 @@ export function RouteMap({ from, to, theme, lane }: {
 
 export const hoursText = (h: number) => (h < 1 ? `${Math.round(h * 60)} min` : `${Math.floor(h)} h${Math.round((h % 1) * 60) ? ` ${Math.round((h % 1) * 60)} min` : ''}`)
 
-const pointCache = new Map<string, LngLat | null>()
+// Fleet layers shared by the fleet map and the broker's tracking page. Kinds of features:
+//   done  – the part of the load's road already driven (grey)      ahead – the road still to drive (blue)
+//   plan  – a booked load's road, not started (dashed blue)         dead  – empty miles to the pickup (dashed grey)
+//   trail – where the truck really drove, from GPS (violet)         pickup / drop – the load's stops (green / red)
+// A feature with `dim: true` belongs to a truck that isn't selected and is drawn faint.
 
-/**
- * The board map: loads as lines from pickup to delivery, colored by status (active work shown first), so you see
- * where your trucks are headed. Click a lane to open the load. The list under the map shows the same loads.
- */
-export function BoardMap({ state, theme, openLoad, points }: {
-  state: CrmState; theme: Theme; openLoad: (id: number) => void
-  points: (places: string[]) => Promise<Record<string, LngLat | null>>
-}) {
-  const [show, setShow] = useState<Set<LoadStatus>>(() => new Set<LoadStatus>(['booked', 'in_transit']))
-  const [, setTick] = useState(0)
-  const [hover, setHover] = useState<number | null>(null)
-  const counts = useMemo(() => {
-    const c = new Map<LoadStatus, number>()
-    for (const l of state.loads) c.set(l.status, (c.get(l.status) ?? 0) + 1)
-    return c
-  }, [state.loads])
-  const loads = useMemo(() => state.loads.filter((l) => show.has(l.status) && l.id > 0).slice(0, 400), [state.loads, show])
+export const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
+const isDim: maplibregl.ExpressionSpecification = ['==', ['get', 'dim'], true]
 
-  // Look up the map points of the cities on these loads (known cities answer at once; the rest are cached).
-  useEffect(() => {
-    const need = [...new Set(loads.flatMap((l) => [l.origin, l.destination]).filter((p) => looksLikePlace(p) && !pointCache.has(p)))]
-    if (!need.length) return
-    let stale = false
-    void (async () => {
-      for (let i = 0; i < need.length; i += 200) {
-        const got = await points(need.slice(i, i + 200)).catch(() => ({} as Record<string, LngLat | null>))
-        for (const p of need.slice(i, i + 200)) pointCache.set(p, got[p] ?? null)
-        if (!stale) setTick((t) => t + 1)
-      }
-    })()
-    return () => { stale = true }
-  }, [loads, points])
-
-  const placed = loads.map((l) => ({ l, a: pointCache.get(l.origin) ?? null, b: pointCache.get(l.destination) ?? null }))
-  const onMap = placed.filter((x) => x.a && x.b) as { l: Load; a: LngLat; b: LngLat }[]
-  const missing = placed.length - onMap.length
-
-  const data = useMemo((): GeoJSON.FeatureCollection => ({
-    type: 'FeatureCollection',
-    features: onMap.flatMap(({ l, a, b }) => [
-      { type: 'Feature', id: l.id, properties: { id: l.id, kind: 'lane', color: STATUS_COLOR[l.status] }, geometry: { type: 'LineString', coordinates: arc(a, b) } },
-      { type: 'Feature', properties: { id: l.id, kind: 'a', color: STATUS_COLOR[l.status] }, geometry: { type: 'Point', coordinates: a } },
-      { type: 'Feature', properties: { id: l.id, kind: 'b', color: STATUS_COLOR[l.status] }, geometry: { type: 'Point', coordinates: b } },
-    ] as GeoJSON.Feature[]),
-  }), [onMap.map((x) => `${x.l.id}${x.l.status}${x.a}${x.b}`).join()]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const open = useRef(openLoad)
-  open.current = openLoad
-  const { el, map, failed } = useMapLibre(theme, (m) => {
-    m.addSource('loads', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-    m.addLayer({ id: 'loads-hit', type: 'line', source: 'loads', filter: ['==', ['get', 'kind'], 'lane'], paint: { 'line-color': '#000', 'line-opacity': 0, 'line-width': 14 } })
-    m.addLayer({ id: 'loads-line', type: 'line', source: 'loads', filter: ['==', ['get', 'kind'], 'lane'], layout: { 'line-cap': 'round' },
-      paint: { 'line-color': ['get', 'color'], 'line-width': ['case', ['boolean', ['feature-state', 'hover'], false], 5, 2.5], 'line-opacity': 0.9 } })
-    m.addLayer({ id: 'loads-ends', type: 'circle', source: 'loads', filter: ['!=', ['get', 'kind'], 'lane'],
-      paint: { 'circle-radius': ['match', ['get', 'kind'], 'b', 5, 3.5], 'circle-color': ['match', ['get', 'kind'], 'b', ['get', 'color'], '#ffffff'],
-        'circle-stroke-color': ['get', 'color'], 'circle-stroke-width': 2 } })
-    // Trucks: where each driver last shared their location (Telegram), labelled with the unit number.
-    m.addSource('trucks', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
-    m.addLayer({ id: 'trucks-dot', type: 'circle', source: 'trucks',
-      paint: { 'circle-radius': 9, 'circle-color': ['case', ['get', 'live'], '#0f172a', '#64748b'], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } })
-    m.addLayer({ id: 'trucks-label', type: 'symbol', source: 'trucks',
-      layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 11.5, 'text-offset': [0, 1.5], 'text-anchor': 'top', 'text-allow-overlap': true },
-      paint: { 'text-color': theme === 'dark' ? '#f8fafc' : '#0f172a', 'text-halo-color': theme === 'dark' ? '#0f172a' : '#ffffff', 'text-halo-width': 1.6 } })
-    const pick = (e: MapLayerMouseEvent) => Number(e.features?.[0]?.properties?.id)
-    m.on('click', 'loads-hit', (e) => { const id = pick(e); if (id) open.current(id) })
-    m.on('mousemove', 'loads-hit', (e) => { m.getCanvas().style.cursor = 'pointer'; setHover(pick(e) || null) })
-    m.on('mouseleave', 'loads-hit', () => { m.getCanvas().style.cursor = ''; setHover(null) })
+export function addFleetLayers(map: MlMap, src: string) {
+  map.addSource(src, { type: 'geojson', data: EMPTY })
+  const op = (on: number, off: number): maplibregl.ExpressionSpecification => ['case', isDim, off, on]
+  const line = (id: string, kinds: string[], paint: maplibregl.LineLayerSpecification['paint']) => map.addLayer({
+    id: `${src}-${id}`, type: 'line', source: src, filter: ['in', ['get', 'kind'], ['literal', kinds]],
+    layout: { 'line-cap': 'round', 'line-join': 'round' }, paint,
   })
-  const fitted = useRef('')
-  useEffect(() => {
-    if (!map) return
-    ;(map.getSource('loads') as GeoJSONSource | undefined)?.setData(data)
-    const key = [...show].join()
-    if (onMap.length && fitted.current !== key) { fitted.current = key; fit(map, onMap.flatMap((x) => [x.a, x.b]), 50) }
-  }, [map, data]) // eslint-disable-line react-hooks/exhaustive-deps
-  const trucks = useMemo((): GeoJSON.FeatureCollection => ({
-    type: 'FeatureCollection',
-    features: (state.positions ?? []).map((p) => {
-      const t = state.trucks.find((x) => x.id === p.truckId)
-      const mins = Math.round((Date.now() - new Date(p.at).getTime()) / 60_000)
-      const when = mins < 60 ? `${mins} min` : mins < 2880 ? `${Math.round(mins / 60)} h` : `${Math.round(mins / 1440)} d`
-      return { type: 'Feature', properties: { label: `${t?.unit ? `#${t.unit}` : t?.driver ?? 'Truck'} · ${p.live ? 'live' : when}`, live: p.live }, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } }
-    }),
-  }), [state.positions, state.trucks])
-  useEffect(() => { (map?.getSource('trucks') as GeoJSONSource | undefined)?.setData(trucks) }, [map, trucks])
-  const lastHover = useRef<number | null>(null)
-  useEffect(() => {
-    if (!map) return
-    if (lastHover.current != null) map.setFeatureState({ source: 'loads', id: lastHover.current }, { hover: false })
-    if (hover != null) map.setFeatureState({ source: 'loads', id: hover }, { hover: true })
-    lastHover.current = hover
-  }, [map, hover])
-
-  const toggle = (s: LoadStatus) => setShow((cur) => { const n = new Set(cur); if (n.has(s)) n.delete(s); else n.add(s); return n })
-  const hovered = hover != null ? state.loads.find((l) => l.id === hover) : undefined
-  const carrier = (l: Load) => state.carriers.find((c) => c.id === l.carrierId)?.name
-  const truck = (l: Load) => { const t = state.trucks.find((x) => x.id === l.truckId); return t ? [t.unit && `#${t.unit}`, t.driver].filter(Boolean).join(' · ') : '' }
-
-  return (
-    <div className="bm">
-      <div className="bm-head">
-        <div>
-          <h2>Map</h2>
-          <p>{onMap.length} {onMap.length === 1 ? 'load' : 'loads'} on the map{missing > 0 ? ` · ${missing} without City, ST` : ''}{state.positions?.length ? ` · ${state.positions.length} ${state.positions.length === 1 ? 'truck' : 'trucks'} from ${state.eld?.length ? 'your ELD and drivers’ Telegram' : 'drivers’ Telegram'}` : ''}. Click a lane to open the load.</p>
-        </div>
-        <div className="bm-chips" role="group" aria-label="Statuses shown">
-          {STATUSES.map((s) => (
-            <button key={s.id} className={show.has(s.id) ? 'on' : ''} aria-pressed={show.has(s.id)} onClick={() => toggle(s.id)}>
-              <i style={{ background: STATUS_COLOR[s.id] }} />{s.label}<em>{counts.get(s.id) ?? 0}</em>
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="bm-map" ref={el}>
-        {failed && <p className="rm-msg">The map could not load. Check the connection and open the tab again.</p>}
-        {hovered && (
-          <div className="bm-tip">
-            <b>{hovered.broker || 'Load'}</b>
-            <span>{place(hovered.origin)} → {place(hovered.destination)}</span>
-            <span>{usd(gross(hovered))}{hovered.loadedMiles ? ` · ${hovered.loadedMiles.toLocaleString('en-US')} mi` : ''} · {STATUSES.find((s) => s.id === hovered.status)?.label}</span>
-          </div>
-        )}
-      </div>
-      {loads.length > 0 ? (
-        <ul className="bm-list">
-          {loads.slice(0, 60).map((l) => (
-            <li key={l.id} className={hover === l.id ? 'on' : ''} onMouseEnter={() => setHover(l.id)} onMouseLeave={() => setHover(null)}>
-              <button onClick={() => openLoad(l.id)}>
-                <i style={{ background: STATUS_COLOR[l.status] }} />
-                <span className="bm-lane"><b>{place(l.origin) || '—'} → {place(l.destination) || '—'}</b><small>{shortDate(l.date)} · {l.broker || 'No broker'}{carrier(l) ? ` · ${carrier(l)}` : ''}{truck(l) ? ` · ${truck(l)}` : ''}</small></span>
-                <span className="bm-rate">{usd(gross(l))}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="bm-empty">No loads with these statuses. Pick another status above.</p>
-      )}
-    </div>
-  )
-}
-
-/** A gentle curve between two points (so lanes that share a city don't sit on top of each other). */
-function arc(a: LngLat, b: LngLat, n = 24): LngLat[] {
-  const [mx, my] = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
-  const [dx, dy] = [b[0] - a[0], b[1] - a[1]]
-  const c: LngLat = [mx - dy * 0.15, my + dx * 0.15]
-  return Array.from({ length: n + 1 }, (_, i) => {
-    const t = i / n
-    return [(1 - t) ** 2 * a[0] + 2 * (1 - t) * t * c[0] + t ** 2 * b[0], (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * c[1] + t ** 2 * b[1]] as LngLat
+  line('casing', ['ahead', 'plan'], { 'line-color': '#ffffff', 'line-width': 9, 'line-opacity': op(0.95, 0.35) })
+  line('done', ['done'], { 'line-color': '#94a3b8', 'line-width': 5, 'line-opacity': op(0.95, 0.4) })
+  line('dead', ['dead'], { 'line-color': '#475569', 'line-width': 3, 'line-dasharray': [1, 1.8], 'line-opacity': op(0.9, 0.35) })
+  line('plan', ['plan'], { 'line-color': '#2563eb', 'line-width': 4.5, 'line-dasharray': [2, 1.5], 'line-opacity': op(0.95, 0.35) })
+  line('ahead', ['ahead'], { 'line-color': '#2563eb', 'line-width': 5.5, 'line-opacity': op(1, 0.4) })
+  line('trail', ['trail'], { 'line-color': '#7c3aed', 'line-width': 3.5, 'line-opacity': 0.9 })
+  map.addLayer({
+    id: `${src}-stops`, type: 'circle', source: src, filter: ['in', ['get', 'kind'], ['literal', ['pickup', 'drop']]],
+    paint: { 'circle-radius': op(7.5, 5), 'circle-color': ['match', ['get', 'kind'], 'pickup', '#16a34a', '#dc2626'], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff', 'circle-opacity': op(1, 0.5), 'circle-stroke-opacity': op(1, 0.5) },
+  })
+  map.addLayer({
+    id: `${src}-stop-label`, type: 'symbol', source: src, filter: ['all', ['in', ['get', 'kind'], ['literal', ['pickup', 'drop']]], ['!', isDim]],
+    layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 12, 'text-offset': [0, 1.2], 'text-anchor': 'top' },
+    paint: { 'text-color': '#0f172a', 'text-halo-color': '#ffffff', 'text-halo-width': 2 },
   })
 }
 
-/** The broker's tracking map: the lane and where the truck is now (from the driver's Telegram location). */
-export function TrackMap({ lane, truck, label }: { lane: LaneResult | null; truck: LngLat | null; label: string }) {
+export const lineFeature = (kind: string, coordinates: LngLat[], dim = false): GeoJSON.Feature =>
+  ({ type: 'Feature', properties: { kind, dim }, geometry: { type: 'LineString', coordinates } })
+export const pointFeature = (kind: string, coordinates: LngLat, label: string, dim = false): GeoJSON.Feature =>
+  ({ type: 'Feature', properties: { kind, label, dim }, geometry: { type: 'Point', coordinates } })
+
+export interface TruckLook { color: string; heading: number | null; moving: boolean; label: string; selected?: boolean; stale?: boolean }
+
+/** A truck on the map: a colored disc (status) with an arrow pointing where it drives, and its unit number under it. */
+export function truckMarkerEl(): HTMLDivElement {
+  const el = document.createElement('div')
+  el.className = 'tm'
+  el.innerHTML = '<div class="tm-dot"><svg class="tm-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 19.5 20.5 12 16.2 4.5 20.5Z"/></svg><i class="tm-stop"></i></div><span class="tm-tag"></span>'
+  return el
+}
+
+export function setTruckMarker(el: HTMLElement, t: TruckLook) {
+  el.style.setProperty('--c', t.color)
+  el.style.setProperty('--h', `${t.heading ?? 0}deg`)
+  el.classList.toggle('moving', t.moving && t.heading != null)
+  el.classList.toggle('sel', !!t.selected)
+  el.classList.toggle('stale', !!t.stale)
+  el.querySelector('.tm-tag')!.textContent = t.label
+  el.setAttribute('aria-label', t.label)
+}
+
+/** The broker's tracking map: the load's road (driven part grey, the rest blue), the GPS trail and the truck. */
+export function TrackMap({ lane, truck, trail }: { lane: LaneResult | null; truck: (TruckLook & { at: LngLat }) | null; trail: LngLat[] }) {
+  const marker = useRef<maplibregl.Marker | null>(null)
   const draw = (map: MlMap) => {
+    if (!map.getSource('track')) addFleetLayers(map, 'track')
     const features: GeoJSON.Feature[] = []
     if (lane) {
-      features.push({ type: 'Feature', properties: { kind: 'route' }, geometry: { type: 'LineString', coordinates: lane.line } })
-      features.push({ type: 'Feature', properties: { kind: 'a' }, geometry: { type: 'Point', coordinates: lane.a } })
-      features.push({ type: 'Feature', properties: { kind: 'b' }, geometry: { type: 'Point', coordinates: lane.b } })
+      if (truck) {
+        const s = splitRoute(lane.line, truck.at)
+        features.push(lineFeature('done', s.done), lineFeature('ahead', s.ahead))
+      } else features.push(lineFeature('ahead', lane.line))
+      features.push(pointFeature('pickup', lane.a, 'Pickup'), pointFeature('drop', lane.b, 'Delivery'))
     }
-    if (truck) features.push({ type: 'Feature', properties: { kind: 'truck', label }, geometry: { type: 'Point', coordinates: truck } })
-    const data: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features }
-    const src = map.getSource('track') as GeoJSONSource | undefined
-    if (src) src.setData(data)
-    else {
-      map.addSource('track', { type: 'geojson', data })
-      map.addLayer({ id: 'track-line', type: 'line', source: 'track', filter: ['==', ['get', 'kind'], 'route'], layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2563eb', 'line-width': 4, 'line-opacity': 0.85 } })
-      map.addLayer({ id: 'track-ends', type: 'circle', source: 'track', filter: ['in', ['get', 'kind'], ['literal', ['a', 'b']]], paint: { 'circle-radius': 7, 'circle-color': ['match', ['get', 'kind'], 'a', '#16a34a', '#dc2626'], 'circle-stroke-width': 2.5, 'circle-stroke-color': '#ffffff' } })
-      map.addLayer({ id: 'track-truck', type: 'circle', source: 'track', filter: ['==', ['get', 'kind'], 'truck'], paint: { 'circle-radius': 10, 'circle-color': '#0f172a', 'circle-stroke-width': 3, 'circle-stroke-color': '#ffffff' } })
-      map.addLayer({ id: 'track-truck-label', type: 'symbol', source: 'track', filter: ['==', ['get', 'kind'], 'truck'],
-        layout: { 'text-field': ['get', 'label'], 'text-font': ['Noto Sans Bold'], 'text-size': 12, 'text-offset': [0, 1.6], 'text-anchor': 'top', 'text-allow-overlap': true },
-        paint: { 'text-color': '#0f172a', 'text-halo-color': '#ffffff', 'text-halo-width': 1.8 } })
-    }
-    const pts = [...(lane ? lane.line : []), ...(truck ? [truck] : [])]
-    if (pts.length) fit(map, pts, 50)
+    if (trail.length > 1) features.push(lineFeature('trail', trail))
+    ;(map.getSource('track') as GeoJSONSource).setData({ type: 'FeatureCollection', features })
+    const pts = [...(lane ? lane.line : []), ...(truck ? [truck.at] : [])]
+    if (pts.length) fit(map, pts, 60)
   }
   const { el, map, failed } = useMapLibre('light', draw)
-  useEffect(() => { if (map) draw(map) }, [map, lane, truck?.[0], truck?.[1], label]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (map) draw(map) }, [map, lane, truck?.at[0], truck?.at[1], trail.length]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!map) return
+    if (!truck) { marker.current?.remove(); marker.current = null; return }
+    void loadLib().then((ml) => {
+      if (!marker.current) marker.current = new ml.Marker({ element: truckMarkerEl() }).setLngLat(truck.at).addTo(map)
+      marker.current.setLngLat(truck.at)
+      setTruckMarker(marker.current.getElement(), { ...truck, selected: true })
+    })
+  }, [map, truck])
+  useEffect(() => () => { marker.current?.remove() }, [])
   return <div className="tk-map" ref={el}>{failed && <p className="rm-msg">The map could not load.</p>}</div>
 }

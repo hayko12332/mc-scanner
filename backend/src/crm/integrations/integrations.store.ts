@@ -55,7 +55,7 @@ export interface Connection { provider: string; region: string; label: string; s
 /** A vehicle from the ELD, as the board shows it. */
 export interface EldView {
   provider: EldProvider; vehicleId: string; name: string; truckId: number | null; linked: 'auto' | 'manual' | 'none';
-  lat: number | null; lon: number | null; at: string | null; speedMph: number | null; address: string; driver: string;
+  lat: number | null; lon: number | null; at: string | null; speedMph: number | null; heading: number | null; address: string; driver: string;
   hos: Pick<EldHos, 'status' | 'driveLeftMin' | 'shiftLeftMin' | 'cycleLeftMin' | 'breakLeftMin'> | null;
 }
 
@@ -171,23 +171,23 @@ export class IntegrationsStore {
         // A link set by hand (or "not this truck") stays; otherwise follow the unit number.
         const truckId = k && k.linked !== 'auto' ? k.truckId : byUnit.get(unitKey(u.name)) ?? null;
         const h = hosOf(u);
-        await client.query(
+        // A link the dispatcher changed while this sync ran is kept (only 'auto' links follow the unit number).
+        const saved = await client.query(
           `INSERT INTO crm_eld_units (workspace_id, provider, vehicle_id, name, vin, truck_id, linked, lat, lon, at, speed_mph, heading, address, driver, hos, seen_at)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())
-           ON CONFLICT (workspace_id, provider, vehicle_id) DO UPDATE SET name = EXCLUDED.name, vin = EXCLUDED.vin, truck_id = EXCLUDED.truck_id,
+           ON CONFLICT (workspace_id, provider, vehicle_id) DO UPDATE SET name = EXCLUDED.name, vin = EXCLUDED.vin,
+             truck_id = CASE WHEN crm_eld_units.linked = 'auto' THEN EXCLUDED.truck_id ELSE crm_eld_units.truck_id END,
              lat = COALESCE(EXCLUDED.lat, crm_eld_units.lat), lon = COALESCE(EXCLUDED.lon, crm_eld_units.lon), at = COALESCE(EXCLUDED.at, crm_eld_units.at),
-             speed_mph = EXCLUDED.speed_mph, heading = EXCLUDED.heading, address = EXCLUDED.address, driver = EXCLUDED.driver, hos = EXCLUDED.hos, seen_at = now()`,
+             speed_mph = EXCLUDED.speed_mph, heading = EXCLUDED.heading, address = EXCLUDED.address, driver = EXCLUDED.driver, hos = EXCLUDED.hos, seen_at = now()
+           RETURNING truck_id`,
           [ws, provider, u.vehicleId, u.name.slice(0, 120), u.vin.slice(0, 40), truckId, k?.linked ?? 'auto', u.lat, u.lon, u.at, u.speedMph, u.heading,
             u.address.slice(0, 200), (h?.driver || u.driver).slice(0, 120),
             h ? JSON.stringify({ status: h.status, driveLeftMin: h.driveLeftMin, shiftLeftMin: h.shiftLeftMin, cycleLeftMin: h.cycleLeftMin, breakLeftMin: h.breakLeftMin }) : null]);
-        if (truckId == null) continue;
+        const tid = saved.rows[0]?.truck_id == null ? null : Number(saved.rows[0].truck_id);
+        if (tid == null) continue;
         linked++;
         if (u.lat == null || u.lon == null || !u.at) continue;
-        // The newest point wins, whether it came from the ELD or the driver's Telegram.
-        await client.query(
-          `INSERT INTO crm_positions (truck_id, workspace_id, lat, lon, at) VALUES ($1,$2,$3,$4,$5)
-           ON CONFLICT (truck_id) DO UPDATE SET lat = EXCLUDED.lat, lon = EXCLUDED.lon, at = EXCLUDED.at WHERE crm_positions.at < EXCLUDED.at`,
-          [truckId, ws, u.lat, u.lon, u.at]);
+        await savePoint(client, ws, tid, u);
       }
       // Vehicles the ELD no longer lists (sold, deactivated) go away.
       await client.query('DELETE FROM crm_eld_units WHERE workspace_id = $1 AND provider = $2 AND NOT (vehicle_id = ANY($3))', [ws, provider, units.map((u) => u.vehicleId)]);
@@ -207,20 +207,64 @@ export class IntegrationsStore {
     await this.ready;
     const own = truckId == null ? true : (await this.pool.query('SELECT 1 FROM crm_trucks WHERE workspace_id = $1 AND id = $2', [ws, truckId])).rowCount;
     if (!own) return false;
-    const r = await this.pool.query(`UPDATE crm_eld_units SET truck_id = $4, linked = $5 WHERE workspace_id = $1 AND provider = $2 AND vehicle_id = $3`,
+    const r = await this.pool.query(
+      `UPDATE crm_eld_units SET truck_id = $4, linked = $5 WHERE workspace_id = $1 AND provider = $2 AND vehicle_id = $3
+       RETURNING lat, lon, at, speed_mph AS "speedMph", heading`,
       [ws, provider, vehicleId, truckId, truckId == null ? 'none' : 'manual']);
+    // The truck shows on the map right away, not at the next sync.
+    const u = r.rows[0];
+    if (truckId != null && u?.lat != null && u.lon != null && u.at) await savePoint(this.pool, ws, truckId, { ...u, at: iso(u.at) });
     return !!r.rowCount;
+  }
+
+  /** Breadcrumbs from the ELD's own history (a truck just connected or linked), at most one per 2 minutes. */
+  async addTrail(ws: number, truckId: number, pts: { lat: number; lon: number; at: string; speedMph: number | null }[]) {
+    if (!pts.length) return;
+    const rows = pts.slice(-2000);
+    await this.pool.query(
+      `INSERT INTO crm_trail (truck_id, workspace_id, at, lat, lon, speed_mph)
+       SELECT $1, $2, x.at, x.lat, x.lon, x.speed FROM unnest($3::timestamptz[], $4::float8[], $5::float8[], $6::real[]) AS x(at, lat, lon, speed)
+       ON CONFLICT DO NOTHING`,
+      [truckId, ws, rows.map((p) => p.at), rows.map((p) => p.lat), rows.map((p) => p.lon), rows.map((p) => p.speedMph)]);
+  }
+
+  /** Breadcrumbs older than 8 days go away (all boards). */
+  async pruneTrail() {
+    await this.ready;
+    await this.pool.query(`DELETE FROM crm_trail WHERE at < now() - interval '8 days'`);
+  }
+
+  /** Linked trucks that have no breadcrumbs in the last day (their history is worth asking the ELD for). */
+  async trucksWithoutTrail(ws: number, provider: string): Promise<{ truckId: number; vehicleId: string }[]> {
+    const { rows } = await this.pool.query(
+      `SELECT u.truck_id, u.vehicle_id FROM crm_eld_units u
+        WHERE u.workspace_id = $1 AND u.provider = $2 AND u.truck_id IS NOT NULL
+          AND (SELECT count(*) FROM crm_trail t WHERE t.truck_id = u.truck_id AND t.at > now() - interval '24 hours') < 3`, [ws, provider]);
+    return rows.map((r) => ({ truckId: Number(r.truck_id), vehicleId: String(r.vehicle_id) }));
   }
 
   async units(ws: number): Promise<EldView[]> {
     await this.ready;
     const { rows } = await this.pool.query(
-      `SELECT provider, vehicle_id, name, truck_id, linked, lat, lon, at, speed_mph, address, driver, hos FROM crm_eld_units WHERE workspace_id = $1 ORDER BY name`, [ws]);
+      `SELECT provider, vehicle_id, name, truck_id, linked, lat, lon, at, speed_mph, heading, address, driver, hos FROM crm_eld_units WHERE workspace_id = $1 ORDER BY name`, [ws]);
     return rows.map((r) => ({
       provider: r.provider as EldProvider, vehicleId: String(r.vehicle_id), name: String(r.name), truckId: r.truck_id == null ? null : Number(r.truck_id),
       linked: (['manual', 'none'].includes(String(r.linked)) ? r.linked : 'auto') as EldView['linked'],
       lat: r.lat == null ? null : Number(r.lat), lon: r.lon == null ? null : Number(r.lon), at: iso(r.at),
-      speedMph: r.speed_mph == null ? null : Number(r.speed_mph), address: String(r.address), driver: String(r.driver), hos: (r.hos as EldView['hos']) ?? null,
+      speedMph: r.speed_mph == null ? null : Number(r.speed_mph), heading: r.heading == null ? null : Number(r.heading),
+      address: String(r.address), driver: String(r.driver), hos: (r.hos as EldView['hos']) ?? null,
     }));
   }
+}
+
+/** Saves an ELD point as the truck's position (the newest point wins, ELD or Telegram) and as a breadcrumb. */
+async function savePoint(q: Pick<pg.Pool, 'query'>, ws: number, truckId: number, u: { lat: number | null; lon: number | null; at: string | null; speedMph: number | null; heading: number | null }) {
+  if (u.lat == null || u.lon == null || !u.at) return;
+  await q.query(
+    `INSERT INTO crm_positions (truck_id, workspace_id, lat, lon, at, speed_mph, heading, source) VALUES ($1,$2,$3,$4,$5,$6,$7,'eld')
+     ON CONFLICT (truck_id) DO UPDATE SET lat = EXCLUDED.lat, lon = EXCLUDED.lon, at = EXCLUDED.at, speed_mph = EXCLUDED.speed_mph, heading = EXCLUDED.heading, source = 'eld'
+       WHERE crm_positions.at < EXCLUDED.at`,
+    [truckId, ws, u.lat, u.lon, u.at, u.speedMph, u.heading]);
+  await q.query('INSERT INTO crm_trail (truck_id, workspace_id, at, lat, lon, speed_mph) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING',
+    [truckId, ws, u.at, u.lat, u.lon, u.speedMph]);
 }

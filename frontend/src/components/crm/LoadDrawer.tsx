@@ -203,7 +203,7 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
             </div>
             {note && <p className="ld-note">{note}</p>}
             <RouteMap from={load.origin} to={load.destination} theme={theme} lane={lane} />
-            {tracking && <TrackingLink loadId={load.id} make={tracking} toast={toast} hasDriver={!!state.drivers?.some((d) => d.truckId === load.truckId)} who={w.customerLower} />}
+            {tracking && <TrackingLink loadId={load.id} make={tracking} toast={toast} hasDriver={load.truckId != null && !!(state.drivers?.some((d) => d.truckId === load.truckId) || state.eld?.some((u) => u.truckId === load.truckId) || state.positions?.some((p) => p.truckId === load.truckId))} who={w.customerLower} />}
           </section>
 
           <section>
@@ -279,7 +279,7 @@ export function LoadDrawer({ load, state, save, remove, close, miles, lane, chec
   )
 }
 
-/** The broker's tracking link: copied in one click; it shows the truck on the lane (from the driver's Telegram location). */
+/** The broker's tracking link: copied in one click; it shows the truck on the lane (from the ELD or the driver's Telegram). */
 function TrackingLink({ loadId, make, toast, hasDriver, who }: { loadId: number; make: (id: number) => Promise<{ url: string }>; toast: (m: string) => void; hasDriver: boolean; who: string }) {
   const [url, setUrl] = useState('')
   const get = async () => {
@@ -295,7 +295,7 @@ function TrackingLink({ loadId, make, toast, hasDriver, who }: { loadId: number;
     <div className="ld-track">
       <button type="button" onClick={() => void get()}>🔗 Tracking link for the {who}</button>
       {url ? <a href={url} target="_blank" rel="noopener">{url.replace(/^https?:\/\//, '')}</a>
-        : <small>{hasDriver ? 'Shows the truck on this lane, no rates.' : 'Connect the driver’s Telegram in Trucks to show the truck’s location.'}</small>}
+        : <small>{hasDriver ? 'Shows the truck on this lane, no rates.' : 'Pick the truck, and link it to Samsara (Integrations) or the driver’s Telegram (Trucks) to show where it is.'}</small>}
     </div>
   )
 }

@@ -93,7 +93,7 @@ export type EldProvider = 'samsara' | 'motive'
 export interface EldHos { status: string; driveLeftMin: number | null; shiftLeftMin: number | null; cycleLeftMin: number | null; breakLeftMin: number | null }
 export interface EldUnit {
   provider: EldProvider; vehicleId: string; name: string; truckId: number | null; linked: 'auto' | 'manual' | 'none'
-  lat: number | null; lon: number | null; at: string | null; speedMph: number | null; address: string; driver: string; hos: EldHos | null
+  lat: number | null; lon: number | null; at: string | null; speedMph: number | null; heading?: number | null; address: string; driver: string; hos: EldHos | null
 }
 export interface Connection { provider: string; region: string; label: string; status: 'ok' | 'error'; error: string; connectedAt: string; syncedAt: string | null; invoices?: number }
 export interface Integrations { ready: boolean; providers: EldProvider[]; quickbooks: boolean; connections: Connection[]; units: EldUnit[] }
@@ -112,11 +112,19 @@ export interface PostingRow { id: number; createdAt: string; status: 'new' | 'em
 export interface InboxMessage { id: number; receivedAt: string; from: string; subject: string; kind: string; summary: string; postings: number; loadId: number | null; note: string }
 export interface InboxSettings { autoEmail: boolean; minRpm: number; maxDeadhead: number; dailyCap: number }
 export interface InboxView { enabled: boolean; ai: boolean; address: string; settings: InboxSettings; postings: PostingRow[]; messages: InboxMessage[] }
-export interface TruckPosition { truckId: number; lat: number; lon: number; at: string; live: boolean }
+export interface TruckPosition {
+  truckId: number; lat: number; lon: number; at: string; live: boolean
+  /** From the ELD; a Telegram location has no speed or heading. Heading in degrees, 0 = north. */
+  speedMph?: number | null; heading?: number | null; source?: 'eld' | 'telegram'
+}
+/** A breadcrumb of the truck's trail: [lon, lat, unix seconds, mph or -1]. */
+export type TrailPoint = [number, number, number, number]
 /** What the broker's tracking page shows (no money). */
 export interface TrackingView {
   date: string; pro: string; origin: string; destination: string; status: LoadStatus; miles: number; company: string; truck: string
   position: TruckPosition | null; lane: LaneResult | null
+  /** Where the truck has driven for this load (in transit only). */
+  trail?: TrailPoint[]
 }
 export interface Team {
   members: { userId: number; name: string; email: string; dispatcherId: number | null }[]
@@ -412,6 +420,8 @@ export const crm = {
   lane: (from: string, to: string) => call<LaneResult>('GET', `/lane?${new URLSearchParams({ from, to })}`),
   /** Map points of places, { "Dallas, TX": [lon, lat] | null }. */
   points: (places: string[]) => call<Record<string, [number, number] | null>>('POST', '/points', { places }),
+  /** Where a truck has been in the last hours (fleet map trail). */
+  trail: (truckId: number, hours = 24) => call<{ points: TrailPoint[] }>('GET', `/trucks/${truckId}/trail?hours=${hours}`),
   addLoad: (l: LoadInput) => call<Load>('POST', '/loads', l),
   updateLoad: (id: number, l: LoadInput) => call<Load>('PATCH', `/loads/${id}`, l),
   removeLoad: (id: number) => call('DELETE', `/loads/${id}`),

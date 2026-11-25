@@ -2762,30 +2762,87 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 .work .maplibregl-ctrl-group button { padding: 0; border-radius: 0; }
 .work .maplibregl-ctrl-attrib { font-size: 10px; }
 
-.bm { display: grid; gap: 12px; }
-.bm-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; }
-.bm-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
-.bm-head p { margin: 3px 0 0; color: var(--muted); }
-.bm-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.work .bm-chips button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; background: var(--surface); color: var(--muted); }
-.work .bm-chips button.on { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); }
-.bm-chips i { width: 8px; height: 8px; border-radius: 50%; }
-.bm-chips button:not(.on) i { opacity: 0.45; }
-.bm-chips em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
-.bm-map { position: relative; height: min(62vh, 560px); min-height: 320px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--surface-2); }
-.bm-tip { position: absolute; left: 12px; bottom: 12px; z-index: 2; display: grid; gap: 2px; max-width: 320px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: var(--shadow-lg); pointer-events: none; }
-.bm-tip span { color: var(--muted); }
-.bm-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
-.bm-list li + li { border-top: 1px solid var(--border); }
-.work .bm-list button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 14px; border: 0; border-radius: 0; background: none; color: var(--text); text-align: left; }
-.bm-list li.on button, .work .bm-list button:hover { background: var(--row-hover); }
-.bm-list i { flex: none; width: 9px; height: 9px; border-radius: 50%; }
-.bm-lane { display: grid; min-width: 0; flex: 1; }
-.bm-lane b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bm-lane small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bm-rate { font-weight: 600; font-variant-numeric: tabular-nums; }
-.bm-empty { margin: 0; padding: 18px; color: var(--muted); text-align: center; border: 1px dashed var(--border); border-radius: 12px; }
-@media (max-width: 600px) { .bm-map { height: 52vh; } .rm-map { height: 180px; } }
+/* Fleet map (ELD-style): truck list on the left, the map stays in view on the right */
+.fl { display: grid; gap: 14px; }
+.fl-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 20px; }
+.fl-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
+.fl-head p { margin: 3px 0 0; color: var(--muted); }
+.fl-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fl-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.work .fl-chips button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; background: var(--surface); color: var(--muted); }
+.work .fl-chips button.on { color: var(--text); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); background: var(--accent-soft); }
+.fl-chips i { width: 8px; height: 8px; border-radius: 50%; }
+.fl-chips em { font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fl-search { width: 220px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; font-size: 13px; }
+.fl-body { display: grid; grid-template-columns: minmax(330px, 400px) 1fr; gap: 14px; align-items: start; }
+.fl-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.fl-card { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; transition: border-color .15s, box-shadow .15s; }
+.fl-card.on { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.work .fl-card-main { display: grid; justify-content: stretch; justify-items: stretch; align-items: start; gap: 4px; width: 100%; padding: 11px 13px; border: 0; border-radius: 0; background: none; color: var(--text); text-align: left; cursor: pointer; }
+.work .fl-card-main:hover { background: var(--row-hover); }
+.fl-r1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fl-unit { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; font-size: 14px; }
+.fl-unit i { width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 0%, transparent); }
+.fl-duty { font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-ago { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.fl-driver { font-weight: 500; }
+.fl-where { color: var(--muted); font-size: 12.5px; }
+.fl-load { display: grid; gap: 5px; margin-top: 4px; padding: 8px 10px; border-radius: 9px; background: var(--surface-2); }
+.fl-load-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.fl-load-top b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-load small { color: var(--muted); font-size: 12px; }
+.fl-load small b { color: var(--text); font-weight: 600; }
+.fl-st { flex: none; padding: 1px 7px; border-radius: 99px; font-style: normal; font-size: 11px; font-weight: 600; }
+.fl-st.in_transit { background: #fef3c7; color: #92400e; }
+.fl-st.booked { background: #dbeafe; color: #1e40af; }
+.theme-dark .fl-st.in_transit { background: #422006; color: #fcd34d; }
+.theme-dark .fl-st.booked { background: #172554; color: #93c5fd; }
+.fl-prog { display: block; height: 5px; border-radius: 99px; background: color-mix(in srgb, var(--muted) 22%, transparent); overflow: hidden; }
+.fl-prog i { display: block; height: 100%; border-radius: inherit; background: #2563eb; }
+.fl-hos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 6px; }
+.fl-clock { display: grid; gap: 2px; min-width: 0; }
+.fl-clock em { font-style: normal; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.fl-clock b { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fl-clock i { display: block; height: 4px; border-radius: 99px; background: color-mix(in srgb, var(--muted) 22%, transparent); overflow: hidden; }
+.fl-clock u { display: block; height: 100%; border-radius: inherit; background: #16a34a; }
+.fl-clock.warn u { background: #d97706; } .fl-clock.warn b { color: #b45309; }
+.fl-clock.bad u { background: #dc2626; } .fl-clock.bad b { color: #dc2626; }
+.fl-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 13px 12px; }
+.fl-empty { padding: 18px; color: var(--muted); text-align: center; border: 1px dashed var(--border); border-radius: 12px; }
+.fl-unassigned { display: grid; gap: 2px; margin-top: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.fl-unassigned h3 { margin: 0 0 4px; padding: 0 4px; font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.fl-unassigned h3 em { font-style: normal; }
+.work .fl-unassigned button { display: grid; gap: 1px; padding: 6px 8px; border: 0; border-radius: 7px; background: none; color: var(--text); text-align: left; }
+.work .fl-unassigned button:hover { background: var(--row-hover); }
+.fl-unassigned small { color: var(--muted); font-size: 12px; }
+.fl-mapwrap { position: sticky; top: 72px; height: calc(100vh - 290px); min-height: 460px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: #e8eef3; }
+.fl-map { width: 100%; height: 100%; }
+.work .fl-fit { position: absolute; top: 10px; left: 10px; z-index: 2; padding: 6px 11px; border: 1px solid rgba(15, 23, 42, .15); border-radius: 8px; background: #fff; color: #0f172a; font-weight: 600; box-shadow: 0 1px 4px rgba(15, 23, 42, .15); }
+.fl-legend { position: absolute; left: 10px; bottom: 10px; z-index: 2; display: flex; flex-wrap: wrap; gap: 4px 12px; max-width: calc(100% - 300px); padding: 7px 10px; border-radius: 8px; background: rgba(255, 255, 255, .94); color: #334155; font-size: 11.5px; box-shadow: 0 1px 4px rgba(15, 23, 42, .15); }
+.fl-legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.fl-legend i { width: 9px; height: 9px; border-radius: 50%; }
+.fl-l { display: inline-block; width: 18px; height: 4px; border-radius: 2px; }
+.fl-l.ahead { background: #2563eb; } .fl-l.done { background: #94a3b8; } .fl-l.trail { background: #7c3aed; }
+@media (max-width: 980px) {
+  .fl-body { grid-template-columns: 1fr; }
+  .fl-mapwrap { position: relative; top: 0; height: 58vh; min-height: 340px; order: -1; }
+  .fl-search { width: 100%; }
+}
+
+/* A truck on a map: status color, an arrow for the heading while driving, the unit number under it */
+.tm { position: relative; width: 30px; height: 30px; cursor: pointer; }
+.tm-dot { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--c); border: 2.5px solid #fff; box-shadow: 0 1px 5px rgba(15, 23, 42, .45); box-sizing: border-box; transition: transform .15s; }
+.tm-arrow { display: none; width: 15px; height: 15px; fill: #fff; transform: rotate(var(--h)); }
+.tm-stop { display: block; width: 8px; height: 8px; border-radius: 2px; background: #fff; }
+.tm.moving .tm-arrow { display: block; }
+.tm.moving .tm-stop { display: none; }
+.tm-tag { position: absolute; top: 33px; left: 50%; transform: translateX(-50%); padding: 1px 7px; border-radius: 6px; background: #0f172a; color: #fff; font: 600 11.5px/1.5 Inter, system-ui, sans-serif; white-space: nowrap; box-shadow: 0 1px 3px rgba(15, 23, 42, .35); pointer-events: none; }
+.tm.sel .tm-dot { transform: scale(1.22); box-shadow: 0 0 0 5px color-mix(in srgb, var(--c) 30%, transparent), 0 2px 8px rgba(15, 23, 42, .5); }
+.tm.sel .tm-tag { background: var(--c); }
+.tm.stale .tm-dot { opacity: .6; }
+.tk-live { display: inline-block; margin-right: 4px; padding: 1px 8px; border-radius: 99px; background: #fef3c7; color: #92400e; font-weight: 600; font-size: 12.5px; }
+.tk-live.on { background: #dcfce7; color: #166534; }
+@media (max-width: 600px) { .rm-map { height: 180px; } }
 
 /* FMCSA check of a broker or carrier: a pill with the verdict, warning signs under it. */
 .ck { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 9px 3px 4px; border-radius: 99px; font-size: 12px; font-weight: 600; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

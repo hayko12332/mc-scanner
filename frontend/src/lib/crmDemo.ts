@@ -143,6 +143,7 @@ export const crmDemo = {
   setInvoiceReminders: () => Promise.resolve({}),
   check: crm.check,
   points: crm.points,
+  trail: async () => ({ points: [] as import('./crm').TrailPoint[] }),
   /** Starts the demo over with the sample data. */
   reset: () => { data = seed(); save(data) },
 }
