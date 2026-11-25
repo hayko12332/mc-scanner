@@ -452,7 +452,7 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
       )}
       {!tool && tab === 'statements' && <StatementsView state={state} toast={toast} />}
       {!tool && tab === 'alerts' && !demo && config?.loadAlerts && <LoadAlertsView owner={state.me?.role !== 'dispatcher'} toast={toast} changed={() => void reload()} />}
-      {!tool && tab === 'integrations' && !demo && <IntegrationsView state={state} owner={state.me?.role !== 'dispatcher'} changed={() => void reload()} toast={toast} />}
+      {!tool && tab === 'integrations' && !demo && <IntegrationsView state={state} owner={state.me?.role !== 'dispatcher'} changed={() => void reload()} toast={toast} openTab={(t) => { setTab(t); scrollTo(0, 0) }} />}
       {!tool && tab === 'trucks' && (
         <TrucksView
           state={state}
