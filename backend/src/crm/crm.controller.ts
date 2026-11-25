@@ -490,6 +490,20 @@ export class CrmController {
       deleteLoad: async (id) => { await this.loadAccess(s, id); await this.store!.deleteLoad(s.ws, id); },
       archiveCarrier: async (id) => { if (s.role !== 'owner') throw new Error('Only the owner can remove carriers'); await this.store!.archiveCarrier(s.ws, id); },
       mcp: () => this.mcp.forAi(s.ws),
+      // Setting up the board with the AI (the owner only, like the pages that do the same).
+      ...(s.role === 'owner' ? {
+        addTruck: (t: { unit: string; driver: string; phone: string; carrierId: number | null }) => this.store!.addTruck(s.ws, t),
+        addDispatcher: (name: string, percent: number) => this.store!.addDispatcher(s.ws, name, percent),
+        setCompany: async (patch: Partial<CompanyInput>) => {
+          const before = await this.store!.company(s.ws);
+          const after = { ...before, ...patch };
+          await this.store!.setCompany(s.user.id, after);
+          return { before, after };
+        },
+        saveCustomerEmail: async (name: string, email: string | null) => ({ before: await this.store!.saveBrokerEmail(s.ws, name, email) }),
+        archiveTruck: (id: number) => this.store!.archiveTruck(s.ws, id),
+        archiveDispatcher: (id: number) => this.store!.archiveDispatcher(s.ws, id),
+      } : {}),
     };
   }
 

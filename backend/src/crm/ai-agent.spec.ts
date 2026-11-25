@@ -201,4 +201,45 @@ describe('AI assistant', () => {
     await undo(ctx, t, 'a1');
     expect(deletedFiles).toEqual([77]);
   });
+
+  it('sets up a board with the user: company, carrier, truck, dispatcher, billing email — each saved and undoable', async () => {
+    fakeApi([
+      [tool('c1', 'update_company', { name: 'Bazaro Jackson Logistics LLC', mc: 'MC-123456', dot: '3456789', type: 'dispatch' }),
+        tool('c2', 'add_carrier', { name: 'Beku', mc: '' }), // already on the board as BEKU
+        tool('c3', 'add_truck', { unit: '#101', driver: 'John Smith', driver_phone: '(555) 010-2000', carrier: 'BEKU' }),
+        tool('c4', 'add_truck', { unit: '7', carrier: 'Unknown Trucking' }),
+        tool('c5', 'add_dispatcher', { name: 'Ana', percent: 8 }),
+        tool('c6', 'save_customer_email', { name: 'RXO', email: 'billing@rxo.example' }),
+        tool('c7', 'save_customer_email', { name: 'CH Robinson', email: 'not-an-email' })],
+      [text('**Company, truck #101, Ana and RXO billing saved.** How many trucks does Beku run?')],
+    ]);
+    const { ctx } = fakeCtx();
+    const done: string[] = [];
+    let company = { name: 'Acme', type: 'dispatch', mc: '', dot: '', phone: '', fleetSize: '' };
+    const emails = new Map<string, string>();
+    Object.assign(ctx, {
+      setCompany: async (patch: Partial<typeof company>) => { const before = company; company = { ...company, ...patch }; done.push('company'); return { before, after: company }; },
+      addTruck: async (t: { unit: string; driver: string; phone: string; carrierId: number | null }) => { done.push(`truck ${t.unit} ${t.driver} ${t.phone} c${t.carrierId}`); return { id: 31, ...t }; },
+      addDispatcher: async (name: string, percent: number) => { done.push(`dispatcher ${name} ${percent}`); return { id: 41, name, percent }; },
+      saveCustomerEmail: async (name: string, email: string | null) => { const before = emails.get(name) ?? null; if (email) emails.set(name, email); else emails.delete(name); return { before }; },
+      archiveTruck: async (id: number) => { done.push(`archived truck ${id}`); },
+    } satisfies Partial<AgentCtx>);
+    const t = newThread();
+    await chat(ctx, t, 'board', { text: 'I have no spreadsheets, help me set up. MC 123456' });
+
+    expect(company).toMatchObject({ name: 'Bazaro Jackson Logistics LLC', mc: '123456', dot: '3456789', type: 'dispatch' });
+    expect(done).toContain('truck 101 John Smith 5550102000 c1');
+    expect(done).toContain('dispatcher Ana 8');
+    expect(emails.get('RXO')).toBe('billing@rxo.example');
+    const errs = t.display.at(-1)!.steps!.filter((x) => typeof x !== 'string' && x.state === 'error').map((x) => (x as { detail?: string }).detail);
+    expect(errs).toEqual([expect.stringContaining('Already on the board: BEKU'), expect.stringContaining('No carrier “Unknown Trucking”'), expect.stringContaining('not an email')]);
+    expect(t.actions!.map((a) => a.tool)).toEqual(['update_company', 'add_truck', 'add_dispatcher', 'save_customer_email']);
+
+    await undo(ctx, t, 'c1');
+    expect(company.mc).toBe('');
+    await undo(ctx, t, 'c3');
+    expect(done).toContain('archived truck 31');
+    await undo(ctx, t, 'c6');
+    expect(emails.has('RXO')).toBe(false);
+  });
 });

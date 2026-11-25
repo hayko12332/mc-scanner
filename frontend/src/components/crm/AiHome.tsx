@@ -32,7 +32,9 @@ const ago = (iso: string) => {
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`
 const isSheet = (f: File) => /\.(xlsx|xls|csv|tsv)$/i.test(f.name) || /sheet|excel|csv/.test(f.type)
 const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening' }
-const TOOL: Record<string, string> = { create_load: 'Added load', update_load: 'Updated load', add_carrier: 'Added carrier', send_invoice: 'Invoice email' }
+const TOOL: Record<string, string> = { create_load: 'Added load', update_load: 'Updated load', add_carrier: 'Added carrier', send_invoice: 'Invoice email', add_truck: 'Added truck', add_dispatcher: 'Added dispatcher', update_company: 'Company details', save_customer_email: 'Billing email' }
+/** Starts the setup interview: the AI asks for what the board needs, one question at a time. */
+const SETUP_ASK = 'Help me set up my board. I don’t have spreadsheets — ask me what you need, one question at a time.'
 
 export function AiHome({ state, theme, openLoad, changed, prompt, onPromptUsed, contextLoadId, firstName, owner }: {
   state: CrmState
@@ -162,7 +164,7 @@ export function AiHome({ state, theme, openLoad, changed, prompt, onPromptUsed, 
         <div className="ah-scroll" ref={scroller}>
           <div className="ah-col">
             {empty && !importing && <Briefing state={state} firstName={firstName} owner={owner} ask={(t) => void send(t)} importData={() => setImporting([])} />}
-            {importing && <ImportCard initial={importing} close={() => setImporting(null)} done={(msg) => { setImporting(null); changed(); setErr(''); setNote(msg) }} />}
+            {importing && <ImportCard initial={importing} close={() => setImporting(null)} done={(msg) => { setImporting(null); changed(); setErr(''); setNote(msg) }} interview={() => { setImporting(null); void send(SETUP_ASK) }} />}
             {items.map((it, i) => (
               <Fragment key={i}>
                 {it.role === 'user'
@@ -458,6 +460,15 @@ function Briefing({ state, firstName, owner, ask, importData }: { state: CrmStat
             <em>Start →</em>
           </button>
         )}
+        {fresh && owner && (
+          <button className="ah-card ah-import-cta" onClick={() => ask(SETUP_ASK)}>
+            <span className="ah-import-ico" aria-hidden="true">✦</span>
+            <span><b>No spreadsheets? Let AI ask you</b><small>{b.broker
+              ? 'Your MC, the carriers you book and your customers’ billing emails — answer in a few words, send photos of papers or rate cons. AI looks companies up in FMCSA and fills the board.'
+              : 'Your MC, the carriers you dispatch, their trucks and drivers, your dispatchers — answer in a few words, send photos of papers or rate cons. AI looks companies up in FMCSA and fills the board.'}</small></span>
+            <em>Start →</em>
+          </button>
+        )}
         {!!needs.length && (
           <div className="ah-card">
             <div className="ah-card-h">Needs you <span className="ah-tag">{needs.length}</span></div>
@@ -491,7 +502,7 @@ function Briefing({ state, firstName, owner, ask, importData }: { state: CrmStat
 }
 
 /** Moving a dispatch office in: drop files or paste a Google Sheet link → preview → Import. */
-export function ImportCard({ initial, close, done }: { initial: File[]; close: () => void; done: (msg: string) => void }) {
+export function ImportCard({ initial, close, done, interview }: { initial: File[]; close: () => void; done: (msg: string) => void; interview?: () => void }) {
   const [files, setFiles] = useState<File[]>(initial)
   const [sheet, setSheet] = useState('')
   const [plan, setPlan] = useState<ImportPlan | null>(null)
@@ -529,6 +540,7 @@ export function ImportCard({ initial, close, done }: { initial: File[]; close: (
               <b>Drop files here or click to choose</b>
               <small>Excel · CSV · PDF · photos · screenshots — load logs, carrier and driver lists, rate cons, exports from your old TMS</small>
             </div>
+            {interview && <button className="ah-imp-ask" onClick={interview}>✦ No files? <b>Let AI ask you</b> — answer a few questions and it fills the board</button>}
             {!!files.length && <div className="ah-imp-files">{files.map((f, i) => <span key={i} className="ah-chip">📄 {f.name}<button aria-label="Remove" onClick={() => setFiles((x) => x.filter((_, j) => j !== i))}>×</button></span>)}</div>}
             <label className="ah-imp-sheet"><span>or a Google Sheet</span><input value={sheet} onChange={(e) => setSheet(e.target.value)} placeholder="https://docs.google.com/spreadsheets/d/… (Share → Anyone with the link)" /></label>
             <div className="ah-imp-f">
@@ -546,6 +558,7 @@ export function ImportCard({ initial, close, done }: { initial: File[]; close: (
             <div className="ah-card ah-imp-f">
               <small>Nothing was saved.</small>
               <button className="ghost" onClick={close}>Close</button>
+              {interview && <button className="ghost" onClick={interview}>Let AI ask you instead</button>}
               <button className="primary" onClick={again}>Add other files</button>
             </div>
           </>

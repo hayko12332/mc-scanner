@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { api, friendly, modelParams } from './ai.js';
 import type { CompanyCheck } from './company-check.js';
 import { forInvoice, type CarrierInput, type LoadInput } from './crm.store.js';
-import type { CrmCarrier, CrmState, Load, LoadStatus } from './crm.types.js';
+import type { CompanyInput, CrmCarrier, CrmState, Load, LoadStatus } from './crm.types.js';
 import { LOAD_STATUSES } from './crm.types.js';
 import { rankTrucks, type TruckSpot } from './inbox/match.js';
 import { PlacesService } from './places.js';
@@ -36,7 +36,8 @@ export interface Step { label: string; detail?: string; ms?: number; state: 'don
 export interface DisplayItem { role: 'user' | 'assistant'; text?: string; file?: string; cards?: Card[]; pending?: string[]; actions?: string[]; steps?: (string | Step)[]; stopped?: boolean }
 
 type Undo = { kind: 'delete_load'; id: number } | { kind: 'restore_load'; id: number; before: LoadInput } | { kind: 'archive_carrier'; id: number }
-  | { kind: 'delete_file'; id: number };
+  | { kind: 'delete_file'; id: number } | { kind: 'archive_truck'; id: number } | { kind: 'archive_dispatcher'; id: number }
+  | { kind: 'restore_company'; before: CompanyInput } | { kind: 'restore_customer_email'; name: string; email: string | null };
 export interface PendingAction {
   id: string; tool: string; input: Record<string, unknown>; summary: string;
   status: 'pending' | 'done' | 'declined' | 'failed' | 'undone'; result?: string;
@@ -95,6 +96,10 @@ function runningLabel(name: string, i: Record<string, unknown>): string {
   if (name === 'create_load') return 'Adding the load';
   if (name === 'update_load') return `Updating load #${String(i.id)}`;
   if (name === 'add_carrier') return `Adding carrier ${String(i.name ?? '')}`;
+  if (name === 'add_truck') return `Adding truck ${i.unit ? `#${String(i.unit)}` : String(i.driver ?? '')}`;
+  if (name === 'add_dispatcher') return `Adding ${String(i.name ?? '')}`;
+  if (name === 'update_company') return 'Saving your company details';
+  if (name === 'save_customer_email') return `Saving ${String(i.name ?? '')}’s billing email`;
   if (name === 'attach_document') return `Attaching the ${String(i.kind ?? 'document').toUpperCase()} to load #${String(i.load_id)}`;
   if (name === 'send_invoice') return 'Preparing the invoice email';
   if (name === 'send_to_factoring') return 'Preparing the factoring packet';
@@ -118,6 +123,10 @@ function stepDone(name: string, i: Record<string, unknown>, data: unknown): { la
   if (name === 'create_load') return { label: 'Added the load', detail: str(i.broker) && `${str(i.broker)} · ${str(i.origin)} → ${str(i.destination)}` };
   if (name === 'update_load') return { label: `Updated load #${String(i.id)}`, detail: Object.keys(i).filter((k) => k !== 'id').map((k) => k.replace(/_/g, ' ')).join(', ') };
   if (name === 'add_carrier') return { label: `Added carrier ${str(i.name)}` };
+  if (name === 'add_truck') return { label: `Added truck ${str(i.unit) ? `#${str(i.unit)}` : ''}`.trim(), detail: [str(i.driver), str(i.carrier)].filter(Boolean).join(' · ') || undefined };
+  if (name === 'add_dispatcher') return { label: `Added ${str(i.name)}`, detail: num(i.percent) ? `${num(i.percent)}%` : undefined };
+  if (name === 'update_company') return { label: 'Saved your company details', detail: [str(i.name), str(i.mc) && `MC ${str(i.mc)}`, str(i.dot) && `DOT ${str(i.dot)}`].filter(Boolean).join(' · ') || undefined };
+  if (name === 'save_customer_email') return { label: `Saved ${str(i.name)}’s billing email`, detail: str(i.email) };
   if (name === 'attach_document') return { label: `Attached the ${String(i.kind ?? 'document').toUpperCase()} to load #${String(i.load_id)}` };
   if (name === 'send_invoice') return { label: 'Sent the invoice', detail: d.to ? `to ${String(d.to)}` : undefined };
   if (name === 'send_to_factoring') return { label: `Sent to ${String(d.factor ?? 'factoring')}`, detail: d.to ? String(d.to) : undefined };
@@ -145,13 +154,22 @@ export interface AgentCtx {
   deleteLoad(id: number): Promise<void>;
   deleteFile(id: number): Promise<void>;
   archiveCarrier(id: number): Promise<void>;
+  // Setting up the board (owner only; optional so a board without them still works).
+  addTruck?(t: { unit: string; driver: string; phone: string; carrierId: number | null }): Promise<{ id: number; unit: string; driver: string }>;
+  addDispatcher?(name: string, percent: number): Promise<{ id: number; name: string; percent: number }>;
+  /** Saves the company details given (the rest stay); returns what was there before, for Undo. */
+  setCompany?(patch: Partial<CompanyInput>): Promise<{ before: CompanyInput; after: CompanyInput }>;
+  /** The billing email invoices for this broker / customer go to; returns the one before, for Undo. */
+  saveCustomerEmail?(name: string, email: string | null): Promise<{ before: string | null }>;
+  archiveTruck?(id: number): Promise<void>;
+  archiveDispatcher?(id: number): Promise<void>;
   /** Services the owner connected through their own MCP server (Motive, Stripe, Zapier…), with fresh tokens. */
   mcp?(): Promise<McpServer[]>;
 }
 export interface McpServer { name: string; url: string; token: string; label: string }
 
 /** Board changes the assistant makes by itself (each can be undone). */
-const AUTO_TOOLS = new Set(['create_load', 'update_load', 'add_carrier', 'attach_document']);
+const AUTO_TOOLS = new Set(['create_load', 'update_load', 'add_carrier', 'attach_document', 'add_truck', 'add_dispatcher', 'update_company', 'save_customer_email']);
 /** Actions that leave the board (emails) and wait for the user's OK. */
 const CONFIRM_TOOLS = new Set(['send_invoice', 'send_to_factoring', 'email_broker']);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -263,7 +281,27 @@ const TOOL_DEFS: Anthropic.Beta.BetaTool[] = [
   {
     name: 'add_carrier',
     description: 'Add a carrier to the board. The user confirms it first.',
-    input_schema: obj({ name: S, mc: S, phone: S, email: S, fee_percent: N, fee_weekly: N, factoring: S }, ['name']),
+    input_schema: obj({ name: S, mc: S, dot: S, phone: S, email: S, fee_percent: N, fee_weekly: N, factoring: S }, ['name']),
+  },
+  {
+    name: 'add_truck',
+    description: 'Add a truck and its driver to the board (dispatch services: the trucks of the carriers they dispatch). Give the unit number and/or the driver; carrier is the carrier’s name as on the board (add the carrier first if it is new).',
+    input_schema: obj({ unit: { type: 'string', description: 'Truck / unit number' }, driver: S, driver_phone: S, carrier: S }),
+  },
+  {
+    name: 'add_dispatcher',
+    description: 'Add a dispatcher (dispatch services) or an agent (brokerages) to the board, with their percent of the load gross they are paid (0 if not known).',
+    input_schema: obj({ name: S, percent: N }, ['name']),
+  },
+  {
+    name: 'update_company',
+    description: 'Save the user’s own company details: legal name, MC, USDOT, phone, what it is (dispatch service, freight broker or carrier) and fleet size. Only the fields given change. Look the company up in FMCSA first (lookup_company) when the user gives an MC or DOT.',
+    input_schema: obj({ name: S, mc: S, dot: S, phone: S, type: { type: 'string', enum: ['dispatch', 'broker', 'carrier'] }, fleet_size: { type: 'string', description: 'e.g. "5" or "10-20"' } }),
+  },
+  {
+    name: 'save_customer_email',
+    description: 'Save where invoices go for a broker (dispatch services) or a customer (brokerages): the company name as written on its loads and its billing / accounting email. send_invoice uses it from then on.',
+    input_schema: obj({ name: S, email: S }, ['name', 'email']),
   },
 ];
 /** Tool inputs stream as they are generated; they are checked here before anything runs (`invalidInput`). */
@@ -301,6 +339,7 @@ Rules:
 - If a rate confirmation (PDF or photo) is sent, read it and call create_load with what it says; mention anything unclear.
 - If a BOL or POD is sent, read its load / PRO / BOL / PO numbers, lane and dates, find the load (find_loads with text = a number, or lane), and attach_document it. A POD signed by the receiver means delivered: update_load status delivered unless the load is already delivered, invoiced or paid. Always say if the receiver noted a shortage, damage, overage or refusal, and if the signature is missing. If no load fits, say so and ask which load it is; never create a load from a BOL or POD.
 - Brokerage boards (the <board_summary> says the company is a freight broker): a load's "broker" field is the brokerage's customer (the shipper who pays) — call it the customer. carrier_pay is what the carrier gets; margin = gross − carrier pay. Invoices go to the customer in the brokerage's name (send_invoice); never use send_to_factoring there. Dispatchers are the brokerage's agents.
+- Setting up the board: when the board is empty or nearly so, or the user has no spreadsheets or asks for help moving in, gather the data with them as a short interview. Ask ONE question at a time, with an example answer, skipping what the <board_summary> already has, in this order: (1) their own company — ask for the MC or USDOT, look it up (lookup_company) and save name, MC, DOT and phone with update_company; (2) a dispatch service: the carriers they dispatch — an MC number per carrier is enough: look each up and add_carrier with the FMCSA name, MC, DOT, phone and email — then each carrier's trucks and drivers (unit #, driver name, phone → add_truck); a brokerage: the carriers they book most (MC numbers) and their customers with billing emails (save_customer_email); (3) dispatchers or agents and their percent (add_dispatcher) — if the user works alone, add no one and move on; (4) loads that are booked, on the road or not paid yet — easiest is to send the rate cons (photos or PDFs) one at a time; or they tell the lane, date, rate and broker/customer and you create_load; (5) billing emails of their brokers/customers (save_customer_email), so invoices go out in one click. Take answers in any form: a typed or pasted list, an email or text message, a photo of a notebook, whiteboard or paper, a screenshot of contacts or of another app — pull out everything in it. Save as you go without asking (each change can be undone); then say in one line what was added and ask the next question. Skip what they don't know. Don't add anything that is already on the board. When everything is in, say what is ready and suggest connecting their ELD on the Integrations page for live truck locations.
 - Be brief and practical, like an experienced dispatcher. Answer in the language the user writes in.`;
 
 /** Finds a carrier / truck / dispatcher id by name (exact, then partial). */
@@ -489,6 +528,10 @@ function summary(st: St, tool: string, i: Record<string, unknown>): string {
     return `Attach the ${String(i.kind).toUpperCase()} to load ${l ? `${l.broker || '#' + l.id} (${lane(l.origin, l.destination)}, ${l.date})` : `#${String(i.load_id)}`}`;
   }
   if (tool === 'add_carrier') return `Add carrier ${str(i.name)}${str(i.mc) ? `, MC ${str(i.mc)}` : ''}${num(i.fee_percent) ? `, fee ${num(i.fee_percent)}%` : num(i.fee_weekly) ? `, fee $${num(i.fee_weekly)}/week` : ''}`;
+  if (tool === 'add_truck') return `Add truck${str(i.unit) ? ` #${str(i.unit)}` : ''}${str(i.driver) ? `, driver ${str(i.driver)}` : ''}${str(i.carrier) ? ` (${str(i.carrier)})` : ''}`;
+  if (tool === 'add_dispatcher') return `Add ${str(i.name)}${num(i.percent) ? `, ${num(i.percent)}%` : ''}`;
+  if (tool === 'update_company') return `Company details: ${[str(i.name), str(i.mc) && `MC ${str(i.mc)}`, str(i.dot) && `DOT ${str(i.dot)}`, str(i.phone), str(i.type), str(i.fleet_size) && `${str(i.fleet_size)} trucks`].filter(Boolean).join(', ')}`;
+  if (tool === 'save_customer_email') return `Invoices for ${str(i.name)} go to ${str(i.email)}`;
   return tool;
 }
 
@@ -578,12 +621,54 @@ async function runWrite(ctx: AgentCtx, st: St, t: Thread, name: string, i: Recor
     return { data: { sent: true, to: r.to }, card: { type: 'note', text: `Email sent to ${r.to}` } };
   }
   if (name === 'add_carrier') {
+    const mc = str(i.mc).replace(/\D/g, '');
+    const dupe = st.carriers.find((c) => (mc && c.mc === mc) || lc(c.name) === lc(i.name));
+    if (dupe) return { data: { error: `Already on the board: ${dupe.name}${dupe.mc ? ` (MC ${dupe.mc})` : ''}` } };
     const pctFee = num(i.fee_percent), weekly = num(i.fee_weekly);
     const c = await ctx.addCarrier({
-      name: str(i.name), mc: str(i.mc).replace(/\D/g, ''), dot: '', phone: str(i.phone), email: str(i.email), notes: '',
+      name: str(i.name), mc: str(i.mc).replace(/\D/g, ''), dot: str(i.dot).replace(/\D/g, '').slice(0, 9), phone: str(i.phone), email: str(i.email), notes: '',
       feeType: weekly && !pctFee ? 'flat' : 'percent', fee: weekly && !pctFee ? weekly : (pctFee ?? 0), factoring: str(i.factoring),
     });
     return { data: { added: { id: c.id, name: c.name, mc: c.mc } }, card: { type: 'note', text: `Carrier ${c.name} added` }, undo: { kind: 'archive_carrier', id: c.id } };
+  }
+  if (name === 'add_truck') {
+    if (!ctx.addTruck) return { data: { error: 'Only the board owner can add trucks' } };
+    const unit = str(i.unit, 30).replace(/^#/, ''), driver = str(i.driver, 80);
+    if (!unit && !driver) return { data: { error: 'Give the unit number or the driver' } };
+    const dupe = st.trucks.find((x) => (unit && lc(x.unit) === lc(unit)) || (!unit && lc(x.driver) === lc(driver)));
+    if (dupe) return { data: { error: `Already on the board: truck #${dupe.unit || '—'} ${dupe.driver}`.trim() } };
+    const carrierId = idByName(st.carriers, i.carrier, (c) => [c.name]);
+    if (str(i.carrier) && carrierId == null) return { data: { error: `No carrier “${str(i.carrier)}” on the board — add it first with add_carrier` } };
+    const tr = await ctx.addTruck({ unit, driver, phone: str(i.driver_phone, 30).replace(/[^\d+]/g, ''), carrierId: carrierId ?? null });
+    return { data: { added: { id: tr.id, unit: tr.unit, driver: tr.driver } }, card: { type: 'note', text: `Truck ${tr.unit ? `#${tr.unit} ` : ''}${tr.driver} added`.replace(/\s+/g, ' ').trim() }, undo: { kind: 'archive_truck', id: tr.id } };
+  }
+  if (name === 'add_dispatcher') {
+    if (!ctx.addDispatcher) return { data: { error: 'Only the board owner can add dispatchers' } };
+    const n = str(i.name, 80);
+    if (st.dispatchers.some((d) => lc(d.name) === lc(n))) return { data: { error: `${n} is already on the board` } };
+    const pct = Math.max(0, Math.min(100, num(i.percent) ?? 0));
+    const d = await ctx.addDispatcher(n, pct);
+    return { data: { added: d }, card: { type: 'note', text: `${d.name} added${d.percent ? ` (${d.percent}%)` : ''}` }, undo: { kind: 'archive_dispatcher', id: d.id } };
+  }
+  if (name === 'update_company') {
+    if (!ctx.setCompany) return { data: { error: 'Only the board owner can change the company details' } };
+    const patch: Partial<CompanyInput> = {};
+    if (str(i.name)) patch.name = str(i.name, 120);
+    if (str(i.mc)) patch.mc = str(i.mc).replace(/\D/g, '').slice(0, 8);
+    if (str(i.dot)) patch.dot = str(i.dot).replace(/\D/g, '').slice(0, 9);
+    if (str(i.phone)) patch.phone = str(i.phone, 30);
+    if (['dispatch', 'broker', 'carrier'].includes(str(i.type))) patch.type = str(i.type);
+    if (str(i.fleet_size)) patch.fleetSize = str(i.fleet_size, 20);
+    if (!Object.keys(patch).length) return { data: { error: 'Nothing to save' } };
+    const r = await ctx.setCompany(patch);
+    return { data: { saved: r.after }, card: { type: 'note', text: `Company details saved: ${[r.after.name, r.after.mc && `MC ${r.after.mc}`, r.after.dot && `DOT ${r.after.dot}`].filter(Boolean).join(' · ')}` }, undo: { kind: 'restore_company', before: r.before } };
+  }
+  if (name === 'save_customer_email') {
+    if (!ctx.saveCustomerEmail) return { data: { error: 'Only the board owner can save billing emails' } };
+    const n = str(i.name, 200), email = str(i.email, 200);
+    if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(email)) return { data: { error: `“${email}” is not an email address` } };
+    const r = await ctx.saveCustomerEmail(n, email);
+    return { data: { saved: { name: n, email }, replaced: r.before }, card: { type: 'note', text: `Invoices for ${n} will go to ${email}` }, undo: { kind: 'restore_customer_email', name: n, email: r.before } };
   }
   return { data: { error: `Unknown action ${name}` } };
 }
@@ -954,6 +1039,10 @@ export async function undo(ctx: AgentCtx, t: Thread, actionId: string): Promise<
   if (a.undo.kind === 'delete_load') await ctx.deleteLoad(a.undo.id);
   else if (a.undo.kind === 'restore_load') await ctx.updateLoad(a.undo.id, a.undo.before);
   else if (a.undo.kind === 'delete_file') await ctx.deleteFile(a.undo.id);
+  else if (a.undo.kind === 'archive_truck') await ctx.archiveTruck?.(a.undo.id);
+  else if (a.undo.kind === 'archive_dispatcher') await ctx.archiveDispatcher?.(a.undo.id);
+  else if (a.undo.kind === 'restore_company') await ctx.setCompany?.(a.undo.before);
+  else if (a.undo.kind === 'restore_customer_email') await ctx.saveCustomerEmail?.(a.undo.name, a.undo.email);
   else await ctx.archiveCarrier(a.undo.id);
   a.status = 'undone';
   (t.notes ??= []).push(`the user undid “${a.summary}”`);
@@ -970,7 +1059,8 @@ export function currentLoad<T extends Pick<Load, 'truckId' | 'status' | 'date'>>
 export function boardContext(st: St, me: { role: string }): string {
   return [
     `Company: ${st.company.name || '—'} (${(st.company as { type?: string }).type === 'broker' ? 'a freight broker: loads come from customers, carriers are paid carrier_pay. Say "customer", never "broker", for who pays a load; the carrier’s factoring doesn’t matter for invoices' : 'a dispatch service: loads come from brokers for its carriers'}). Today: ${today()}. The user is the ${me.role === 'dispatcher' ? 'dispatcher (sees only their own loads)' : 'owner of the board'}.`,
-    `Board: ${st.loads.length} loads.`,
+    `Company details: ${[st.company.mc && `MC ${st.company.mc}`, (st.company as { dot?: string }).dot && `USDOT ${(st.company as { dot?: string }).dot}`, (st.company as { phone?: string }).phone && `phone ${(st.company as { phone?: string }).phone}`].filter(Boolean).join(', ') || 'no MC, USDOT or phone yet'}.`,
+    `Board: ${st.loads.length} loads. Billing emails saved for: ${Object.keys((st as { brokerEmails?: Record<string, string> }).brokerEmails ?? {}).slice(0, 40).join('; ') || 'none'}.`,
     `Carriers: ${st.carriers.map((c) => `${c.name}${c.mc ? ` (MC ${c.mc})` : ''}`).join('; ') || 'none'}.`,
     `Trucks: ${st.trucks.map((x) => `#${x.unit || '—'} ${x.driver}`.trim()).join('; ') || 'none'}.`,
     `Dispatchers: ${st.dispatchers.map((d) => `${d.name} ${d.percent}%`).join('; ') || 'none'}.`,

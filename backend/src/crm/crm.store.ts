@@ -607,6 +607,19 @@ export class CrmStore {
     return rows[0] ? toLoad(rows[0]) : null;
   }
 
+  /** Where invoices for this broker / customer go (null removes it); returns the email it had before. */
+  async saveBrokerEmail(ws: number, broker: string, email: string | null): Promise<string | null> {
+    const key = broker.trim().toLowerCase();
+    const { rows } = await this.pool.query('SELECT email FROM crm_broker_emails WHERE workspace_id = $1 AND broker = $2', [ws, key]);
+    if (email) {
+      await this.pool.query(`INSERT INTO crm_broker_emails (workspace_id, broker, email) VALUES ($1, $2, $3)
+        ON CONFLICT (workspace_id, broker) DO UPDATE SET email = EXCLUDED.email`, [ws, key, email]);
+    } else {
+      await this.pool.query('DELETE FROM crm_broker_emails WHERE workspace_id = $1 AND broker = $2', [ws, key]);
+    }
+    return rows[0] ? String(rows[0].email) : null;
+  }
+
   /** Records a sent invoice, remembers the broker's billing email, and marks the load invoiced today (if it wasn't). */
   async invoiceSent(ws: number, load: Load, number: string, to: string, remind: boolean, today: string) {
     await this.pool.query(
