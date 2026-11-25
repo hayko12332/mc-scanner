@@ -237,3 +237,9 @@ export const appById = (id: string) => APPS.find((a) => a.id === id)
 
 /** Companies whose logo is in /logos (downloaded once from their site icon; the others show their initials). */
 export const LOGOS = new Set('123lb,apex,atob,axle,bestpass,bill,boldsign,carrierassure,chrobinson,coast,codat,comdata,composio,coverwhale,dat,denim,directfreight,docusign,ecapital,efs,eroad,flexport,fmcsa,freshbooks,gdrive,gmail,greenscreens,haulpay,highway,isaac,luckytruck,make,merge,motive,nextins,otr,outlook,paypal,pcmiler,peoplenet,pipedream,plaid,platformscience,prepass,quickbooks,relay,reliance,rmis,roadflex,rutter,samsara,shipwell,sonar,stripe,tafs,tcs,telegram,teletrac,terminal,tollguru,triumph,truckercloud,truckerpath,truckstop,twilio,uberfreight,verizon,xero,zapier,zonar'.split(','))
+
+/**
+ * Companies with an app on Zapier (zapier.com/apps/<app>, checked 2026-11-25): the owner connects their own Zapier
+ * once (Integrations → Zapier) and turns on that app's actions there; HaulPanel's AI then works in it.
+ */
+export const ON_ZAPIER = new Set(['samsara', 'motive', 'quickbooks', 'xero', 'freshbooks', 'stripe', 'paypal', 'square', 'gmail', 'outlook', 'gdrive', 'docusign', 'boldsign', 'twilio', 'ringcentral'])

@@ -3350,6 +3350,13 @@ button.hp3-shot { margin: 0 auto; max-width: 1120px; }
 .work .ig-chip:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
 .ig-chip .ig-tile { width: 22px; height: 22px; border-radius: 50%; font-size: 9px; }
 .sk-card { pointer-events: none; }
+.ig-tag.zap { background: #fff1e8; color: #c2410c; }
+.theme-dark .ig-tag.zap { background: #431407; color: #fdba74; }
+.ig-steps { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; counter-reset: step; }
+.ig-steps li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding-left: 30px; position: relative; font-size: 13.5px; counter-increment: step; }
+.ig-steps li::before { content: counter(step); position: absolute; left: 0; top: 0; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 12px; font-weight: 700; }
+.ig-steps li.done::before { content: '✓'; background: #dcfce7; color: #15803d; }
+.ig-steps li > span { flex: 1; min-width: 200px; }
 .ig-tools summary { cursor: pointer; color: var(--accent); font-weight: 600; font-size: 13px; }
 .ig-tools ul { display: grid; gap: 4px; margin: 8px 0 0; padding-left: 18px; max-height: 260px; overflow-y: auto; font-size: 12.5px; color: var(--muted); }
 .ig-tools code { color: var(--text); font-size: 12px; }

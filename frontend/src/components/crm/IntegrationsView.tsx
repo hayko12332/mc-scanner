@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { track } from '../../lib/analytics'
 import { crm, dutyLabel, hoursLeft, type CrmState, type EldProvider, type EldUnit, type Integrations } from '../../lib/crm'
-import { APPS, appById, CATEGORIES, LOGOS, type App, type Category } from '../../lib/integrationsCatalog'
+import { APPS, appById, CATEGORIES, LOGOS, ON_ZAPIER, type App, type Category } from '../../lib/integrationsCatalog'
 import { Icon, type IconName } from '../Icon'
 
 // Integrations, laid out like an app marketplace: what's connected on top, then every company HaulPanel can connect
@@ -48,12 +48,16 @@ const ELD: Record<EldProvider, { name: string; what: string; field: string; step
 
 const mcpConn = (app: App, data: Integrations) => data.connections.find((c) => c.provider === `mcp:${app.id}`)
 const mcpReady = (app: App, data: Integrations) => !!data.mcp?.includes(app.id)
+/** Reachable through the owner's own Zapier (when Zapier can be connected here). */
+const viaZapier = (app: App, data: Integrations) => ON_ZAPIER.has(app.id) && !!data.mcp?.includes('zapier')
+const zapierOn = (data: Integrations) => data.connections.some((c) => c.provider === 'mcp:zapier' && c.status === 'ok')
 
 function statusOf(app: App, data: Integrations, state: CrmState): Status {
   const mc = mcpConn(app, data)
   const direct = directStatus(app, data, state)
   if (mc && direct.tone !== 'ok') return mc.status === 'ok' ? { label: 'Connected', tone: 'ok' } : { label: 'Needs attention', tone: 'bad' }
   if (mcpReady(app, data) && !['ok', 'bad', 'built'].includes(direct.tone) && direct.label !== 'Available') return { label: 'Available', tone: 'muted' }
+  if (viaZapier(app, data) && !['ok', 'bad', 'built'].includes(direct.tone) && direct.label !== 'Available') return zapierOn(data) ? { label: 'Via Zapier', tone: 'built' } : { label: 'Via Zapier', tone: 'muted' }
   return direct
 }
 
@@ -72,7 +76,7 @@ function directStatus(app: App, data: Integrations, state: CrmState): Status {
   if (app.kind === 'telegram') return (state.drivers?.length ?? 0) > 0 ? { label: `${state.drivers!.length} ${state.drivers!.length === 1 ? 'driver' : 'drivers'}`, tone: 'ok' } : { label: 'Built in', tone: 'built' }
   return app.kind === 'requested' ? { label: 'Access requested', tone: 'review' } : { label: 'Planned', tone: 'muted' }
 }
-const isLive = (app: App, data: Integrations) => mcpReady(app, data) || directLive(app, data)
+const isLive = (app: App, data: Integrations) => mcpReady(app, data) || viaZapier(app, data) || directLive(app, data)
 /** Works without MCP: built in, or the direct connection is switched on. */
 const directLive = (app: App, data: Integrations) =>
   app.kind === 'factoring' || app.kind === 'telegram' || app.kind === 'fmcsa' || (app.kind === 'eld' && data.providers.includes(app.provider!)) || (app.kind === 'quickbooks' && data.quickbooks)
@@ -199,7 +203,7 @@ export function IntegrationsView({ state, owner, changed, toast, openTab, initia
 }
 
 function AppCard({ app, st, live, wanted, onOpen }: { app: App; st: Status; live: boolean; wanted: boolean; onOpen: () => void }) {
-  const cta = st.tone === 'ok' || st.tone === 'bad' ? 'Manage' : live ? (app.kind === 'eld' || app.kind === 'quickbooks' || app.mcp ? 'Connect' : 'Set up') : 'Details'
+  const cta = st.tone === 'ok' || st.tone === 'bad' ? 'Manage' : live ? (app.kind === 'eld' || app.kind === 'quickbooks' || app.mcp || ON_ZAPIER.has(app.id) ? 'Connect' : 'Set up') : 'Details'
   return (
     <button className={`ig-app ${live ? '' : 'soon'}`} onClick={onOpen}>
       <span className="ig-app-top">
@@ -210,6 +214,7 @@ function AppCard({ app, st, live, wanted, onOpen }: { app: App; st: Status; live
       <span className="ig-app-tags">
         {app.reaches && <em className="ig-tag hub"><Icon name="plug" size={12} />{app.reaches}</em>}
         {app.mcp && <em className="ig-tag mcp"><Icon name="bot" size={12} />MCP</em>}
+        {ON_ZAPIER.has(app.id) && <em className="ig-tag zap"><Icon name="zap" size={12} />Zapier</em>}
         {app.via?.length ? <em className="ig-tag">+{app.via.length} hubs</em> : null}
         {wanted && <em className="ig-tag want"><Icon name="check" size={12} />You use it</em>}
       </span>
@@ -250,8 +255,8 @@ function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, wa
         <div className="ig-panel-body">
           <p className="ig-lead">{app.blurb}</p>
 
-          {app.kind === 'eld' && live && <EldSetup provider={app.provider!} data={data} state={state} owner={owner} refresh={refresh} toast={toast} openMap={openTab ? () => openTab('map') : undefined} />}
-          {app.kind === 'quickbooks' && live && <QuickBooksSetup data={data} owner={owner} refresh={refresh} toast={toast} />}
+          {app.kind === 'eld' && directLive(app, data) && <EldSetup provider={app.provider!} data={data} state={state} owner={owner} refresh={refresh} toast={toast} openMap={openTab ? () => openTab('map') : undefined} />}
+          {app.kind === 'quickbooks' && directLive(app, data) && <QuickBooksSetup data={data} owner={owner} refresh={refresh} toast={toast} />}
           {app.kind === 'factoring' && <FactoringInfo state={state} openLoads={openTab ? () => { close(); openTab('loads') } : undefined} />}
           {app.kind === 'telegram' && (
             <div className="ig-box">
@@ -262,6 +267,7 @@ function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, wa
           )}
           {app.kind === 'fmcsa' && <div className="ig-box"><b>Always on</b><p className="ig-muted">Type an MC on a load or a carrier and the check runs by itself. New MCs every day are in <b>New MC leads</b>.</p></div>}
           {mcpReady(app, data) && <McpConnect app={app} data={data} owner={owner} refresh={refresh} toast={toast} askAi={openTab ? () => { close(); openTab('ai') } : undefined} />}
+          {viaZapier(app, data) && app.id !== 'zapier' && !mcpConn(app, data) && <ZapierRoute app={app} data={data} owner={owner} toast={toast} openZapier={() => openApp('zapier')} askAi={openTab ? () => { close(); openTab('ai') } : undefined} />}
           {!live && app.pending && (
             <div className="ig-box ig-wait">
               <b>Not available yet</b>
@@ -278,6 +284,7 @@ function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, wa
               {app.category !== 'hubs' && <li><Icon name="plug" size={16} /><span><b>Direct connection</b><small>{app.kind === 'eld' ? 'API token from your account' : app.kind === 'quickbooks' ? 'Sign in with Intuit' : dLive ? 'Built into HaulPanel' : 'Their API, with your permission'}</small></span><em className={`ig-pill ${directTone}`}><i />{direct}</em></li>}
               {app.category === 'hubs' && <li><Icon name="plug" size={16} /><span><b>One connection</b><small>Reaches: {app.reaches}</small></span><em className={`ig-pill ${st.tone}`}><i />{st.label}</em></li>}
               {app.mcp && <li><Icon name="bot" size={16} /><span><b>AI assistant · MCP</b><small>{app.name}’s own MCP server{app.mcp.includes('.') ? ` (${app.mcp})` : ''} — HaulPanel’s AI works in your account after you sign in</small></span>{mcpConn(app, data) ? <em className="ig-pill ok"><i />Connected</em> : mcpReady(app, data) ? <em className="ig-pill built"><i />Ready to connect</em> : <em className="ig-pill muted"><i />Planned</em>}</li>}
+              {ON_ZAPIER.has(app.id) && app.id !== 'zapier' && <li><Icon name="zap" size={16} /><span><b>Through your Zapier</b><small>Connect Zapier once, turn on {app.name} actions there — the AI uses them</small></span>{zapierOn(data) ? <em className="ig-pill ok"><i />Zapier connected</em> : data.mcp?.includes('zapier') ? <em className="ig-pill built"><i />Ready to connect</em> : <em className="ig-pill muted"><i />Planned</em>}</li>}
               {hubs.length > 0 && (
                 <li><Icon name="refresh" size={16} /><span><b>Through a connect hub</b>
                   <small className="ig-hubs">{hubs.map((h) => <button key={h.id} className="ig-chip" onClick={() => openApp(h.id)}><Tile app={h} />{h.name}</button>)}</small></span>
@@ -304,6 +311,39 @@ function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, wa
           </section>
         </div>
       </aside>
+    </div>
+  )
+}
+
+/** A company reached through the owner's own Zapier: connect Zapier, turn the company's actions on there, ask the AI. */
+function ZapierRoute({ app, data, owner, toast, openZapier, askAi }: {
+  app: App; data: Integrations; owner: boolean; toast: (m: string) => void; openZapier: () => void; askAi?: () => void
+}) {
+  const on = zapierOn(data)
+  const [busy, setBusy] = useState(false)
+  const connect = async () => {
+    setBusy(true)
+    try { location.href = (await crm.mcpConnect('zapier')).url } catch (e) { toast((e as Error).message); setBusy(false) }
+  }
+  return (
+    <div className="ig-box">
+      <b>Connect {app.name} through Zapier</b>
+      <ol className="ig-steps">
+        <li className={on ? 'done' : ''}>
+          <span>{on ? <>Zapier is connected ✓ <button className="w-link" onClick={openZapier}>manage</button></> : 'Connect your Zapier account (free plan works to start).'}</span>
+          {!on && <button className="primary" disabled={busy || !owner || !data.ready} onClick={() => void connect()}>{busy ? 'Opening…' : 'Connect Zapier'}</button>}
+        </li>
+        <li>
+          <span>In Zapier MCP, add {app.name} and turn on the actions the AI may use (for example: find, create, send).</span>
+          <a className="btn" href="https://mcp.zapier.com/" target="_blank" rel="noopener">Open Zapier MCP ↗</a>
+        </li>
+        <li>
+          <span>Ask the assistant — it uses {app.name} through Zapier and shows each step.</span>
+          {askAi && <button onClick={askAi} disabled={!on}>Ask the AI</button>}
+        </li>
+      </ol>
+      {!owner && <small className="ig-muted">Only the owner of the board can connect it.</small>}
+      <small className="ig-muted">Each action the AI runs counts as a Zapier task on your plan.</small>
     </div>
   )
 }
