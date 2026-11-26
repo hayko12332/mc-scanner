@@ -31,7 +31,7 @@ export const PARTNERS: Partner[] = [
   { id: 'bobtail', name: 'Bobtail', category: 'factoring', url: 'https://www.bobtail.com', blurb: 'Freight factoring for small carriers, with a program for dispatchers.', for: 'New authorities and dispatchers' },
   { id: 'truckstop', name: 'Truckstop', category: 'loadboards', url: 'https://truckstop.com', blurb: 'Load board with broker credit and days-to-pay, rate insights and truck posting.', for: 'Carriers, dispatchers and brokers' },
   { id: '123lb', name: '123Loadboard', category: 'loadboards', url: 'https://www.123loadboard.com', blurb: 'Affordable load board with load search, broker credit and mileage tools.', for: 'Owner-operators and dispatchers' },
-  { id: 'dat', name: 'DAT', category: 'loadboards', url: 'https://www.dat.com', blurb: 'The largest load board in North America, with rate data by lane.', for: 'Carriers, dispatchers and brokers' },
+  { id: 'dat', name: 'DAT', category: 'loadboards', url: 'https://www.dat.com', blurb: 'Load board with broker credit on every plan and lane rate data from Enhanced up.', for: 'Carriers, dispatchers and brokers' },
   { id: 'motive', name: 'Motive', category: 'eld', url: 'https://gomotive.com', blurb: 'ELD, GPS tracking, dash cams and fleet management.', for: 'Fleets of every size' },
   { id: 'coast', name: 'Coast', category: 'fuel', url: 'https://coastpay.com', blurb: 'Fuel and fleet card with spending controls for each driver and truck.', for: 'Small and mid-size fleets' },
   { id: 'nextins', name: 'NEXT Insurance', category: 'insurance', url: 'https://www.nextinsurance.com', blurb: 'Business insurance bought online — general liability and more for small businesses.', for: 'Dispatch services and small businesses' },

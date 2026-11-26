@@ -1,6 +1,6 @@
 import { esc, page, SITE } from './layout.js';
 import { goHref, PARTNER_CATEGORIES, partner, PARTNERS, type Partner } from './partners.js';
-import { profilePath } from './partner-pages.js';
+import { icon, profilePath, SVC_CSS } from './partner-pages.js';
 import { COMPARISONS, PROFILES } from './partner-profiles.js';
 
 // Free tools and guides for dispatchers, carriers and brokers: calculators and document templates that work right
@@ -466,21 +466,29 @@ fieldset{border:1px solid var(--line);border-radius:14px;padding:14px 16px 6px;m
 .guide{max-width:760px;margin:12px 0 40px}.guide h2{margin-top:32px}.guide-steps{padding-left:22px}.guide-steps li{margin:0 0 14px}.guide ul li{margin:0 0 6px}
 .cmp{width:100%;border-collapse:collapse;margin:16px 0 8px;font-size:15px}.cmp th,.cmp td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}.cmp thead th{background:var(--soft)}
 .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:14px 0 8px}
-.pcard{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:14px;padding:16px;color:var(--text);transition:border-color .15s,box-shadow .15s}.pcard:hover{border-color:var(--accent);box-shadow:0 10px 24px rgba(15,23,42,.06)}.pname{color:var(--text)}
-.pcard img{border-radius:10px;flex:none}.pcard b{display:block}.pcard small{display:block;color:var(--muted);font-size:14px;margin:3px 0 6px}.pcard em{font-style:normal;font-size:13px;color:var(--accent);font-weight:600}
+.pcard{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:18px;padding:20px;background:#fff;color:var(--text);transition:border-color .15s,box-shadow .15s,transform .15s}
+.pcard:hover{border-color:#c7d7fe;box-shadow:0 16px 34px rgba(15,23,42,.08);transform:translateY(-2px)}
+.pc-top{display:flex;gap:12px;align-items:center;margin-bottom:12px}.pc-top img{width:48px;height:48px;border-radius:13px;box-shadow:0 0 0 1px var(--line);flex:none}
+.pname{display:block;font-weight:800;font-size:16.5px;color:var(--text)}.pc-top small{color:var(--muted);font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.pcard>p{margin:0 0 8px;color:var(--muted);font-size:14.5px}.pc-for{display:flex;gap:6px;align-items:center;font-size:13.5px!important;color:#475569!important}.pc-for svg{color:#16a34a;flex:none}
+.pc-act{display:flex;gap:8px;margin-top:auto;padding-top:12px}.btn.sm{height:36px;padding:0 14px;font-size:14px;border-radius:9px}.pc-act .btn{flex:1}
+.catnav{display:flex;flex-wrap:wrap;gap:8px}.catnav a{display:inline-flex;align-items:center;height:36px;padding:0 14px;border-radius:99px;background:#fff;border:1px solid var(--line);color:var(--text);font-weight:600;font-size:14px;box-shadow:0 2px 6px rgba(15,23,42,.04)}.catnav a:hover{border-color:var(--accent);color:var(--accent);text-decoration:none}
+.cmpcards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.cmpcards a{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:18px;padding:20px;background:linear-gradient(180deg,#fff,#f8faff);color:var(--text);transition:box-shadow .15s,border-color .15s}
+.cmpcards a:hover{border-color:#c7d7fe;box-shadow:0 14px 30px rgba(15,23,42,.08);text-decoration:none}.cmpcards i{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:#0f172a;color:#fff;margin-bottom:6px}
+.cmpcards b{font-size:16px;line-height:1.3}.cmpcards small{color:var(--muted);font-size:13.5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}.cmpcards em{margin-top:auto;padding-top:8px;font-style:normal;font-weight:700;color:var(--accent);display:inline-flex;align-items:center;gap:6px;font-size:14px}
 .upsell{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .tools-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:18px 0 40px}.tools-grid a{display:block;border:1px solid var(--line);border-radius:14px;padding:18px;color:var(--text)}
 .tools-grid a:hover{border-color:var(--accent);text-decoration:none}.tools-grid small{display:block;color:var(--muted);margin-top:6px;font-size:14px}
-@media (max-width:900px){.pgrid{grid-template-columns:1fr}.tool,.doc-tool{grid-template-columns:1fr}.tool-out{position:static}.fgrid{grid-template-columns:1fr}.doc-2{grid-template-columns:1fr}.tools-grid{grid-template-columns:1fr}.doc{padding:20px}}
+@media (max-width:900px){.cmpcards{grid-template-columns:1fr 1fr}.pgrid{grid-template-columns:1fr}.tool,.doc-tool{grid-template-columns:1fr}.tool-out{position:static}.fgrid{grid-template-columns:1fr}.doc-2{grid-template-columns:1fr}.tools-grid{grid-template-columns:1fr}.doc{padding:20px}}
 @media print{.top,.foot,.crumbs,.wrap>h1,.wrap>.lead,.tool-form,.doc-actions,.after,.pgrid,.free-faq{display:none!important}main .wrap{max-width:none;padding:0}.tool{display:block;margin:0}.tool-out{position:static}.doc{border:0;box-shadow:none;padding:0}}
 </style>`;
 
 const DISCLOSURE = 'Some links are referral links: HaulPanel may earn a fee if you sign up, at no cost to you. We only list services that are useful to truckers.';
-const visit = (p: Partner, from: string) => `<a href="${goHref(p.id, from)}" target="_blank" rel="sponsored nofollow noopener">Visit ${esc(p.name)} ↗</a>`;
-/** A company card: its page on HaulPanel when there is one, and the way to the company itself. */
-const partnerCard = (p: Partner, from: string) => PROFILES[p.id]
-  ? `<div class="pcard"><img src="/logos/${p.id}.png" alt="" width="40" height="40" loading="lazy"><span><a class="pname" href="${profilePath(p.id)}"><b>${esc(p.name)}</b></a><small>${esc(p.blurb)}</small><em><a href="${profilePath(p.id)}">Read more</a> · ${visit(p, from)}</em></span></div>`
-  : `<div class="pcard"><img src="/logos/${p.id}.png" alt="" width="40" height="40" loading="lazy"><span><b>${esc(p.name)}</b><small>${esc(p.blurb)}</small><em>${esc(p.for)} · ${visit(p, from)}</em></span></div>`;
+const catLabel = (p: Partner) => PARTNER_CATEGORIES.find((c) => c.id === p.category)?.name ?? '';
+/** A company card: logo, what it is, its page on HaulPanel and the way to the company itself. */
+const partnerCard = (p: Partner, from: string) => `<div class="pcard"><div class="pc-top"><img src="/logos/${p.id}.png" alt="" width="48" height="48" loading="lazy"><div>${PROFILES[p.id] ? `<a class="pname" href="${profilePath(p.id)}">${esc(p.name)}</a>` : `<b class="pname">${esc(p.name)}</b>`}<small>${esc(catLabel(p))}</small></div></div>
+<p>${esc(p.blurb)}</p><p class="pc-for">${icon('check', 15)}${esc(p.for)}</p>
+<div class="pc-act">${PROFILES[p.id] ? `<a class="btn sm" href="${profilePath(p.id)}">Overview</a>` : ''}<a class="btn sm primary" href="${goHref(p.id, from)}" target="_blank" rel="sponsored nofollow noopener">Visit ${icon('ext', 14)}</a></div></div>`;
 
 /** "Services that help" under a tool or guide. */
 function partnerSection(ids: string[], from: string): string {
@@ -491,22 +499,27 @@ function partnerSection(ids: string[], from: string): string {
 
 /** /trucking-services: every recommended service by category. */
 function servicesPage(): string {
-  const body = `${FREE_CSS}<div class="wrap" style="padding-bottom:48px">
-<h1 style="margin-top:28px">Trucking services we recommend</h1>
-<p class="lead">Factoring, load boards, ELDs, fuel cards, insurance and the paperwork to start a trucking or dispatch business — the services our users ask about most.</p>
-<h2 style="margin-top:28px">Compare before you choose</h2><div class="tools-grid">${Object.values(COMPARISONS).map((c) => `<a href="/trucking-services/${c.slug}"><b>${esc(c.h1)}</b><small>${esc(c.lead.slice(0, 120))}${c.lead.length > 120 ? '…' : ''}</small></a>`).join('')}</div>
-${PARTNER_CATEGORIES.map((c) => {
-    const ps = PARTNERS.filter((p) => p.category === c.id);
-    return ps.length ? `<h2 style="margin-top:32px">${esc(c.name)}</h2><p class="muted">${esc(c.why)}</p><div class="pgrid">${ps.map((p) => partnerCard(p, 'trucking-services')).join('')}</div>` : '';
-  }).join('')}
-<p class="note" style="margin-top:28px">${esc(DISCLOSURE)}</p>
-<div class="box upsell" style="margin-top:24px"><div><h3>Run it all from one board</h3><p class="muted" style="margin:0">HaulPanel sends invoices to your factoring company, connects your ELD and keeps every load, carrier and payment in one place — free during beta.</p></div><a class="btn primary" href="/#/crm?signup">Start free</a></div>
-<p class="note">Also free: <a href="/free-trucking-tools">calculators, templates and guides</a> · <a href="/mc-number-lookup">MC number lookup</a> · <a href="/new-mc-leads">New MC leads</a></p>
+  const cats = PARTNER_CATEGORIES.filter((c) => PARTNERS.some((p) => p.category === c.id));
+  const cmpIcon: Record<string, string> = { factoring: 'bolt', loadboards: 'route', fuel: 'card', start: 'doc' };
+  const body = `${SVC_CSS}${FREE_CSS}<div class="svc-hero"><div class="wrap" style="padding-top:12px;padding-bottom:48px">
+<nav class="crumbs"><a href="/free-trucking-tools">Free trucking tools</a> › Trucking services</nav>
+<div class="cmp-h" style="padding-bottom:20px"><div class="ph-brand"><span class="tag acc">${PARTNERS.length} services · ${cats.length} categories</span><span class="tag">Updated ${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span></div>
+<h1>Trucking services, checked for you</h1>
+<p class="lead">Factoring, load boards, ELDs, fuel cards, insurance and the paperwork to start a trucking or dispatch business — each with an honest overview built from the company’s own site.</p>
+<div class="trust"><span>${icon('check', 16)}Prices and terms from official sites</span><span>${icon('check', 16)}What each one is not for</span><span>${icon('check', 16)}No paid rankings</span></div></div>
+<div class="catnav">${cats.map((c) => `<a href="#${c.id}">${esc(c.name)}</a>`).join('')}</div>
+</div></div>
+<div class="wrap" style="padding-bottom:40px">
+<section class="sec"><span class="eyebrow">Compare</span><h2>Compare before you choose</h2><p class="sec-sub">Side-by-side tables from each company’s own pricing and terms.</p>
+<div class="cmpcards">${Object.values(COMPARISONS).map((c) => `<a href="/trucking-services/${c.slug}"><i>${icon(cmpIcon[c.category] ?? 'chart', 22)}</i><b>${esc(c.h1)}</b><small>${esc(c.lead)}</small><em>Open ${icon('arrow', 15)}</em></a>`).join('')}</div></section>
+${cats.map((c) => `<section class="sec" id="${c.id}"><h2>${esc(c.name)}</h2><p class="sec-sub">${esc(c.why)}</p><div class="pgrid">${PARTNERS.filter((p) => p.category === c.id).map((p) => partnerCard(p, 'trucking-services')).join('')}</div></section>`).join('')}
+<section class="sec"><div class="hpband"><div><h3>Run it all from one board</h3><p>HaulPanel sends invoices to your factoring company, connects your ELD and keeps every load, carrier and payment in one place — free during beta.</p></div><a class="btn primary big" href="/#/crm?signup">Try HaulPanel free</a></div></section>
+<div class="foot-note"><p class="note">${esc(DISCLOSURE)}</p><p class="note">Also free: <a href="/free-trucking-tools">calculators, templates and guides</a> · <a href="/mc-number-lookup">MC number lookup</a> · <a href="/new-mc-leads">New MC leads</a></p></div>
 </div>`;
   return page({
     path: '/trucking-services', title: 'Trucking Services for Carriers & Dispatchers — Factoring, Load Boards, ELD, Fuel Cards',
-    description: 'Services for owner-operators, small fleets and dispatchers: freight factoring, load boards, ELD, fuel cards, insurance, LLC formation and bookkeeping — in one list.',
-    body, jsonLd: [{ '@context': 'https://schema.org', '@type': 'ItemList', name: 'Trucking services', itemListElement: PARTNERS.map((p, i) => ({ '@type': 'ListItem', position: i + 1, name: p.name, url: p.url })) }],
+    description: 'Services for owner-operators, small fleets and dispatchers: freight factoring, load boards, ELD, fuel cards, insurance, LLC formation and bookkeeping — honest overviews from each company’s own site.',
+    body, jsonLd: [{ '@context': 'https://schema.org', '@type': 'ItemList', name: 'Trucking services', itemListElement: PARTNERS.map((p, i) => ({ '@type': 'ListItem', position: i + 1, name: p.name, url: SITE + (PROFILES[p.id] ? profilePath(p.id) : '/trucking-services') })) }],
   });
 }
 
