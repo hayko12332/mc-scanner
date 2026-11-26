@@ -227,6 +227,9 @@ function AppCard({ app, st, live, wanted, onOpen }: { app: App; st: Status; live
 }
 
 /** The side panel of one company: about, the ways to connect, then setup or the live connection, and access. */
+/** Companies HaulPanel recommends: a "get started" link through /api/go (counts the click; a referral link when set). */
+const PARTNER_IDS = new Set(['otr', 'ecapital', 'truckstop', '123lb', 'dat', 'motive', 'coast', 'nextins', 'quickbooks'])
+
 function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, want, openApp, close }: {
   app: App; data: Integrations; state: CrmState; owner: boolean; refresh: () => void; toast: (m: string) => void
   openTab?: (tab: 'trucks' | 'loads' | 'map' | 'ai') => void; wanted: boolean; want: () => void; openApp: (id: string) => void; close: () => void
@@ -275,6 +278,14 @@ function AppPanel({ app, data, state, owner, refresh, toast, openTab, wanted, wa
               <div className="ig-actions">
                 <button className={wanted ? '' : 'primary'} disabled={wanted} onClick={want}>{wanted ? '✓ Noted — you use it' : `I use ${app.name}`}</button>
               </div>
+            </div>
+          )}
+
+          {PARTNER_IDS.has(app.id) && !mcpConn(app, data) && !(dLive && dSt.tone === 'ok') && (
+            <div className="ig-box ig-partner">
+              <b>Don’t have {app.name} yet?</b>
+              <p className="ig-muted">{app.category === 'factoring' ? `Open an account with ${app.name} and send them invoices from HaulPanel.` : `Sign up with ${app.name}, then connect it here.`}</p>
+              <div className="ig-actions"><a className="btn primary" href={`/api/go/${app.id}?from=integrations`} target="_blank" rel="sponsored noopener">Get started with {app.name} ↗</a></div>
             </div>
           )}
 

@@ -90,4 +90,22 @@ describe('public site', () => {
     const map = await sitePage('/sitemap-pages.xml', {});
     for (const p of ['/free-trucking-tools', ...Object.keys(FREE)]) expect(map!.body).toContain(`https://haulpanel.com${p}</loc>`);
   });
+
+  it('recommends partners through /api/go — the referral link when one is set, the partner’s site until then', async () => {
+    const { partnerTarget, resetPartnerLinks } = await import('./partners.js');
+    const { freePage } = await import('./free.js');
+    resetPartnerLinks();
+    expect(partnerTarget('otr')).toBe('https://otrsolutions.com');
+    process.env.PARTNER_LINKS = JSON.stringify({ otr: 'https://otrsolutions.com/?ref=haulpanel', ecapital: 'javascript:alert(1)' });
+    resetPartnerLinks();
+    expect(partnerTarget('otr')).toBe('https://otrsolutions.com/?ref=haulpanel');
+    expect(partnerTarget('ecapital')).toBe('https://ecapital.com/transportation/'); // only https links are taken
+    expect(partnerTarget('nobody')).toBeNull();
+    delete process.env.PARTNER_LINKS; resetPartnerLinks();
+    const guide = freePage('/factoring-vs-quick-pay')!;
+    expect(guide).toContain('href="/api/go/otr?from=factoring-vs-quick-pay"');
+    expect(guide).toContain('rel="sponsored nofollow noopener"');
+    expect(guide).toContain('referral links');
+    expect(freePage('/trucking-services')).toContain('href="/api/go/truckstop?from=trucking-services"');
+  });
 });

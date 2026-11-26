@@ -1,4 +1,5 @@
 import { esc, page, SITE } from './layout.js';
+import { goHref, PARTNER_CATEGORIES, partner, PARTNERS, type Partner } from './partners.js';
 
 // Free tools and guides for dispatchers, carriers and brokers: calculators and document templates that work right
 // in the page (nothing is sent anywhere), and plain guides. They answer what people search for and lead to the TMS.
@@ -19,6 +20,8 @@ interface FreePage {
   faq: [string, string][];
   /** How the TMS does the same thing for you. */
   upsell: string;
+  /** Services that help with this (partner ids), shown under the tool. */
+  partners?: string[];
 }
 
 const PUBLISHED = '2026-11-26';
@@ -86,6 +89,7 @@ on(function () {
       ['How much is fuel per mile for a semi truck?', 'Diesel price divided by MPG. At $3.75 a gallon and 6.5 MPG that is about $0.58 a mile.'],
     ],
     upsell: 'HaulPanel shows the rate per mile of every load on your board, loaded and all-in, and totals it by week, broker and truck — the AI fills the miles from the rate con.',
+    partners: ['123lb', 'truckstop', 'dat'],
   },
 
   '/fuel-cost-calculator': {
@@ -119,6 +123,7 @@ on(function () {
       ['Do fuel cards really save money?', 'Fuel cards for trucking (AtoB, Mudflap, TCS, WEX, Comdata and others) give discounts at partner truck stops, often tens of cents a gallon. Over 15,000+ gallons a year that adds up to thousands of dollars.'],
     ],
     upsell: 'HaulPanel keeps loaded and empty miles on every load and shows rate per mile and deadhead by truck, so you see which trucks and lanes make money after fuel.',
+    partners: ['coast', 'motive'],
   },
 
   '/detention-calculator': {
@@ -157,6 +162,7 @@ on(function () {
       ['How do I get paid for detention?', 'Tell the broker as soon as free time is running out, get in and out times signed on the BOL (or from the ELD), and add the detention to your invoice with that proof.'],
     ],
     upsell: 'In HaulPanel detention, layover, TONU and lumper live on the load and go on the invoice automatically, with the signed BOL attached as proof.',
+    partners: ['motive', 'otr'],
   },
 
   '/freight-invoice-template': {
@@ -200,6 +206,7 @@ on(function () {
       ['What if I use a factoring company?', 'Put the factoring company in “Remit to” exactly as your notice of assignment says, or send the invoice to the factor and let them bill the broker.'],
     ],
     upsell: 'HaulPanel makes the invoice from the load itself and emails it to the broker in one click with the rate con, BOL and POD in one PDF — or sends the packet to your factoring company.',
+    partners: ['otr', 'ecapital', 'quickbooks'],
   },
 
   '/rate-confirmation-template': {
@@ -239,6 +246,7 @@ on(function () {
       ['Who sends the rate confirmation?', 'The broker sends it to the carrier (or to the carrier’s dispatcher). The carrier signs and sends it back before pickup.'],
     ],
     upsell: 'In HaulPanel’s broker mode the rate confirmation is made from the load and emailed to the carrier in one click; for dispatchers the AI reads incoming rate cons into loads.',
+    partners: ['truckstop', 'dat'],
   },
 
   '/dispatch-agreement-template': {
@@ -282,6 +290,7 @@ on(function () {
       ['Is this template legal advice?', 'No. It is a plain starting point. Rules differ by state and by how you work (for example, whether you ever take payment from shippers), so have a transportation attorney review your final agreement.'],
     ],
     upsell: 'HaulPanel keeps each carrier’s dispatch fee (percent or weekly), and makes weekly carrier statements with the fee calculated on every delivered load.',
+    partners: ['zenbusiness', 'northwest', 'nextins'],
   },
 
   '/carrier-packet-template': {
@@ -318,6 +327,7 @@ on(function () {
       ['How do brokers check a carrier?', 'They look up the MC and USDOT in FMCSA records (authority status and age, insurance on file, safety), compare the phone and email with FMCSA, and often use a monitoring service. HaulPanel’s free MC lookup does those checks.'],
     ],
     upsell: 'HaulPanel keeps every carrier’s MC, insurance and factoring details, checks them in FMCSA when you add them, and warns you if their authority or insurance changes.',
+    partners: ['nextins', 'otr'],
   },
 
   '/how-to-become-a-truck-dispatcher': {
@@ -352,6 +362,7 @@ on(function () {
       ['Can I dispatch trucks from home?', 'Yes. Most independent dispatchers work remotely with a computer, a phone, load board access and a TMS.'],
     ],
     upsell: 'HaulPanel is a free TMS built for dispatch services: every load from booking to payment, each carrier’s fee, weekly carrier statements, and an AI assistant that turns rate cons into loads.',
+    partners: ['zenbusiness', 'northwest', '123lb', 'bobtail', 'quickbooks'],
   },
 
   '/how-to-check-a-freight-broker': {
@@ -384,6 +395,7 @@ on(function () {
       ['How can I tell if a load is double brokered?', 'Watch for a rate con from a different company than the one you booked with, instructions to use another name at pickup, look-alike emails, and contact details that don’t match FMCSA. Call the broker at the phone number FMCSA has on file.'],
     ],
     upsell: 'HaulPanel checks every broker and carrier on your board in FMCSA — authority, bond and insurance, authority age and shared phone/email — and warns you when something changes.',
+    partners: ['truckstop', '123lb', 'otr'],
   },
 
   '/factoring-vs-quick-pay': {
@@ -420,6 +432,7 @@ on(function () {
       ['Can I use quick pay if I factor?', 'Usually not on factored loads — those invoices belong to the factor. Some contracts let you choose which loads to factor; read yours.'],
     ],
     upsell: 'HaulPanel sends the invoice packet straight to your factoring company — invoice, rate con, BOL and POD in one PDF — or the invoice to the broker for quick pay.',
+    partners: ['otr', 'ecapital', 'bobtail'],
   },
 };
 
@@ -450,16 +463,51 @@ fieldset{border:1px solid var(--line);border-radius:14px;padding:14px 16px 6px;m
 .sign{margin-top:32px}.sign div span{display:block;border-bottom:1px solid #111;height:36px;margin:6px 0 4px}
 .guide{max-width:760px;margin:12px 0 40px}.guide h2{margin-top:32px}.guide-steps{padding-left:22px}.guide-steps li{margin:0 0 14px}.guide ul li{margin:0 0 6px}
 .cmp{width:100%;border-collapse:collapse;margin:16px 0 8px;font-size:15px}.cmp th,.cmp td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}.cmp thead th{background:var(--soft)}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:14px 0 8px}
+.pcard{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:14px;padding:16px;color:var(--text)}.pcard:hover{border-color:var(--accent);text-decoration:none}
+.pcard img{border-radius:10px;flex:none}.pcard b{display:block}.pcard small{display:block;color:var(--muted);font-size:14px;margin:3px 0 6px}.pcard em{font-style:normal;font-size:13px;color:var(--accent);font-weight:600}
 .upsell{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .tools-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:18px 0 40px}.tools-grid a{display:block;border:1px solid var(--line);border-radius:14px;padding:18px;color:var(--text)}
 .tools-grid a:hover{border-color:var(--accent);text-decoration:none}.tools-grid small{display:block;color:var(--muted);margin-top:6px;font-size:14px}
-@media (max-width:900px){.tool,.doc-tool{grid-template-columns:1fr}.tool-out{position:static}.fgrid{grid-template-columns:1fr}.doc-2{grid-template-columns:1fr}.tools-grid{grid-template-columns:1fr}.doc{padding:20px}}
-@media print{.top,.foot,.crumbs,.wrap>h1,.wrap>.lead,.tool-form,.doc-actions,.after,.free-faq{display:none!important}main .wrap{max-width:none;padding:0}.tool{display:block;margin:0}.tool-out{position:static}.doc{border:0;box-shadow:none;padding:0}}
+@media (max-width:900px){.pgrid{grid-template-columns:1fr}.tool,.doc-tool{grid-template-columns:1fr}.tool-out{position:static}.fgrid{grid-template-columns:1fr}.doc-2{grid-template-columns:1fr}.tools-grid{grid-template-columns:1fr}.doc{padding:20px}}
+@media print{.top,.foot,.crumbs,.wrap>h1,.wrap>.lead,.tool-form,.doc-actions,.after,.pgrid,.free-faq{display:none!important}main .wrap{max-width:none;padding:0}.tool{display:block;margin:0}.tool-out{position:static}.doc{border:0;box-shadow:none;padding:0}}
 </style>`;
+
+const DISCLOSURE = 'Some links are referral links: HaulPanel may earn a fee if you sign up, at no cost to you. We only list services that are useful to truckers.';
+const partnerCard = (p: Partner, from: string) => `<a class="pcard" href="${goHref(p.id, from)}" target="_blank" rel="sponsored nofollow noopener">
+<img src="/logos/${p.id}.png" alt="" width="40" height="40" loading="lazy"><span><b>${esc(p.name)}</b><small>${esc(p.blurb)}</small><em>${esc(p.for)} · Visit ${esc(p.name)} →</em></span></a>`;
+
+/** "Services that help" under a tool or guide. */
+function partnerSection(ids: string[], from: string): string {
+  const ps = ids.map(partner).filter((p): p is Partner => !!p);
+  return `<h2 style="margin-top:36px">Services that help</h2><div class="pgrid">${ps.map((p) => partnerCard(p, from)).join('')}</div>
+<p class="note">${esc(DISCLOSURE)} <a href="/trucking-services">All trucking services →</a></p>`;
+}
+
+/** /trucking-services: every recommended service by category. */
+function servicesPage(): string {
+  const body = `${FREE_CSS}<div class="wrap" style="padding-bottom:48px">
+<h1 style="margin-top:28px">Trucking services we recommend</h1>
+<p class="lead">Factoring, load boards, ELDs, fuel cards, insurance and the paperwork to start a trucking or dispatch business — the services our users ask about most.</p>
+${PARTNER_CATEGORIES.map((c) => {
+    const ps = PARTNERS.filter((p) => p.category === c.id);
+    return ps.length ? `<h2 style="margin-top:32px">${esc(c.name)}</h2><p class="muted">${esc(c.why)}</p><div class="pgrid">${ps.map((p) => partnerCard(p, 'trucking-services')).join('')}</div>` : '';
+  }).join('')}
+<p class="note" style="margin-top:28px">${esc(DISCLOSURE)}</p>
+<div class="box upsell" style="margin-top:24px"><div><h3>Run it all from one board</h3><p class="muted" style="margin:0">HaulPanel sends invoices to your factoring company, connects your ELD and keeps every load, carrier and payment in one place — free during beta.</p></div><a class="btn primary" href="/#/crm?signup">Start free</a></div>
+<p class="note">Also free: <a href="/free-trucking-tools">calculators, templates and guides</a> · <a href="/mc-number-lookup">MC number lookup</a> · <a href="/new-mc-leads">New MC leads</a></p>
+</div>`;
+  return page({
+    path: '/trucking-services', title: 'Trucking Services for Carriers & Dispatchers — Factoring, Load Boards, ELD, Fuel Cards',
+    description: 'Services for owner-operators, small fleets and dispatchers: freight factoring, load boards, ELD, fuel cards, insurance, LLC formation and bookkeeping — in one list.',
+    body, jsonLd: [{ '@context': 'https://schema.org', '@type': 'ItemList', name: 'Trucking services', itemListElement: PARTNERS.map((p, i) => ({ '@type': 'ListItem', position: i + 1, name: p.name, url: p.url })) }],
+  });
+}
 
 /** A free tool or guide page, or null for other paths. */
 export function freePage(path: string): string | null {
   if (path === '/free-trucking-tools') return hubPage();
+  if (path === '/trucking-services') return servicesPage();
   const f = FREE[path];
   if (!f) return null;
   const others = Object.entries(FREE).filter(([p]) => p !== path).slice(0, 9);
@@ -468,6 +516,7 @@ export function freePage(path: string): string | null {
 <h1>${esc(f.h1)}</h1><p class="lead">${esc(f.lead)}</p>
 ${f.body}
 <div class="after">
+${f.partners?.length ? partnerSection(f.partners, path.slice(1)) : ''}
 <div class="box upsell"><div><h3>Do this automatically</h3><p class="muted" style="margin:0">${esc(f.upsell)}</p></div><a class="btn primary" href="/#/crm?signup">Try HaulPanel free</a></div>
 <div class="free-faq"><h2 style="margin-top:36px">Questions</h2>${f.faq.map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join('')}</div>
 <h2 style="margin-top:36px">More free tools</h2>
@@ -494,7 +543,8 @@ function hubPage(): string {
 <a href="/mc-number-lookup"><b>MC number lookup</b><small>Check any carrier or broker by MC, USDOT, phone or email: authority, insurance, fraud signs.</small></a>
 <a href="/new-mc-leads"><b>New MC leads</b><small>Carriers and brokers that just got their authority, with phone and email, every day.</small></a>
 <a href="/carriers"><b>Trucking company directory</b><small>Every active carrier and broker by state and city.</small></a></div>
-<h2>Guides</h2><div class="tools-grid">${guides.map(card).join('')}</div>
+<h2>Guides</h2><div class="tools-grid">${guides.map(card).join('')}
+<a href="/trucking-services"><b>Trucking services we recommend</b><small>Factoring, load boards, ELD, fuel cards, insurance and LLC setup in one list.</small></a></div>
 <div class="box upsell"><div><h3>All of this in one TMS</h3><p class="muted" style="margin:0">HaulPanel: loads, rate cons read by AI, invoices with documents, carrier statements and FMCSA checks — free during beta.</p></div><a class="btn primary" href="/#/crm?signup">Start free</a></div>
 </div>`;
   return page({

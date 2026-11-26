@@ -124,7 +124,7 @@ ${o.noindex ? '<meta name="robots" content="noindex">' : `<meta name="robots" co
 <footer class="foot"><div class="wrap">
 <div class="cols4">
 <div><b>Product</b>${FEATURE_LINKS.map(([href, label]) => `<a href="${href}">${label}</a>`).join('')}<a href="/">HaulPanel TMS</a></div>
-<div><b>Tools</b><a href="/mc-number-lookup">MC number lookup</a><a href="/new-mc-leads">New MC leads</a><a href="/mc-scanner">MC scanner</a><a href="/carriers">Carrier directory</a><a href="/free-trucking-tools">Free trucking tools</a><a href="/rate-per-mile-calculator">Rate per mile calculator</a><a href="/freight-invoice-template">Freight invoice template</a><a href="/how-to-become-a-truck-dispatcher">How to become a dispatcher</a></div>
+<div><b>Tools</b><a href="/mc-number-lookup">MC number lookup</a><a href="/new-mc-leads">New MC leads</a><a href="/mc-scanner">MC scanner</a><a href="/carriers">Carrier directory</a><a href="/free-trucking-tools">Free trucking tools</a><a href="/rate-per-mile-calculator">Rate per mile calculator</a><a href="/freight-invoice-template">Freight invoice template</a><a href="/how-to-become-a-truck-dispatcher">How to become a dispatcher</a><a href="/trucking-services">Trucking services</a></div>
 <div><b>Carriers by state</b>${['TX', 'CA', 'FL', 'IL', 'GA', 'NJ', 'NY', 'PA'].map((s) => `<a href="/carriers/${s.toLowerCase()}">${stateName(s)}</a>`).join('')}</div>
 <div><b>Company</b><a href="mailto:support@haulpanel.com">support@haulpanel.com</a><a href="/privacy.html">Privacy Policy</a><a href="/terms.html">Terms of Service</a><a href="https://t.me/MCUSDOTScannerbot">Telegram bot</a></div>
 </div>
