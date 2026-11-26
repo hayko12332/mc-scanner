@@ -117,14 +117,14 @@ ${o.noindex ? '<meta name="robots" content="noindex">' : `<meta name="robots" co
 </head><body>
 <header class="top"><div class="wrap">
 <a class="brand" href="/"><img src="/logo.svg" alt="" width="28" height="28">HaulPanel</a>
-<nav class="nav"><a href="/truck-dispatch-software">Dispatchers</a><a href="/freight-broker-tms">Brokers</a><a href="/mc-number-lookup">MC lookup</a><a href="/new-mc-leads">New MC leads</a><a href="/carriers">Carrier directory</a></nav>
+<nav class="nav"><a href="/truck-dispatch-software">Dispatchers</a><a href="/freight-broker-tms">Brokers</a><a href="/mc-number-lookup">MC lookup</a><a href="/new-mc-leads">New MC leads</a><a href="/free-trucking-tools">Free tools</a></nav>
 <div class="cta"><a class="btn" href="/#/crm?login">Log in</a><a class="btn primary" href="/#/crm?signup">Start free</a></div>
 </div></header>
 <main>${o.body}</main>
 <footer class="foot"><div class="wrap">
 <div class="cols4">
 <div><b>Product</b>${FEATURE_LINKS.map(([href, label]) => `<a href="${href}">${label}</a>`).join('')}<a href="/">HaulPanel TMS</a></div>
-<div><b>Tools</b><a href="/mc-number-lookup">MC number lookup</a><a href="/new-mc-leads">New MC leads</a><a href="/mc-scanner">MC scanner</a><a href="/carriers">Carrier directory</a></div>
+<div><b>Tools</b><a href="/mc-number-lookup">MC number lookup</a><a href="/new-mc-leads">New MC leads</a><a href="/mc-scanner">MC scanner</a><a href="/carriers">Carrier directory</a><a href="/free-trucking-tools">Free trucking tools</a><a href="/rate-per-mile-calculator">Rate per mile calculator</a><a href="/freight-invoice-template">Freight invoice template</a><a href="/how-to-become-a-truck-dispatcher">How to become a dispatcher</a></div>
 <div><b>Carriers by state</b>${['TX', 'CA', 'FL', 'IL', 'GA', 'NJ', 'NY', 'PA'].map((s) => `<a href="/carriers/${s.toLowerCase()}">${stateName(s)}</a>`).join('')}</div>
 <div><b>Company</b><a href="mailto:support@haulpanel.com">support@haulpanel.com</a><a href="/privacy.html">Privacy Policy</a><a href="/terms.html">Terms of Service</a><a href="https://t.me/MCUSDOTScannerbot">Telegram bot</a></div>
 </div>

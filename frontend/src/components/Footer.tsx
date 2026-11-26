@@ -17,6 +17,7 @@ export function Footer({ telegram, backendOk }: { telegram: Links; lastLookup?: 
         { label: 'New MC leads', href: '/new-mc-leads' },
         { label: 'MC scanner', href: '/mc-scanner' },
         { label: 'Carrier directory', href: '/carriers' },
+        { label: 'Free trucking tools', href: '/free-trucking-tools' },
       ],
     },
     {

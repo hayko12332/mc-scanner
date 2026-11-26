@@ -71,4 +71,20 @@ describe('public site', () => {
     expect(s.more).toContain('href="/mc/5"');
     expect(s.faqLd.mainEntity[0].name).toBe('How many trucking companies are in Dallas, TX?');
   });
+
+  it('serves every free tool and guide with its own title, FAQ schema and working script, and lists them in the sitemap', async () => {
+    const { FREE, freePage } = await import('./free.js');
+    const { sitePage } = await import('./router.js');
+    const { Script } = await import('node:vm');
+    for (const p of Object.keys(FREE)) {
+      const html = freePage(p)!;
+      expect(html).toContain(`<link rel="canonical" href="https://haulpanel.com${p}">`);
+      expect(html).toContain('"@type":"FAQPage"');
+      const js = /<script>([\s\S]*?)<\/script>/.exec(html.slice(html.indexOf('<main>')))?.[1];
+      if (FREE[p].kind === 'tool') expect(() => new Script(js!)).not.toThrow(); // the page's own code at least parses
+    }
+    expect(freePage('/free-trucking-tools')).toContain('href="/rate-per-mile-calculator"');
+    const map = await sitePage('/sitemap-pages.xml', {});
+    for (const p of ['/free-trucking-tools', ...Object.keys(FREE)]) expect(map!.body).toContain(`https://haulpanel.com${p}</loc>`);
+  });
 });

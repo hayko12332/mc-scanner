@@ -1,6 +1,7 @@
 import { cityPage, companyPage, directoryPage, statePage } from './companies.pages.js';
 import { companiesStore } from './companies.store.js';
 import { FEATURES, featurePage } from './features.js';
+import { FREE, freePage } from './free.js';
 import { COVER, SITE } from './layout.js';
 
 // Which server-rendered public page answers a path: feature pages, the company directory and company pages,
@@ -13,6 +14,7 @@ const SITEMAP_SIZE = 40_000;
 const STATIC_PAGES: [string, string, number][] = [
   ['/', 'weekly', 1.0], ['/new-mc-leads', 'daily', 0.9], ['/mc-number-lookup', 'weekly', 0.9], ['/mc-scanner', 'weekly', 0.7],
   ...Object.keys(FEATURES).map((p): [string, string, number] => [p, 'monthly', 0.8]),
+  ['/free-trucking-tools', 'monthly', 0.8], ...Object.keys(FREE).map((p): [string, string, number] => [p, 'monthly', 0.8]),
   ['/carriers', 'weekly', 0.7], ['/privacy.html', 'yearly', 0.2], ['/terms.html', 'yearly', 0.2],
 ];
 const xml = (body: string, maxAge = 3600): SiteResponse => ({ status: 200, type: 'xml', body: `<?xml version="1.0" encoding="UTF-8"?>\n${body}`, maxAge });
@@ -29,7 +31,7 @@ async function cached(key: string, ms: number, make: () => Promise<SiteResponse>
 const pageNo = (q: Record<string, unknown>) => { const n = parseInt(String(q.page ?? '1'), 10); return Number.isFinite(n) && n >= 1 && n <= 10_000 ? n : 1; };
 
 export async function sitePage(path: string, query: Record<string, unknown>): Promise<SiteResponse | null> {
-  const f = featurePage(path);
+  const f = featurePage(path) ?? freePage(path);
   if (f) return { status: 200, type: 'html', body: f, maxAge: 3600 };
 
   let m = /^\/mc\/(?:mc-?)?(\d{1,8})$/i.exec(path);
