@@ -208,6 +208,8 @@ export function CrmPage({ toast, tool, setTool, toolSlot }: {
   useEffect(() => {
     if (config?.ai && !demo && !openedOnAi.current) { openedOnAi.current = true; setTab('ai') }
   }, [config?.ai, demo])
+  // The demo board has no Integrations page: a link that opens it lands on Loads instead of an empty screen.
+  useEffect(() => { if (demo && tab === 'integrations') setTab('loads') }, [demo, tab])
   // Back from connecting a partner (QuickBooks sends the owner back to #/crm?integrations=<message>).
   useEffect(() => {
     const msg = hashParams().get('integrations')
