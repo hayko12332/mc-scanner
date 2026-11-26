@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { db } from '../db.js';
 import { FEATURES } from './features.js';
 import { FREE } from './free.js';
+import { PARTNER_PAGE_PATHS } from './partner-pages.js';
 import { SITE } from './layout.js';
 
 // IndexNow: tells Bing (and Yandex, Seznam, Naver) right away which pages are new or changed, instead of waiting for
@@ -15,7 +16,7 @@ const ENDPOINT = 'https://api.indexnow.org/indexnow';
 /** Bing accepts up to 10,000 addresses a day per site. */
 const DAILY = 9_000;
 const SCHEMA = `CREATE TABLE IF NOT EXISTS indexnow_state (id INTEGER PRIMARY KEY DEFAULT 1, last_mc INTEGER NOT NULL DEFAULT 0, sent_on DATE, sent INTEGER NOT NULL DEFAULT 0)`;
-const MAIN_PAGES = ['/', '/new-mc-leads', '/mc-number-lookup', '/mc-scanner', ...Object.keys(FEATURES), '/free-trucking-tools', '/trucking-services', ...Object.keys(FREE), '/carriers', '/privacy.html', '/terms.html'];
+const MAIN_PAGES = ['/', '/new-mc-leads', '/mc-number-lookup', '/mc-scanner', ...Object.keys(FEATURES), '/free-trucking-tools', '/trucking-services', ...Object.keys(FREE), ...PARTNER_PAGE_PATHS, '/carriers', '/privacy.html', '/terms.html'];
 
 /** The JSON IndexNow takes for a list of addresses on our site. */
 export function indexNowBody(paths: string[]) {

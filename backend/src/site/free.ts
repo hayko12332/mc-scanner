@@ -1,5 +1,7 @@
 import { esc, page, SITE } from './layout.js';
 import { goHref, PARTNER_CATEGORIES, partner, PARTNERS, type Partner } from './partners.js';
+import { profilePath } from './partner-pages.js';
+import { COMPARISONS, PROFILES } from './partner-profiles.js';
 
 // Free tools and guides for dispatchers, carriers and brokers: calculators and document templates that work right
 // in the page (nothing is sent anywhere), and plain guides. They answer what people search for and lead to the TMS.
@@ -464,7 +466,7 @@ fieldset{border:1px solid var(--line);border-radius:14px;padding:14px 16px 6px;m
 .guide{max-width:760px;margin:12px 0 40px}.guide h2{margin-top:32px}.guide-steps{padding-left:22px}.guide-steps li{margin:0 0 14px}.guide ul li{margin:0 0 6px}
 .cmp{width:100%;border-collapse:collapse;margin:16px 0 8px;font-size:15px}.cmp th,.cmp td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}.cmp thead th{background:var(--soft)}
 .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:14px 0 8px}
-.pcard{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:14px;padding:16px;color:var(--text)}.pcard:hover{border-color:var(--accent);text-decoration:none}
+.pcard{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:14px;padding:16px;color:var(--text);transition:border-color .15s,box-shadow .15s}.pcard:hover{border-color:var(--accent);box-shadow:0 10px 24px rgba(15,23,42,.06)}.pname{color:var(--text)}
 .pcard img{border-radius:10px;flex:none}.pcard b{display:block}.pcard small{display:block;color:var(--muted);font-size:14px;margin:3px 0 6px}.pcard em{font-style:normal;font-size:13px;color:var(--accent);font-weight:600}
 .upsell{display:flex;gap:18px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .tools-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:18px 0 40px}.tools-grid a{display:block;border:1px solid var(--line);border-radius:14px;padding:18px;color:var(--text)}
@@ -474,8 +476,11 @@ fieldset{border:1px solid var(--line);border-radius:14px;padding:14px 16px 6px;m
 </style>`;
 
 const DISCLOSURE = 'Some links are referral links: HaulPanel may earn a fee if you sign up, at no cost to you. We only list services that are useful to truckers.';
-const partnerCard = (p: Partner, from: string) => `<a class="pcard" href="${goHref(p.id, from)}" target="_blank" rel="sponsored nofollow noopener">
-<img src="/logos/${p.id}.png" alt="" width="40" height="40" loading="lazy"><span><b>${esc(p.name)}</b><small>${esc(p.blurb)}</small><em>${esc(p.for)} · Visit ${esc(p.name)} →</em></span></a>`;
+const visit = (p: Partner, from: string) => `<a href="${goHref(p.id, from)}" target="_blank" rel="sponsored nofollow noopener">Visit ${esc(p.name)} ↗</a>`;
+/** A company card: its page on HaulPanel when there is one, and the way to the company itself. */
+const partnerCard = (p: Partner, from: string) => PROFILES[p.id]
+  ? `<div class="pcard"><img src="/logos/${p.id}.png" alt="" width="40" height="40" loading="lazy"><span><a class="pname" href="${profilePath(p.id)}"><b>${esc(p.name)}</b></a><small>${esc(p.blurb)}</small><em><a href="${profilePath(p.id)}">Read more</a> · ${visit(p, from)}</em></span></div>`
+  : `<div class="pcard"><img src="/logos/${p.id}.png" alt="" width="40" height="40" loading="lazy"><span><b>${esc(p.name)}</b><small>${esc(p.blurb)}</small><em>${esc(p.for)} · ${visit(p, from)}</em></span></div>`;
 
 /** "Services that help" under a tool or guide. */
 function partnerSection(ids: string[], from: string): string {
@@ -489,6 +494,7 @@ function servicesPage(): string {
   const body = `${FREE_CSS}<div class="wrap" style="padding-bottom:48px">
 <h1 style="margin-top:28px">Trucking services we recommend</h1>
 <p class="lead">Factoring, load boards, ELDs, fuel cards, insurance and the paperwork to start a trucking or dispatch business — the services our users ask about most.</p>
+<h2 style="margin-top:28px">Compare before you choose</h2><div class="tools-grid">${Object.values(COMPARISONS).map((c) => `<a href="/trucking-services/${c.slug}"><b>${esc(c.h1)}</b><small>${esc(c.lead.slice(0, 120))}${c.lead.length > 120 ? '…' : ''}</small></a>`).join('')}</div>
 ${PARTNER_CATEGORIES.map((c) => {
     const ps = PARTNERS.filter((p) => p.category === c.id);
     return ps.length ? `<h2 style="margin-top:32px">${esc(c.name)}</h2><p class="muted">${esc(c.why)}</p><div class="pgrid">${ps.map((p) => partnerCard(p, 'trucking-services')).join('')}</div>` : '';

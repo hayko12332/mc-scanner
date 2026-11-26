@@ -2,6 +2,7 @@ import { cityPage, companyPage, directoryPage, statePage } from './companies.pag
 import { companiesStore } from './companies.store.js';
 import { FEATURES, featurePage } from './features.js';
 import { FREE, freePage } from './free.js';
+import { PARTNER_PAGE_PATHS, partnerSubPage } from './partner-pages.js';
 import { COVER, SITE } from './layout.js';
 
 // Which server-rendered public page answers a path: feature pages, the company directory and company pages,
@@ -14,11 +15,11 @@ const SITEMAP_SIZE = 40_000;
 const STATIC_PAGES: [string, string, number][] = [
   ['/', 'weekly', 1.0], ['/new-mc-leads', 'daily', 0.9], ['/mc-number-lookup', 'weekly', 0.9], ['/mc-scanner', 'weekly', 0.7],
   ...Object.keys(FEATURES).map((p): [string, string, number] => [p, 'monthly', 0.8]),
-  ['/free-trucking-tools', 'monthly', 0.8], ['/trucking-services', 'monthly', 0.6], ...Object.keys(FREE).map((p): [string, string, number] => [p, 'monthly', 0.8]),
+  ['/free-trucking-tools', 'monthly', 0.8], ['/trucking-services', 'monthly', 0.6], ...PARTNER_PAGE_PATHS.map((p): [string, string, number] => [p, 'monthly', 0.6]), ...Object.keys(FREE).map((p): [string, string, number] => [p, 'monthly', 0.8]),
   ['/carriers', 'weekly', 0.7], ['/privacy.html', 'yearly', 0.2], ['/terms.html', 'yearly', 0.2],
 ];
 /** Single pages the server renders itself (feature pages, free tools and guides). */
-export const SITE_PATHS = new Set(['/free-trucking-tools', '/trucking-services', ...Object.keys(FEATURES), ...Object.keys(FREE)]);
+export const SITE_PATHS = new Set([...PARTNER_PAGE_PATHS, '/free-trucking-tools', '/trucking-services', ...Object.keys(FEATURES), ...Object.keys(FREE)]);
 const xml = (body: string, maxAge = 3600): SiteResponse => ({ status: 200, type: 'xml', body: `<?xml version="1.0" encoding="UTF-8"?>\n${body}`, maxAge });
 const today = () => new Date().toISOString().slice(0, 10);
 const cache = new Map<string, { at: number; value: SiteResponse }>();
@@ -33,7 +34,7 @@ async function cached(key: string, ms: number, make: () => Promise<SiteResponse>
 const pageNo = (q: Record<string, unknown>) => { const n = parseInt(String(q.page ?? '1'), 10); return Number.isFinite(n) && n >= 1 && n <= 10_000 ? n : 1; };
 
 export async function sitePage(path: string, query: Record<string, unknown>): Promise<SiteResponse | null> {
-  const f = featurePage(path) ?? freePage(path);
+  const f = featurePage(path) ?? freePage(path) ?? partnerSubPage(path);
   if (f) return { status: 200, type: 'html', body: f, maxAge: 3600 };
 
   let m = /^\/mc\/(?:mc-?)?(\d{1,8})$/i.exec(path);

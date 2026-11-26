@@ -108,4 +108,25 @@ describe('public site', () => {
     expect(guide).toContain('referral links');
     expect(freePage('/trucking-services')).toContain('href="/api/go/truckstop?from=trucking-services"');
   });
+
+  it('has a page for every recommended company and the comparisons, with sources, FAQ and the counted partner link', async () => {
+    const { PARTNER_PAGE_PATHS, partnerSubPage } = await import('./partner-pages.js');
+    const { PROFILES, COMPARISONS } = await import('./partner-profiles.js');
+    const { PARTNERS } = await import('./partners.js');
+    const { SITE_PATHS } = await import('./router.js');
+    expect(Object.keys(PROFILES).sort()).toEqual(PARTNERS.map((p) => p.id).sort()); // every partner has a page
+    expect(Object.keys(COMPARISONS)).toHaveLength(4);
+    for (const path of PARTNER_PAGE_PATHS) {
+      const html = partnerSubPage(path)!;
+      expect(html, path).toContain(`<link rel="canonical" href="https://haulpanel.com${path}">`);
+      expect(html, path).toContain('"@type":"FAQPage"');
+      expect(html, path).toContain('Sources');
+      expect(SITE_PATHS.has(path)).toBe(true);
+    }
+    const otr = partnerSubPage('/trucking-services/otr-solutions')!;
+    expect(otr).toContain('href="/api/go/otr?from=otr-solutions-hero"');
+    expect(otr).toContain('rel="sponsored nofollow noopener"');
+    expect(otr).toContain('href="/trucking-services/best-factoring-companies"');
+    expect(partnerSubPage('/trucking-services/nobody')).toBeNull();
+  });
 });
