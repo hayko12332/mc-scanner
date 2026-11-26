@@ -58,4 +58,17 @@ describe('public site', () => {
     expect(existsSync(file)).toBe(true);
     expect(readFileSync(file, 'utf8')).toBe(INDEXNOW_KEY);
   });
+
+  it('writes each place page from its own numbers, counting a company with two MCs once', async () => {
+    const { placeSummary } = await import('./companies.pages.js');
+    const co = (mc: number, dot: number, nm: string, trucks: number) => ({ mc, dot, name: nm, dba: '', city: 'DALLAS', state: 'TX', kinds: 'C', operation: 'A', powerUnits: trucks, drivers: trucks, cargo: [], addedOn: '2026-10-01', mcs150On: null });
+    const s = placeSummary('Dallas, TX', { total: 10, carriers: 8, brokers: 2, trucks: 40, drivers: 45, solo: 5, small: 4, mid: 1, large: 0, newYear: 3, interstate: 9,
+      cargo: [{ name: 'General Freight', n: 8 }], newest: [co(5, 50, 'NEW ROAD LLC', 1)] }, [co(1, 10, 'BIG FLEET INC', 20), co(2, 10, 'BIG FLEET INC', 20), co(3, 30, 'MID TRUCKING LLC', 9)], '');
+    expect(s.lead).toContain('10 trucking companies are based in Dallas, TX');
+    expect(s.lead).toContain('50% are one-truck owner-operators');
+    expect(s.lead).toContain('Big Fleet INC (20 trucks), followed by Mid Trucking LLC (9 trucks).');
+    expect(s.description).toMatch(/^List of 10 trucking companies in Dallas, TX: 8 carriers and 2 freight brokers running 40 trucks\. 3 new this year\./);
+    expect(s.more).toContain('href="/mc/5"');
+    expect(s.faqLd.mainEntity[0].name).toBe('How many trucking companies are in Dallas, TX?');
+  });
 });

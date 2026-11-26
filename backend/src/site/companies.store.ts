@@ -66,6 +66,16 @@ const toCompany = (r: Record<string, unknown>): PublicCompany => ({
   cargo: String(r.cargo ?? '').split('|').filter(Boolean), addedOn: day(r.added_on), mcs150On: day(r.mcs150_on),
 });
 
+export interface PlaceStats {
+  total: number; carriers: number; brokers: number; trucks: number; drivers: number;
+  /** Companies by fleet size: 1 truck, 2–10, 11–100, over 100. */
+  solo: number; small: number; mid: number; large: number;
+  /** Got their USDOT number in the last 12 months. */
+  newYear: number; interstate: number;
+  cargo: { name: string; n: number }[];
+  newest: PublicCompany[];
+}
+
 export class CompaniesStore {
   private readonly logger = new Logger(CompaniesStore.name);
   private ready: Promise<unknown> | null = null;
@@ -146,6 +156,15 @@ export class CompaniesStore {
   }
 
   async cities(state: string): Promise<{ city: string; slug: string; n: number }[]> {
+    const hit = this.citiesCache.get(state);
+    if (hit && Date.now() - hit.at < 24 * 3600_000) return hit.v;
+    const v = await this.citiesOf(state);
+    if (v.length) this.citiesCache.set(state, { at: Date.now(), v });
+    return v;
+  }
+  private readonly citiesCache = new Map<string, { at: number; v: { city: string; slug: string; n: number }[] }>();
+
+  private async citiesOf(state: string): Promise<{ city: string; slug: string; n: number }[]> {
     const pool = await this.pool();
     if (!pool) return [];
     const { rows } = await pool.query(
@@ -167,6 +186,54 @@ export class CompaniesStore {
     return { total: Number(t.rows[0]?.n ?? 0), rows: r.rows.map(toCompany) };
   }
 
+  /** Numbers that make each state and city page its own: carriers vs brokers, fleet sizes, new companies, top freight.
+   *  A company with several MC numbers is counted once (by USDOT). */
+  async stats(state: string, citySlug: string | null): Promise<PlaceStats | null> {
+    const key = `${state}|${citySlug ?? ''}`;
+    const hit = this.statsCache.get(key);
+    if (hit && Date.now() - hit.at < 24 * 3600_000) return hit.v;
+    const pool = await this.pool();
+    if (!pool) return null;
+    const where = citySlug ? 'state = $1 AND city_slug = $2' : 'state = $1';
+    const args: unknown[] = citySlug ? [state, citySlug] : [state];
+    const [a, cargo, newest] = await Promise.all([
+      pool.query(`SELECT count(*)::int n,
+          count(*) FILTER (WHERE kinds ~ '(^|;)C(;|$)')::int carriers,
+          count(*) FILTER (WHERE kinds ~ '(^|;)B(;|$)' AND kinds !~ '(^|;)C(;|$)')::int brokers,
+          coalesce(sum(power_units), 0)::int trucks, coalesce(sum(drivers), 0)::int drivers,
+          count(*) FILTER (WHERE power_units = 1)::int solo,
+          count(*) FILTER (WHERE power_units BETWEEN 2 AND 10)::int small,
+          count(*) FILTER (WHERE power_units BETWEEN 11 AND 100)::int mid,
+          count(*) FILTER (WHERE power_units > 100)::int large,
+          count(*) FILTER (WHERE added_on >= current_date - 365)::int new_year,
+          count(*) FILTER (WHERE operation = 'A')::int interstate
+        FROM (SELECT DISTINCT ON (dot) * FROM fmcsa_companies WHERE ${where} ORDER BY dot, mc) x`, args),
+      pool.query(`SELECT c, count(*)::int n FROM (SELECT DISTINCT ON (dot) cargo FROM fmcsa_companies WHERE ${where} ORDER BY dot, mc) x, unnest(string_to_array(cargo, '|')) c
+        WHERE c <> 'Other' GROUP BY c ORDER BY n DESC LIMIT 5`, args),
+      pool.query(`SELECT ${COLS} FROM fmcsa_companies WHERE ${where} AND added_on IS NOT NULL ORDER BY added_on DESC, mc DESC LIMIT 8`, args),
+    ]);
+    const r = a.rows[0] ?? {};
+    const v: PlaceStats = {
+      total: Number(r.n ?? 0), carriers: Number(r.carriers ?? 0), brokers: Number(r.brokers ?? 0), trucks: Number(r.trucks ?? 0), drivers: Number(r.drivers ?? 0),
+      solo: Number(r.solo ?? 0), small: Number(r.small ?? 0), mid: Number(r.mid ?? 0), large: Number(r.large ?? 0), newYear: Number(r.new_year ?? 0), interstate: Number(r.interstate ?? 0),
+      cargo: cargo.rows.map((x) => ({ name: String(x.c), n: Number(x.n) })), newest: newest.rows.map(toCompany),
+    };
+    if (this.statsCache.size > 5000) this.statsCache.clear();
+    this.statsCache.set(key, { at: Date.now(), v });
+    return v;
+  }
+  private readonly statsCache = new Map<string, { at: number; v: PlaceStats }>();
+
+  /** Cities with the most companies (whole country), for the directory page. */
+  async topCities(limit: number): Promise<{ city: string; state: string; slug: string; n: number }[]> {
+    const pool = await this.pool();
+    if (!pool) return [];
+    const { rows } = await pool.query(
+      `SELECT min(city) AS city, state, city_slug, count(*)::int AS n FROM fmcsa_companies WHERE state ~ '^[A-Z]{2}$' AND city_slug <> ''
+       GROUP BY state, city_slug ORDER BY n DESC LIMIT $1`, [limit]);
+    return rows.map((r) => ({ city: String(r.city), state: String(r.state), slug: String(r.city_slug), n: Number(r.n) }));
+  }
+
   /** MC numbers for one sitemap file (ordered, `size` per file). */
   async sitemapChunk(index: number, size: number): Promise<number[]> {
     const pool = await this.pool();
@@ -182,11 +249,11 @@ export class CompaniesStore {
     return Number(rows[0]?.n ?? 0);
   }
 
-  /** Every state + city with companies, for the sitemap. */
+  /** Every state + city with at least 3 companies, for the sitemap (smaller ones are too thin a page for search). */
   async allCities(): Promise<{ state: string; slug: string }[]> {
     const pool = await this.pool();
     if (!pool) return [];
-    const { rows } = await pool.query(`SELECT DISTINCT state, city_slug FROM fmcsa_companies WHERE state ~ '^[A-Z]{2}$' AND city_slug <> '' ORDER BY state, city_slug`);
+    const { rows } = await pool.query(`SELECT state, city_slug FROM fmcsa_companies WHERE state ~ '^[A-Z]{2}$' AND city_slug <> '' GROUP BY state, city_slug HAVING count(*) >= 3 ORDER BY state, city_slug`);
     return rows.map((r) => ({ state: String(r.state), slug: String(r.city_slug) }));
   }
 }

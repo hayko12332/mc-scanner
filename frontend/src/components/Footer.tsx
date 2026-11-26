@@ -16,7 +16,13 @@ export function Footer({ telegram, backendOk }: { telegram: Links; lastLookup?: 
         { label: 'MC number lookup', href: '/mc-number-lookup' },
         { label: 'New MC leads', href: '/new-mc-leads' },
         { label: 'MC scanner', href: '/mc-scanner' },
+        { label: 'Carrier directory', href: '/carriers' },
       ],
+    },
+    {
+      title: 'Trucking companies',
+      items: [['TX', 'Texas'], ['CA', 'California'], ['FL', 'Florida'], ['IL', 'Illinois'], ['GA', 'Georgia'], ['NJ', 'New Jersey']]
+        .map(([st, name]) => ({ label: `In ${name}`, href: `/carriers/${st.toLowerCase()}` })),
     },
     {
       title: 'Community',
