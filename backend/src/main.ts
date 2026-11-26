@@ -6,7 +6,7 @@ import { config } from './config.js';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { indexHtml, SEO_PAGES, seoHtml } from './seo.js';
-import { sitePage } from './site/router.js';
+import { SITE_PATHS, sitePage } from './site/router.js';
 
 const DIST = fileURLToPath(new URL('../../frontend/dist', import.meta.url));
 
@@ -33,7 +33,7 @@ async function bootstrap() {
     status: (c: number) => { type: (t: string) => { send: (b: string) => void } }; redirect: (c: number, u: string) => void; setHeader: (k: string, v: string) => void
   }, next: (e?: unknown) => void) => {
     if ((req.method !== 'GET' && req.method !== 'HEAD') || req.path.startsWith('/api/')) return next();
-    if (!/^\/(mc|usdot|dot|carriers)(\/|$)|^\/sitemap[\w-]*\.xml$|^\/(truck-dispatch-software|freight-broker-tms|rate-confirmation-ai|bol-pod-software)$/i.test(req.path)) return next();
+    if (!/^\/(mc|usdot|dot|carriers)(\/|$)|^\/sitemap[\w-]*\.xml$/i.test(req.path) && !SITE_PATHS.has(req.path)) return next();
     sitePage(req.path, req.query).then((r) => {
       if (!r) return next();
       if (r.redirect) return res.redirect(r.status, r.redirect);

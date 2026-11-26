@@ -17,6 +17,8 @@ const STATIC_PAGES: [string, string, number][] = [
   ['/free-trucking-tools', 'monthly', 0.8], ...Object.keys(FREE).map((p): [string, string, number] => [p, 'monthly', 0.8]),
   ['/carriers', 'weekly', 0.7], ['/privacy.html', 'yearly', 0.2], ['/terms.html', 'yearly', 0.2],
 ];
+/** Single pages the server renders itself (feature pages, free tools and guides). */
+export const SITE_PATHS = new Set(['/free-trucking-tools', ...Object.keys(FEATURES), ...Object.keys(FREE)]);
 const xml = (body: string, maxAge = 3600): SiteResponse => ({ status: 200, type: 'xml', body: `<?xml version="1.0" encoding="UTF-8"?>\n${body}`, maxAge });
 const today = () => new Date().toISOString().slice(0, 10);
 const cache = new Map<string, { at: number; value: SiteResponse }>();

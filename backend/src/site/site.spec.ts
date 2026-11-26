@@ -84,6 +84,9 @@ describe('public site', () => {
       if (FREE[p].kind === 'tool') expect(() => new Script(js!)).not.toThrow(); // the page's own code at least parses
     }
     expect(freePage('/free-trucking-tools')).toContain('href="/rate-per-mile-calculator"');
+    // The server hands these addresses to the site pages (a missing one would answer 404).
+    const { SITE_PATHS } = await import('./router.js');
+    for (const p of ['/free-trucking-tools', '/truck-dispatch-software', ...Object.keys(FREE)]) expect(SITE_PATHS.has(p)).toBe(true);
     const map = await sitePage('/sitemap-pages.xml', {});
     for (const p of ['/free-trucking-tools', ...Object.keys(FREE)]) expect(map!.body).toContain(`https://haulpanel.com${p}</loc>`);
   });
