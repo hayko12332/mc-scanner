@@ -26,9 +26,10 @@ export const FEATURE_LINKS: [string, string][] = [
 ];
 
 const CSS = `
+@font-face{font-family:"Inter Fallback";src:local("Arial"),local("Helvetica");size-adjust:107.4%;ascent-override:90.2%;descent-override:22.48%;line-gap-override:0%}
 :root{--bg:#fff;--soft:#f6f8fc;--text:#0f172a;--muted:#5b6678;--line:#e3e8f0;--accent:#2563eb;--accent-soft:#eef3ff;--ok:#15803d;--bad:#b91c1c}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
-html{color-scheme:light}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+html{color-scheme:light}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 Inter,"Inter Fallback",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
 a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
 .wrap{max-width:1120px;margin:0 auto;padding:0 20px}
 .top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}

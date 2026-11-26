@@ -209,11 +209,11 @@ export function HomePage({ backendOk }: { backendOk: boolean | null }) {
         </div>
         {/* The whole picture opens the tour; the play button sits where the eye lands first. */}
         <button type="button" className="hp3-shot" onClick={play} data-track="hero_tour" aria-label="Watch the 90-second tour of HaulPanel">
-          <span className="hp3-frame">
+          <span className="hp3-frame" aria-hidden="true">
             <span className="hp3-bar"><i /><i /><i /><em>haulpanel.com · Dispatch board</em></span>
             <ProductShot />
           </span>
-          <span className="hp3-play">
+          <span className="hp3-play" aria-hidden="true">
             <span className="hp3-play-btn"><Icon name="play" size={22} /></span>
             <span className="hp3-play-text"><b>Watch the tour</b><small>1:35 · with sound</small></span>
           </span>

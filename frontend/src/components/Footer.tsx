@@ -72,7 +72,7 @@ export function Footer({ telegram, backendOk }: { telegram: Links; lastLookup?: 
           </div>
           {columns.map((c) => (
             <nav key={c.title} className="footer-col" aria-label={c.title}>
-              <h4>{c.title}</h4>
+              <h2>{c.title}</h2>
               {c.items.map((i) => (
                 <a key={i.label} href={i.href} {...(i.external ? { target: '_blank', rel: 'noopener' } : {})}>
                   {i.label}
